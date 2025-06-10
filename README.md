@@ -1,180 +1,248 @@
-# Setting Up and Running the Coral Server with LangChain Agents
+# Coral Social Media Infrastructure
 
-This example demonstrates a system with two agents implemented using LangChain and Coral Server tools, working together to handle user queries. The `user_interface_agent` interacts with users and coordinates tasks, while the `world_news_agent` fetches and processes news-related information.
+A comprehensive social media management system built on the Coral Protocol, featuring LangChain agents for automated content creation, research, and engagement.
 
-## Prerequisites
+## Project Overview
 
-- Python 3.12.10
-- Access to an OpenAI API key (set as `OPENAI_API_KEY` in your environment variables)
-- Access to a World News API key (set as `WORLD_NEWS_API_KEY` in your environment variables)
-- Basic familiarity with terminal commands and Python virtual environments
+This project combines the Coral Protocol for agent orchestration with LangChain for creating specialized AI agents that handle various aspects of social media management. The system includes:
 
-## Running the Example
+1. A set of specialized LangChain agents for different social media tasks
+2. A modern web interface for monitoring and controlling the agents
+3. Integration with the Coral Protocol for agent communication and coordination
 
-### 1. Set Up a Virtual Environment
+## Components
 
-Create and activate a Python virtual environment to isolate dependencies:
+### LangChain Agents
 
-```bash
-python -m venv venv
-source venv/bin/activate  # On Windows, use: venv\Scripts\activate
-```
+<details>
+<summary><b>Tweet Scraping Agent</b></summary>
 
-### 2. Install Dependencies
+The Tweet Scraping Agent is responsible for collecting tweets from specified accounts and hashtags. It:
 
-Install the required Python packages. You can use a `requirements.txt` file or install individually:
+- Monitors specified Twitter accounts and hashtags in real-time
+- Filters tweets based on configurable criteria (engagement metrics, keywords, etc.)
+- Extracts metadata including engagement statistics, posting time, and user information
+- Stores collected tweets in the database for further processing
+- Provides rate limiting protection to avoid Twitter API restrictions
+- Supports scheduled scraping at configurable intervals
+- Handles pagination and historical tweet collection
 
-#### Option 1: Using requirements.txt
-Create a `requirements.txt` file with the following content:
-```
-langchain
-langchain_mcp_adapters
-langchain-openai
-worldnewsapi
-```
-Then run:
-```bash
-pip install -r requirements.txt
-```
+**Technologies used:**
+- Twitter API v2
+- LangChain for orchestration
+- Qdrant for vector storage of tweet embeddings
+- Supabase for structured data storage
 
-#### Option 2: Install Individually
-```bash
-pip install langchain
-pip install langchain_mcp_adapters
-pip install -U langchain-openai
-pip install worldnewsapi
-```
+</details>
 
-### 3. Configure the Environment
+<details>
+<summary><b>Tweet Research Agent</b></summary>
 
-Ensure you have both `OPENAI_API_KEY` and `WORLD_NEWS_API_KEY` set in your environment variables for the OpenAI model and World News API used by LangChain. You can set them in your terminal:
+The Tweet Research Agent analyzes collected tweets to extract insights and identify patterns. It:
 
-```bash
-export OPENAI_API_KEY='your-openai-api-key-here'  # On Windows, use: set OPENAI_API_KEY=your-openai-api-key-here
-export WORLD_NEWS_API_KEY='your-world-news-api-key-here'  # On Windows, use: set WORLD_NEWS_API_KEY=your-world-news-api-key-here
-```
+- Performs sentiment analysis on tweet content
+- Identifies key topics and themes using NLP techniques
+- Tracks engagement patterns and trending topics
+- Generates embeddings for semantic search capabilities
+- Creates summaries of tweet collections
+- Identifies influential accounts and potential collaboration opportunities
+- Analyzes hashtag effectiveness and reach
+- Provides competitive analysis of similar accounts
 
-### 4. Start the Coral Server
+**Technologies used:**
+- OpenAI embeddings for semantic analysis
+- Qdrant for vector search
+- LangChain for agent orchestration
+- NLP libraries for text analysis
+- Supabase for data storage
 
-The agents communicate via a Coral Server, which provides tools for agent registration, discovery, and messaging. To start the server:
+</details>
 
-```bash
-./gradlew run
-```
+<details>
+<summary><b>Blog Writing Agent</b></summary>
 
-Navigate to your project's root directory and run the above command. Gradle may show "83%" completion but will continue running. Check the terminal logs to confirm the server is active (typically at `http://localhost:5555`).
+The Blog Writing Agent creates long-form content based on insights from the Tweet Research Agent. It:
 
-> **Note**: The server must be running before starting the agents, as they register with it upon initialization.
+- Generates complete blog posts based on trending topics and tweet insights
+- Structures content with proper headings, paragraphs, and formatting
+- Incorporates relevant statistics and data points from tweet analysis
+- Optimizes content for SEO with appropriate keywords
+- Creates engaging titles and meta descriptions
+- Generates accompanying images using AI image generation (optional)
+- Supports multiple writing styles and tones through persona configuration
+- Allows for human review and editing before publication
 
-### 5. Run the Agents
+**Technologies used:**
+- OpenAI GPT models for content generation
+- LangChain for orchestration and prompt management
+- Supabase for content storage
+- Markdown for content formatting
+- SEO optimization libraries
 
-The system includes two agents: `user_interface_agent` and `world_news_agent`. Both must be running to process queries. In separate terminal windows, run each agent script (ensure the virtual environment is activated in each terminal).
+</details>
 
-#### Run the User Interface Agent
-```bash
-python 0_langchain_interface.py
-```
+<details>
+<summary><b>Blog to Tweet Agent</b></summary>
 
-#### Run the World News Agent
-```bash
-python 1_langchain_world_news_agent.py
-```
+The Blog to Tweet Agent converts long-form blog content into engaging tweet threads. It:
 
-> **Note**: Ensure the Coral Server is running before starting the agents, as they need to register with it.
+- Breaks down blog posts into tweet-sized chunks
+- Maintains narrative flow across the thread
+- Optimizes each tweet for engagement
+- Adds appropriate hashtags and mentions
+- Creates engaging hooks for the first tweet
+- Includes calls-to-action in the thread
+- Generates thread maps for longer threads
+- Schedules threads for optimal posting times
+- Supports media attachment suggestions
 
-### 6. Interact with the Agents
+**Technologies used:**
+- LangChain for content processing
+- OpenAI models for content optimization
+- Twitter API for posting (optional)
+- Supabase for storing thread content
+- Scheduling algorithms for timing optimization
 
-Once both agents are running, the `user_interface_agent` will prompt you for input via STDIN, displaying:
+</details>
 
-```
-How can I assist you today?
-```
+<details>
+<summary><b>X Reply Agent</b></summary>
 
-Enter a query, such as:
+The X Reply Agent generates and posts replies to tweets, focusing on engagement and community building. It:
 
-```
-What's the latest news on climate change?
-```
+- Monitors mentions and relevant conversations
+- Generates contextually appropriate replies
+- Maintains consistent brand voice and persona
+- Prioritizes replies based on account influence and engagement potential
+- Handles common questions with templated responses
+- Escalates complex inquiries to human operators
+- Tracks reply performance and engagement
+- Adapts tone based on the conversation context
+- Supports multiple languages
 
-The agents will collaborate to process your query, and the `user_interface_agent` will display the results.
+**Technologies used:**
+- Twitter API for monitoring and posting
+- OpenAI models for response generation
+- LangChain for orchestration
+- Sentiment analysis for context awareness
+- Supabase for tracking conversations
 
-## How Agents Register and Communicate
+</details>
 
-### Agent Registration
+<details>
+<summary><b>Twitter Posting Agent</b></summary>
 
-Both agents register with the Coral Server upon startup, using the provided configuration parameters. The registration process involves:
+The Twitter Posting Agent handles the scheduling and posting of tweets and threads. It:
 
-- **Connection to the Coral Server**: Each agent connects to the server at the specified `base_url` (`http://localhost:5555/devmode/exampleApplication/privkey/session1/sse`).
-- **Agent Parameters**: Each agent provides:
-  - `agentId`: A unique identifier (`user_interface_agent` or `world_news_agent`).
-  - `agentDescription`: A description of its role (e.g., "You are user_interaction_agent, responsible for engaging with users...").
-  - `waitForAgents`: Set to `2`, indicating the agent waits for both agents to be available. If you want to run just one agent set this to 1 and run the single agent.
-- **Server-Side Registration**: The Coral Server assigns the agent a unique decentralized identifier (DID) and registers it in its agent registry, enabling discovery by other agents. This is facilitated by Coral's tooling for cryptographically verified identities.
+- Manages a content calendar of scheduled posts
+- Optimizes posting times based on audience activity
+- Handles posting of single tweets and threads
+- Supports media attachments (images, videos, polls)
+- Provides posting confirmation and status updates
+- Reschedules failed posts automatically
+- Monitors post performance after publishing
+- Supports recurring post schedules
+- Integrates with content approval workflows
 
-### Agent Communication
+**Technologies used:**
+- Twitter API for posting
+- Scheduling algorithms for timing optimization
+- LangChain for orchestration
+- Supabase for content and schedule storage
+- Analytics tools for performance tracking
 
-The agents communicate using Coral Server tools (`list_agents`, `create_thread`, `send_message`, `wait_for_mentions`, `ask_human`), following the workflows defined in their prompts. Here's how it works:
+</details>
 
-#### User Interface Agent Workflow
-1. **List Agents**: Calls `list_agents` to discover other connected agents and their descriptions, identifying potential collaborators (e.g., `world_news_agent`).
-2. **Prompt User**: Uses `ask_human` to ask, "How can I assist you today?" and captures the user's response.
-3. **Analyze Intent**: Takes 2 seconds to interpret the user's intent and select an appropriate agent based on the `list_agents` output.
-4. **Handle Coral Server Queries**: If the query is about the Coral Server, it uses server tools to fetch information and responds directly.
-5. **Create Thread**: Uses `create_thread` to initiate a communication thread with the selected agent (e.g., `world_news_agent`).
-6. **Send Instructions**: Formulates a task ("instruction") and uses `send_message` to send it to the selected agent in the thread.
-7. **Wait for Response**: Uses `wait_for_mentions` (8-second timeout) to receive the response from the mentioned agent.
-8. **Display Conversation**: Shows the entire thread conversation to the user.
-9. **Follow-Up**: Waits 3 seconds, then uses `ask_human` to ask if the user needs further assistance, repeating the process if needed.
+### Web Interface
 
-#### World News Agent Workflow
-1. **Wait for Mentions**: Calls `wait_for_mentions` (8-second timeout) to listen for messages from other agents.
-2. **Process Mention**: Upon receiving a mention, stores the thread ID and sender ID (e.g., `user_interface_agent`).
-3. **Analyze Instruction**: Takes 2 seconds to interpret the instruction and checks available tools (e.g., `worldnewsapi` for news queries).
-4. **Plan Execution**: Creates a step-by-step plan based on the tool schema to fulfill the instruction.
-5. **Execute Tools**: Calls necessary tools to complete the task.
-6. **Formulate Response**: Takes 3 seconds to verify the task was completed, crafting a response ("answer") or an error message if applicable.
-7. **Send Response**: Uses `send_message` to reply to the sender in the same thread, ensuring the response is directed to the original sender.
-8. **Repeat**: Waits 2 seconds and resumes listening for new mentions.
+A Next.js-based dashboard with:
 
-#### Coral Server Tools
-The Coral Server provides a standardized messaging and coordination framework, enabling seamless agent interactions:
-- **list_agents**: Retrieves a list of registered agents and their descriptions.
-- **create_thread**: Creates a communication thread for multi-agent collaboration.
-- **send_message**: Sends messages within a thread, supporting mentions to specific agents.
-- **wait_for_mentions**: Listens for messages directed to the agent, with a configurable timeout.
-- **ask_human**: Facilitates direct interaction with the user via STDIN.
+- Agent status monitoring
+- Log viewing and filtering
+- System configuration
+- Persona management
+- Engagement metrics and analytics
+- Content calendar and scheduling
 
-These tools use standardized messaging formats and secure communication protocols (e.g., end-to-end encryption and decentralized identifiers) to ensure trustworthy interactions.
+### Coral Protocol Integration
 
-### Example Interaction
-For the query "What's the latest news on climate change?":
-1. The `user_interface_agent` lists agents, identifies `world_news_agent` as suitable, and creates a thread.
-2. It sends an instruction like "Fetch the latest news on climate change" to `world_news_agent`.
-3. The `world_news_agent` receives the mention, uses `worldnewsapi` to fetch news, and sends a response with the results.
-4. The `user_interface_agent` displays the conversation and asks if the user needs further assistance.
+The system leverages the Coral Protocol for:
 
-## Troubleshooting
+- Agent communication
+- Thread management
+- Message passing
+- Orchestration of complex workflows
 
-- **Agent Registration Fails**: Ensure the Coral Server is running before starting the agents. Restart the server if agents fail to connect.
-- **API Key Issues**: Verify that `OPENAI_API_KEY` and `WORLD_NEWS_API_KEY` are correctly set and valid.
-- **Timeout Errors**: Agents are configured with an 8-second timeout for mentions. If no response is received, they may need restarting.
-- **Server Stuck at 83%**: This is normal for Gradle; check logs to confirm the server is running.
-- **Agent Unregistration**: Agents are not unregistered automatically. Restart the server to clear the registry for a fresh run.
+## Getting Started
 
-## Building on the Example
+### Prerequisites
 
-To add a new agent:
-1. Copy an existing agent script (e.g., `0_langchain_interface.py`).
-2. Modify the `agentId` and `agentDescription` to ensure uniqueness.
-3. Update the prompt and tools as needed for the new agent's role.
-4. Run the new agent alongside the others using `python new_agent.py`.
+- Node.js 18+ for the web interface
+- Python 3.10+ for the LangChain agents
+- Java 17+ for the Coral Protocol server
 
-## Future Potential
+### Installation
 
-This is a proof-of-concept demonstrating agent collaboration via Coral Server. Future enhancements could include:
-- **Remote Mode**: Support for distributed agents across multiple servers.
-- **Session Management**: Persistent sessions for long-running interactions.
-- **Advanced Tooling**: Integration with additional APIs or custom tools for expanded functionality.
-## Community and Support
+1. Clone the repository:
+   ```
+   git clone https://github.com/MarkAustinGrow/Coral_Social_Media.git
+   cd Coral_Social_Media
+   ```
 
-If you have any questions, suggestions, or need assistance, feel free to join our Discord community: [Join our Discord](https://discord.gg/cDzGHnzkwD). We're here to help!
+2. Install dependencies for the web interface:
+   ```
+   cd Web_Interface
+   npm install
+   ```
+
+3. Install Python dependencies:
+   ```
+   pip install -r requirements.txt
+   ```
+
+4. Set up environment variables:
+   ```
+   cp .env.sample .env
+   # Edit .env with your API keys and configuration
+   ```
+
+5. Start the Coral server:
+   ```
+   cd coral-server-master
+   ./gradlew run
+   ```
+
+6. Start the web interface:
+   ```
+   cd Web_Interface
+   npm run dev
+   ```
+
+## Architecture
+
+The system follows a modular architecture where:
+
+1. LangChain agents handle specific tasks and communicate through the Coral Protocol
+2. The Coral server orchestrates agent interactions and manages threads
+3. The web interface provides monitoring and control capabilities
+
+## Database Schema
+
+The system uses Supabase for data storage with the following main tables:
+
+- Tweets
+- Blogs
+- Accounts
+- Engagement metrics
+- Agent logs
+- System configuration
+
+See `supabase_schema.sql` for the complete database schema.
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
