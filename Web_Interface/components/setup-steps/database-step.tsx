@@ -14,6 +14,7 @@ interface DatabaseStepProps {
     supabaseUrl: string
     supabaseKey: string
     qdrantUrl: string
+    qdrantCollection: string
     enablePooling: boolean
     poolSize: number
   }
@@ -37,18 +38,52 @@ export function DatabaseStep({ formData, updateFormData }: DatabaseStepProps) {
     updateFormData({ poolSize: value[0] })
   }
   
-  const testConnection = () => {
+  const testConnection = async () => {
     setIsTestingConnection(true)
     setConnectionStatus("idle")
     
-    // Simulate API call to test connection
-    setTimeout(() => {
-      // In a real implementation, this would make an API call to test the connection
-      const isSuccessful = formData.supabaseUrl.includes("supabase") && formData.supabaseKey.length > 10
-      
-      setConnectionStatus(isSuccessful ? "success" : "error")
+    // Basic validation
+    if (!formData.supabaseUrl.includes("supabase") || formData.supabaseKey.length < 10) {
+      setConnectionStatus("error")
       setIsTestingConnection(false)
-    }, 2000)
+      return
+    }
+    
+    try {
+      // In a production environment, we would create a Supabase client to test the connection
+      // For now, we'll simulate a successful connection if the URL and key look valid
+      
+      // Simulated connection test
+      await new Promise(resolve => setTimeout(resolve, 1500))
+      
+      // Connection successful, save configuration
+      try {
+        const response = await fetch('/api/save-config/supabase', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            supabaseUrl: formData.supabaseUrl,
+            supabaseKey: formData.supabaseKey,
+          }),
+        })
+        
+        if (!response.ok) {
+          throw new Error('Failed to save configuration')
+        }
+        
+        setConnectionStatus("success")
+      } catch (error) {
+        console.error("Error saving configuration:", error)
+        setConnectionStatus("error")
+      }
+    } catch (error) {
+      console.error("Error testing connection:", error)
+      setConnectionStatus("error")
+    } finally {
+      setIsTestingConnection(false)
+    }
   }
   
   return (
@@ -146,6 +181,20 @@ export function DatabaseStep({ formData, updateFormData }: DatabaseStepProps) {
                 />
                 <p className="text-xs text-muted-foreground">
                   Leave as default for local Qdrant instance
+                </p>
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="qdrantCollection">Qdrant Collection Name</Label>
+                <Input
+                  id="qdrantCollection"
+                  name="qdrantCollection"
+                  placeholder="tweets"
+                  value={formData.qdrantCollection}
+                  onChange={handleInputChange}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Name of the collection to store vector embeddings
                 </p>
               </div>
               
