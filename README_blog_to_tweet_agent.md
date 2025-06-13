@@ -71,10 +71,12 @@ python 5_langchain_blog_to_tweet_agent.py
 The Blog to Tweet Agent performs the following tasks:
 
 1. **Blog Post Conversion**: The agent:
-   - Checks for published blog posts that haven't been converted to tweets yet
+   - Checks for approved blog posts that haven't been converted to tweets yet
    - Converts each blog post into an engaging tweet thread
    - Ensures tweets are within the 280 character limit
-   - Adds appropriate numbering, hashtags, and calls to action
+   - Adds appropriate numbering, hashtags, and engaging final tweets
+   - Creates community-focused content rather than promotional content
+   - Prevents duplicate tweet generation for the same blog post
 
 2. **Tweet Thread Management**: The agent:
    - Saves tweet threads to Supabase with appropriate metadata
@@ -110,3 +112,31 @@ To extend the agent's functionality:
 - **Supabase Errors**: Verify your Supabase URL and key, and ensure the tables exist
 - **Agent Communication Issues**: Make sure the Coral Server is running and the agent is connected to it
 - **Tweet Conversion Issues**: If tweets are too long, the agent will automatically truncate them to fit within the 280 character limit
+- **Duplicate Tweet Issues**: If you see duplicate tweets for the same blog post, check if the SQL function `execute_sql` is properly defined in your Supabase database
+
+## Recent Improvements
+
+### 1. Duplicate Tweet Prevention
+
+The agent now has robust mechanisms to prevent generating duplicate tweets for the same blog post:
+
+- Uses a LEFT JOIN query to check for existing tweets
+- Implements a fallback query that explicitly excludes blog posts that already have tweets
+- Handles race conditions that could occur when multiple instances run simultaneously
+
+### 2. Community-Focused Final Tweets
+
+The final tweet in each thread has been improved to:
+
+- Focus on building community rather than promoting content
+- End with thought-provoking questions or insights that encourage discussion
+- Avoid promotional language like "read my blog" or "link in bio"
+- Invite followers to share their own experiences and perspectives
+
+### 3. Persona-Based Content Generation
+
+The agent now fully integrates with the persona system to:
+
+- Maintain consistent voice and tone across all tweets
+- Adapt content style based on persona parameters (tone, humor, enthusiasm, assertiveness)
+- Create more authentic and engaging content that resonates with the target audience
