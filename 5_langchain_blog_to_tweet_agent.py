@@ -69,12 +69,65 @@ def get_tools_description(tools):
     )
 
 @tool
-def get_unconverted_blog_posts(limit: int = 5):
+def fetch_persona():
+    """
+    Fetch the current persona from Supabase.
+    
+    Returns:
+        Dictionary containing persona details or default values if not found
+    """
+    logger.info("Fetching persona from Supabase")
+    
+    try:
+        # Fetch persona from Supabase
+        query = supabase_client.table("personas").select("*").limit(1)
+        
+        result = query.execute()
+        
+        if result.data and len(result.data) > 0:
+            persona = result.data[0]
+            logger.info(f"Found persona: {persona.get('name')}")
+            return {
+                "result": persona
+            }
+        else:
+            # Return default persona values
+            logger.info("No persona found, using default values")
+            default_persona = {
+                "name": "Content Reviewer",
+                "description": "A meticulous and objective reviewer who prioritizes factual accuracy, logical consistency, and narrative flow in all content.",
+                "tone": 70,  # More formal
+                "humor": 30,  # More serious
+                "enthusiasm": 60,  # Moderately enthusiastic
+                "assertiveness": 80  # Quite confident
+            }
+            return {
+                "result": default_persona
+            }
+        
+    except Exception as e:
+        logger.error(f"Error fetching persona from Supabase: {str(e)}")
+        # Return default persona values on error
+        default_persona = {
+            "name": "Content Reviewer",
+            "description": "A meticulous and objective reviewer who prioritizes factual accuracy, logical consistency, and narrative flow in all content.",
+            "tone": 70,  # More formal
+            "humor": 30,  # More serious
+            "enthusiasm": 60,  # Moderately enthusiastic
+            "assertiveness": 80  # Quite confident
+        }
+        return {
+            "error": f"Failed to fetch persona: {str(e)}",
+            "result": default_persona
+        }
+
+@tool
+def get_unconverted_blog_posts(limit: int = 1):
     """
     Get blog posts that haven't been converted to tweets yet.
     
     Args:
-        limit: Maximum number of blog posts to return (default: 5)
+        limit: Maximum number of blog posts to return (default: 1)
         
     Returns:
         Dictionary containing unconverted blog posts
@@ -87,7 +140,7 @@ def get_unconverted_blog_posts(limit: int = 5):
         FROM blog_posts b
         LEFT JOIN potential_tweets t ON b.id = t.blog_post_id
         WHERE t.id IS NULL
-        AND b.status = 'published'
+        AND b.review_status = 'approved'
         ORDER BY b.created_at DESC
         LIMIT $1
         """
@@ -97,7 +150,21 @@ def get_unconverted_blog_posts(limit: int = 5):
         # If the RPC method doesn't work, fall back to a simpler query
         if not result.data or 'error' in result.data:
             logger.warning("RPC query failed, falling back to simpler query")
-            result = supabase_client.table("blog_posts").select("*").eq("status", "published").order("created_at", desc=True).limit(limit).execute()
+            
+            # First, get all blog_post_ids that already have tweets
+            try:
+                existing_tweets = supabase_client.table("potential_tweets").select("blog_post_id").execute()
+                existing_blog_ids = [tweet.get("blog_post_id") for tweet in existing_tweets.data] if existing_tweets.data else []
+                
+                # Then exclude those blog posts from our query
+                if existing_blog_ids:
+                    result = supabase_client.table("blog_posts").select("*").eq("review_status", "approved").not_.in_("id", existing_blog_ids).order("created_at", desc=True).limit(limit).execute()
+                else:
+                    result = supabase_client.table("blog_posts").select("*").eq("review_status", "approved").order("created_at", desc=True).limit(limit).execute()
+            except Exception as e:
+                logger.error(f"Error in fallback query: {str(e)}")
+                # If the above fails, use the original fallback query
+                result = supabase_client.table("blog_posts").select("*").eq("review_status", "approved").order("created_at", desc=True).limit(limit).execute()
         
         posts = result.data if result.data else []
         
@@ -148,18 +215,43 @@ def get_blog_post_by_id(blog_post_id: int):
         }
 
 @tool
-def convert_blog_to_tweets(blog_post: dict, max_tweets: int = 10):
+def convert_blog_to_tweets(blog_post: dict, max_tweets: int = 10, persona: dict = None):
     """
     Convert a blog post into a tweet thread.
     
     Args:
         blog_post: Dictionary containing blog post details
         max_tweets: Maximum number of tweets to generate (default: 10)
+        persona: Optional persona details to customize the writing style
         
     Returns:
         Dictionary containing the generated tweet thread
     """
     try:
+        # Use default persona if none provided
+        if not persona:
+            persona_response = fetch_persona.invoke({})
+            persona = persona_response.get("result", {})
+            
+        # If blog_post_id is not provided, try to find it by title
+        blog_post_id = blog_post.get("id")
+        if not blog_post_id:
+            title = blog_post.get("title")
+            if title:
+                try:
+                    result = supabase_client.table("blog_posts").select("id").eq("title", title).limit(1).execute()
+                    if result.data and len(result.data) > 0:
+                        blog_post_id = result.data[0].get("id")
+                        logger.info(f"Found blog post ID {blog_post_id} for title: {title}")
+                except Exception as e:
+                    logger.error(f"Error finding blog post by title: {str(e)}")
+        
+        # Customize prompt based on persona
+        tone_descriptor = "formal" if persona.get("tone", 50) > 70 else "conversational" if persona.get("tone", 50) < 30 else "balanced"
+        humor_descriptor = "serious" if persona.get("humor", 50) < 30 else "light-hearted" if persona.get("humor", 50) > 70 else "occasionally humorous"
+        enthusiasm_descriptor = "enthusiastic" if persona.get("enthusiasm", 50) > 70 else "reserved" if persona.get("enthusiasm", 50) < 30 else "moderately enthusiastic"
+        assertiveness_descriptor = "confident and direct" if persona.get("assertiveness", 50) > 70 else "tentative and nuanced" if persona.get("assertiveness", 50) < 30 else "balanced"
+        
         # Use OpenAI to convert the blog post to tweets
         model = init_chat_model(
             model="gpt-4o-mini",
@@ -175,13 +267,20 @@ def convert_blog_to_tweets(blog_post: dict, max_tweets: int = 10):
         - Title: {blog_post.get("title", "")}
         - Content: {blog_post.get("content", "")}
         
-        ## Instructions
+        ## Writing Style Instructions
+        Write in the voice of {persona.get("name", "Content Creator")}, who is {persona.get("description", "a professional content creator")}.
+        - Use a {tone_descriptor} tone
+        - Be {humor_descriptor} in your writing
+        - Maintain a {enthusiasm_descriptor} energy level
+        - Present information in a {assertiveness_descriptor} manner
+        
+        ## Content Instructions
         Convert this blog post into an engaging tweet thread that captures the key points and encourages engagement. The tweet thread should:
         
         1. Start with a hook that grabs attention
         2. Break down the main points of the blog post into digestible tweets
         3. Include relevant hashtags where appropriate
-        4. End with a call to action (e.g., read the full blog, share thoughts, etc.)
+        4. End with a thought-provoking question or insight that encourages discussion and engagement, rather than a direct promotion of the blog post
         5. Maintain a consistent voice and tone throughout the thread
         
         ## Constraints
@@ -189,6 +288,9 @@ def convert_blog_to_tweets(blog_post: dict, max_tweets: int = 10):
         - Each tweet must be 280 characters or less
         - Number each tweet (e.g., 1/7, 2/7, etc.)
         - Ensure the thread flows logically and maintains context
+        
+        ## Special Instructions for Final Tweet
+        For the final tweet in the thread, avoid promotional language like "read my blog" or "link in bio." Instead, end with an insightful conclusion, a thought-provoking question, or an invitation for followers to share their own experiences or perspectives. The goal is to build a community through valuable conversation, not to push content.
         
         ## Output Format
         Return a JSON array where each element is a tweet in the thread. Each tweet should be an object with:
@@ -227,7 +329,7 @@ def convert_blog_to_tweets(blog_post: dict, max_tweets: int = 10):
             return {
                 "result": tweets,
                 "count": len(tweets),
-                "blog_post_id": blog_post.get("id")
+                "blog_post_id": blog_post_id or blog_post.get("id")
             }
         except Exception as e:
             logger.error(f"Error parsing tweets: {str(e)}")
@@ -356,6 +458,7 @@ async def main():
                 
                 # Define agent-specific tools
                 agent_tools = [
+                    fetch_persona,
                     get_unconverted_blog_posts,
                     get_blog_post_by_id,
                     convert_blog_to_tweets,
