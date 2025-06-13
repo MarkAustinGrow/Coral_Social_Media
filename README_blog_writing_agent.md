@@ -144,25 +144,36 @@ To extend the agent's functionality:
 
 The Blog Writing Agent has been updated with the following improvements:
 
-1. **Fixed Qdrant Vector Search**: Corrected the parameter name in the `search_tweet_insights` function to use `query_vector` instead of `vector`, ensuring proper retrieval of tweet insights from the Qdrant database.
+1. **Topic Rotation System**: Implemented a sophisticated topic rotation system that:
+   - Selects from the top 20 topics by engagement score
+   - Prioritizes topics that have never been used before
+   - Then selects topics based on how long ago they were last used (oldest first)
+   - Updates a topic's `last_used_at` timestamp after writing a blog post about it
+   - Ensures content diversity while still focusing on high-engagement topics
 
-2. **Enhanced Topic Focus**: Improved the agent's ability to select high-engagement topics and generate blog content that directly addresses these topics, resulting in more relevant and focused blog posts.
+2. **Fixed Qdrant Vector Search**: Corrected the parameter name in the `search_tweet_insights` function to use `query_vector` instead of `vector`, ensuring proper retrieval of tweet insights from the Qdrant database.
 
-3. **Better Tweet Insight Integration**: The agent now successfully incorporates specific quotes and insights from tweets into the blog content, making the posts more data-driven and engaging.
+3. **Enhanced Topic Focus**: Improved the agent's ability to select high-engagement topics and generate blog content that directly addresses these topics, resulting in more relevant and focused blog posts.
 
-4. **Improved Agent Communication**: Enhanced the agent's ability to create threads and send messages to other agents, particularly the Blog to Tweet Agent, facilitating better coordination in the social media pipeline.
+4. **Better Tweet Insight Integration**: The agent now successfully incorporates specific quotes and insights from tweets into the blog content, making the posts more data-driven and engaging.
+
+5. **Improved Agent Communication**: Enhanced the agent's ability to create threads and send messages to other agents, particularly the Blog to Tweet Agent, facilitating better coordination in the social media pipeline.
 
 ## Future Improvements
 
 The following improvements are planned for future updates:
 
-1. **Update to Qdrant's `query_points` Method**: Replace the deprecated `search` method with the newer `query_points` method in the `search_tweet_insights` function to future-proof the agent against Qdrant API changes.
+1. **Topic Rotation Analytics**: Add analytics to track how the topic rotation system is performing, including metrics on topic diversity and engagement correlation.
 
-2. **Enhanced Error Handling**: Implement more robust error handling for API calls and database operations to improve the agent's resilience and reliability.
+2. **Topic Cooldown Period**: Implement a configurable cooldown period for topics, allowing administrators to set how long a topic should wait before being eligible for selection again.
 
-3. **Improved Thread Management**: Enhance the agent's ability to manage and track communication threads with other agents to prevent errors when sending messages.
+3. **Update to Qdrant's `query_points` Method**: Replace the deprecated `search` method with the newer `query_points` method in the `search_tweet_insights` function to future-proof the agent against Qdrant API changes.
 
-4. **Performance Optimization**: Optimize the vector search operations to improve response time and reduce resource usage, particularly for large collections of tweet insights.
+4. **Enhanced Error Handling**: Implement more robust error handling for API calls and database operations to improve the agent's resilience and reliability.
+
+5. **Improved Thread Management**: Enhance the agent's ability to manage and track communication threads with other agents to prevent errors when sending messages.
+
+6. **Performance Optimization**: Optimize the vector search operations to improve response time and reduce resource usage, particularly for large collections of tweet insights.
 
 ## Troubleshooting
 
@@ -197,5 +208,11 @@ The following improvements are planned for future updates:
   For future-proofing, consider updating to the `query_points` method, but be aware that the parameter names may differ.
 - **Topic Relevance Issues**: If blog posts are being generated about topics unrelated to the engagement metrics, check that:
   1. The engagement_metrics table contains valid topics with engagement scores
-  2. The `generate_blog_topic` function is correctly selecting the highest-engagement topic
+  2. The `generate_blog_topic` function is correctly using the topic rotation system
   3. The prompt to the language model explicitly instructs it to focus on the selected topic
+
+- **Topic Rotation Issues**: If you notice the same topics being used repeatedly:
+  1. Check that the `last_used_at` column exists in the engagement_metrics table
+  2. Verify that the `update_topic_usage` function is being called when saving blog posts
+  3. Ensure the `topic_name` parameter is being passed to the `save_blog_post` function
+  4. Check the logs for any warnings about failing to update the `last_used_at` timestamp

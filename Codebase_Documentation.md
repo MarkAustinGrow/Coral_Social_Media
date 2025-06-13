@@ -117,6 +117,8 @@ Creates long-form content based on insights from the Tweet Research Agent.
   - Structured content generation
   - SEO optimization
   - Multiple writing styles through persona configuration
+  - Topic rotation system for content diversity
+  - Engagement-based topic selection
 
 ### 4. Blog Critique Agent (`4_langchain_blog_critique_agent.py`)
 
