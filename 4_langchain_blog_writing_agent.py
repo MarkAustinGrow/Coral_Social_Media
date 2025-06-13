@@ -8,7 +8,7 @@ from langchain.prompts import ChatPromptTemplate
 from langchain.chat_models import init_chat_model
 from langchain.agents import create_tool_calling_agent, AgentExecutor
 from langchain_core.tools import tool
-from langchain.embeddings import OpenAIEmbeddings
+from langchain_openai import OpenAIEmbeddings
 from supabase import create_client, Client
 from qdrant_client import QdrantClient
 from qdrant_client.http import models
@@ -190,7 +190,7 @@ def get_recent_blog_posts(limit: int = 5):
         }
 
 @tool
-def generate_blog_topic(topic_area: str = None):
+def generate_blog_topic(topic_area: str = ""):
     """
     Generate a blog topic based on engagement metrics and tweet insights.
     
@@ -202,23 +202,49 @@ def generate_blog_topic(topic_area: str = None):
     """
     try:
         # Get engagement metrics
-        metrics_response = get_engagement_metrics()
+        metrics_response = get_engagement_metrics.invoke({})
         metrics = metrics_response.get("result", [])
         
         # If topic area is specified, filter metrics
         if topic_area:
-            metrics = [m for m in metrics if topic_area.lower() in m.get("topic", "").lower()]
+            filtered_metrics = [m for m in metrics if topic_area.lower() in m.get("topic", "").lower() or 
+                               topic_area.lower() in m.get("category", "").lower()]
+            # If we found metrics matching the topic area, use those
+            if filtered_metrics:
+                metrics = filtered_metrics
         
-        # Get top topics
-        top_topics = [m.get("topic") for m in metrics[:3]]
+        # If no metrics after filtering or no metrics at all, return error
+        if not metrics:
+            return {
+                "error": f"No engagement metrics found for topic area: {topic_area}",
+                "result": {
+                    "title": "The Future of AI in Everyday Applications",
+                    "description": "An exploration of how AI is being integrated into common applications and changing the way we interact with technology",
+                    "key_points": [
+                        "Current state of AI in consumer applications",
+                        "Emerging trends in AI integration",
+                        "Predictions for the next 5 years"
+                    ],
+                    "target_audience": "Tech enthusiasts and professionals interested in AI developments",
+                    "estimated_word_count": 1200
+                }
+            }
         
-        # Search for insights related to top topics
-        insights = []
-        for topic in top_topics:
-            search_response = search_tweet_insights(topic, limit=3)
-            insights.extend(search_response.get("result", []))
+        # Select the highest engagement topic
+        selected_topic = metrics[0]
+        logger.info(f"Selected high-engagement topic: {selected_topic.get('topic')} (Score: {selected_topic.get('engagement_score')})")
         
-        # Use OpenAI to generate a blog topic
+        # Get detailed information about the selected topic
+        topic_name = selected_topic.get("topic", "")
+        topic_description = selected_topic.get("topic_description", "")
+        topic_category = selected_topic.get("category", "")
+        topic_subtopics = selected_topic.get("subtopics", [])
+        
+        # Search for insights specifically related to the selected topic
+        search_response = search_tweet_insights.invoke({"query": topic_name, "limit": 10})
+        insights = search_response.get("result", [])
+        
+        # Use OpenAI to generate a blog topic focused on the selected high-engagement topic
         model = init_chat_model(
             model="gpt-4o-mini",
             model_provider="openai",
@@ -227,19 +253,26 @@ def generate_blog_topic(topic_area: str = None):
         )
         
         prompt = f"""
-        Based on the following engagement metrics and tweet insights, generate an engaging blog topic.
+        I need you to generate a blog topic focused specifically on the following high-engagement topic:
         
-        Top Topics by Engagement:
-        {json.dumps(top_topics, indent=2)}
+        Topic: {topic_name}
+        Description: {topic_description}
+        Category: {topic_category}
+        Subtopics: {', '.join(topic_subtopics) if topic_subtopics else 'None specified'}
+        Engagement Score: {selected_topic.get('engagement_score')}
         
-        Related Tweet Insights:
+        Here are some relevant tweet insights related to this topic:
         {json.dumps(insights, indent=2)}
         
-        Generate a blog topic that:
-        1. Is timely and relevant
-        2. Addresses questions or pain points from the tweets
-        3. Leverages the high-engagement topics
+        Your task is to create a blog topic that:
+        1. Is DIRECTLY related to "{topic_name}" - this is CRITICAL
+        2. Incorporates the specific insights from the tweets
+        3. Addresses questions or pain points mentioned in the topic description or tweets
         4. Has potential for good SEO
+        5. Would be interesting to readers interested in {topic_category}
+        
+        DO NOT create a generic topic or one that's only tangentially related to "{topic_name}".
+        The blog MUST be specifically about "{topic_name}" and related concepts.
         
         Return your response as a JSON object with the following structure:
         {{
@@ -315,8 +348,36 @@ def write_blog_post(topic: dict, max_tokens: int = 4000):
     """
     try:
         # Get related insights
-        insights_response = search_tweet_insights(topic.get("title", ""), limit=10)
+        insights_response = search_tweet_insights.invoke({"query": topic.get("title", ""), "limit": 10})
         insights = insights_response.get("result", [])
+        
+        # Get engagement metrics to find the original topic this blog is based on
+        metrics_response = get_engagement_metrics.invoke({})
+        metrics = metrics_response.get("result", [])
+        
+        # Find the most relevant high-engagement topic that matches our blog topic
+        relevant_topics = []
+        blog_title_lower = topic.get("title", "").lower()
+        blog_desc_lower = topic.get("description", "").lower()
+        
+        for metric in metrics:
+            metric_topic = metric.get("topic", "").lower()
+            if metric_topic in blog_title_lower or metric_topic in blog_desc_lower:
+                relevant_topics.append(metric)
+        
+        # Include the original high-engagement topic information if found
+        original_topic_info = ""
+        if relevant_topics:
+            top_relevant = relevant_topics[0]
+            original_topic_info = f"""
+            This blog post should be based on the high-engagement topic:
+            - Topic: {top_relevant.get('topic')}
+            - Description: {top_relevant.get('topic_description', '')}
+            - Category: {top_relevant.get('category', '')}
+            - Subtopics: {', '.join(top_relevant.get('subtopics', []))}
+            
+            Make sure to incorporate this specific topic and its nuances throughout the blog post.
+            """
         
         # Prepare the prompt for Claude
         prompt = f"""
@@ -329,6 +390,8 @@ def write_blog_post(topic: dict, max_tokens: int = 4000):
         - Target Audience: {topic.get("target_audience", "")}
         - Estimated Word Count: {topic.get("estimated_word_count", 1000)}
         
+        {original_topic_info}
+        
         ## Related Insights from Twitter
         {json.dumps(insights, indent=2)}
         
@@ -337,11 +400,12 @@ def write_blog_post(topic: dict, max_tokens: int = 4000):
         
         1. Have an attention-grabbing introduction
         2. Cover all the key points mentioned
-        3. Include relevant information from the Twitter insights
+        3. DIRECTLY incorporate specific quotes and insights from the Twitter data provided
         4. Have a clear structure with headings and subheadings
         5. End with a strong conclusion and call to action
         6. Be optimized for SEO
         7. Be written in a conversational yet professional tone
+        8. Stay focused on the specific topic and not drift into generic content
         
         ## Output Format
         Return the blog post in Markdown format, with proper headings, formatting, and structure.
@@ -448,10 +512,11 @@ async def create_blog_writing_agent(client, tools, agent_tools):
             3. If no mentions are received (timeout):
                a. Check if it's time to create a new blog post (once per day)
                b. If it is time:
-                  i. Generate a blog topic using generate_blog_topic based on engagement metrics
-                  ii. Write a blog post using write_blog_post
-                  iii. Save the blog post using save_blog_post
-                  iv. Notify blog_to_tweet_agent about the new blog post
+                  i. Check if there are any engagement metrics using get_engagement_metrics
+                  ii. Generate a blog topic using generate_blog_topic based on engagement metrics
+                  iii. Write a blog post using write_blog_post
+                  iv. Save the blog post using save_blog_post
+                  v. Notify blog_to_tweet_agent about the new blog post
             4. Wait for 2 seconds and repeat the process
             
             When writing blog posts, focus on:

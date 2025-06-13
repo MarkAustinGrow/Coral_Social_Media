@@ -4,11 +4,11 @@ import json
 import logging
 import time
 from langchain_mcp_adapters.client import MultiServerMCPClient
-from langchain.prompts import ChatPromptTemplate
+from langchain_core.prompts import ChatPromptTemplate
 from langchain.chat_models import init_chat_model
 from langchain.agents import create_tool_calling_agent, AgentExecutor
 from langchain_core.tools import tool
-from langchain.embeddings import OpenAIEmbeddings
+from langchain_openai import OpenAIEmbeddings
 from supabase import create_client, Client
 from qdrant_client import QdrantClient
 from qdrant_client.http import models
@@ -44,9 +44,11 @@ try:
     )
     
     # Qdrant client
+    # Note: Using HTTP for development environment. In production, use HTTPS with proper certificates.
     qdrant_client = QdrantClient(
         url=os.getenv("QDRANT_URL", "http://localhost:6333"),
-        api_key=os.getenv("QDRANT_API_KEY", "")
+        api_key=os.getenv("QDRANT_API_KEY", ""),
+        https=False  # Set to True in production with proper certificates
     )
     
     # Initialize OpenAI embeddings
@@ -86,7 +88,7 @@ def get_tools_description(tools):
     )
 
 @tool
-def fetch_tweets_from_supabase(limit: int = 20, analyzed: bool = False):
+def fetch_tweets_from_supabase(limit: int = 1, analyzed: bool = False):
     """
     Fetch tweets from Supabase that need analysis.
     
@@ -155,18 +157,19 @@ def mark_tweet_as_analyzed(tweet_ids: list):
         }
 
 @tool
-def analyze_tweet_perplexity(tweet_text: str, questions: list):
+def analyze_tweet_perplexity(tweet_text: str, question: str):
     """
-    Use Perplexity to analyze tweet content.
+    Use Perplexity to analyze tweet content with a single focused question.
     
     Args:
         tweet_text: The text of the tweet to analyze
-        questions: List of questions to ask about the tweet
+        question: The research question to ask about the tweet
         
     Returns:
-        Dictionary containing analysis results
+        Dictionary containing analysis result
     """
     logger.info(f"Analyzing tweet with Perplexity: {tweet_text[:50]}...")
+    logger.info(f"Research question: {question}")
     
     try:
         api_key = os.getenv("PERPLEXITY_API_KEY")
@@ -175,52 +178,90 @@ def analyze_tweet_perplexity(tweet_text: str, questions: list):
             "Content-Type": "application/json"
         }
         
-        results = {}
+        # Use a default question if none provided
+        if not question or len(question.strip()) == 0:
+            question = "What is the author of this tweet truly trying to communicate?"
+            logger.warning("No question provided, using default question")
         
-        for question in questions:
-            prompt = f"Tweet: \"{tweet_text}\"\n\nQuestion: {question}"
-            
-            data = {
-                "model": "llama-3-sonar-small-32k-online",
-                "messages": [
-                    {"role": "system", "content": "You are an AI assistant analyzing tweets. Provide concise, factual responses."},
-                    {"role": "user", "content": prompt}
-                ]
-            }
-            
-            response = requests.post(
-                "https://api.perplexity.ai/chat/completions",
-                headers=headers,
-                json=data
-            )
-            
-            if response.status_code == 200:
-                response_data = response.json()
-                answer = response_data["choices"][0]["message"]["content"]
-                results[question] = answer
-            else:
-                logger.error(f"Perplexity API error: {response.status_code} - {response.text}")
-                results[question] = f"Error: {response.status_code}"
+        prompt = f"Tweet: \"{tweet_text}\"\n\nQuestion: {question}"
         
-        return {
-            "result": results
+        data = {
+            "model": "sonar",
+            "messages": [
+                {"role": "system", "content": "You are an AI assistant analyzing tweets. Provide a thoughtful, insightful response that helps understand the author's true intent and the broader context of this tweet."},
+                {"role": "user", "content": prompt}
+            ]
         }
+        
+        response = requests.post(
+            "https://api.perplexity.ai/chat/completions",
+            headers=headers,
+            json=data
+        )
+        
+        if response.status_code == 200:
+            try:
+                response_data = response.json()
+                
+                # Log the full response for debugging
+                logger.debug(f"Perplexity API response: {json.dumps(response_data)}")
+                
+                # Correctly extract the content from the response
+                if "choices" in response_data and len(response_data["choices"]) > 0:
+                    if "message" in response_data["choices"][0] and "content" in response_data["choices"][0]["message"]:
+                        answer = response_data["choices"][0]["message"]["content"]
+                        
+                        # Log the analysis result
+                        logger.info(f"Analysis result: {answer[:200]}...")
+                        
+                        return {
+                            "question": question,
+                            "answer": answer
+                        }
+                    else:
+                        logger.error(f"Unexpected response structure - missing message.content: {response_data}")
+                        return {
+                            "question": question,
+                            "answer": "Error: Unexpected response structure"
+                        }
+                else:
+                    logger.error(f"Unexpected response structure - missing choices: {response_data}")
+                    return {
+                        "question": question,
+                        "answer": "Error: Unexpected response structure"
+                    }
+            except Exception as e:
+                logger.error(f"Error parsing Perplexity API response: {str(e)}")
+                logger.error(f"Response text: {response.text}")
+                return {
+                    "question": question,
+                    "answer": f"Error parsing response: {str(e)}"
+                }
+        else:
+            logger.error(f"Perplexity API error: {response.status_code} - {response.text}")
+            return {
+                "question": question,
+                "answer": f"Error: {response.status_code}"
+            }
         
     except Exception as e:
         logger.error(f"Error analyzing tweet with Perplexity: {str(e)}")
         return {
-            "error": f"Failed to analyze tweet: {str(e)}"
+            "error": f"Failed to analyze tweet: {str(e)}",
+            "question": question,
+            "answer": "Error occurred during analysis"
         }
 
 @tool
-def store_analysis_qdrant(tweet_id: str, tweet_text: str, analysis: dict, metadata: dict = None):
+def store_analysis_qdrant(tweet_id: str, tweet_text: str, question: str, analysis_result: str, metadata: dict = None):
     """
-    Store tweet analysis in Qdrant vector database.
+    Store tweet analysis in Qdrant vector database with enhanced metadata for better searchability.
     
     Args:
         tweet_id: ID of the tweet
         tweet_text: Text of the tweet
-        analysis: Dictionary containing analysis results
+        question: The research question that was asked
+        analysis_result: The answer from Perplexity
         metadata: Additional metadata to store (optional)
         
     Returns:
@@ -228,29 +269,75 @@ def store_analysis_qdrant(tweet_id: str, tweet_text: str, analysis: dict, metada
     """
     try:
         # Prepare the text for embedding
-        analysis_text = tweet_text + "\n\n" + json.dumps(analysis)
+        analysis_text = f"{tweet_text}\n\nQuestion: {question}\n\nAnswer: {analysis_result}"
         
         # Generate embedding
         embedding = embeddings.embed_query(analysis_text)
         
-        # Prepare metadata
+        # Extract author from metadata if available
+        author = None
+        if metadata and "author" in metadata:
+            author = metadata.get("author")
+        
+        # Extract topics and sentiment from analysis
+        topics = []
+        sentiment = "neutral"
+        
+        # Try to extract topics from analysis
+        try:
+            # Extract topics from the analysis result
+            topic_words = ["finance", "crypto", "technology", "politics", "economy", 
+                          "business", "markets", "investing", "blockchain", "bitcoin",
+                          "ethereum", "stocks", "trading", "economics", "policy"]
+            
+            for word in topic_words:
+                if word.lower() in analysis_result.lower() and word not in topics:
+                    topics.append(word)
+            
+            # Extract sentiment from analysis result
+            if "positive" in analysis_result.lower() or "optimistic" in analysis_result.lower() or "bullish" in analysis_result.lower():
+                sentiment = "positive"
+            elif "negative" in analysis_result.lower() or "pessimistic" in analysis_result.lower() or "bearish" in analysis_result.lower():
+                sentiment = "negative"
+        except Exception as e:
+            logger.warning(f"Error extracting topics and sentiment: {str(e)}")
+        
+        # If no topics were found, try to extract from tweet text
+        if not topics:
+            for word in topic_words:
+                if word.lower() in tweet_text.lower() and word not in topics:
+                    topics.append(word)
+        
+        # Prepare enhanced payload
         if metadata is None:
             metadata = {}
             
+        # Create structured payload with searchable fields
         payload = {
             "tweet_id": tweet_id,
             "tweet_text": tweet_text,
-            "analysis": analysis,
-            "metadata": metadata,
-            "timestamp": time.time()
+            "author": author,
+            "topics": topics,
+            "sentiment": sentiment,
+            "question": question,
+            "analysis": analysis_result,
+            "custom_metadata": metadata,  # Store original metadata
+            "timestamp": time.time(),
+            "date": time.strftime("%Y-%m-%d", time.localtime())
         }
+        
+        # Convert tweet_id to a valid Qdrant point ID
+        # Use a hash function to convert the string to an integer
+        import hashlib
+        # Get the first 8 bytes of the MD5 hash and convert to integer
+        point_id = int(hashlib.md5(tweet_id.encode()).hexdigest()[:16], 16)
         
         # Store in Qdrant
         qdrant_client.upsert(
             collection_name="tweet_insights",
             points=[
                 models.PointStruct(
-                    id=tweet_id,
+                    id=point_id,
                     vector=embedding,
                     payload=payload
                 )
@@ -268,13 +355,15 @@ def store_analysis_qdrant(tweet_id: str, tweet_text: str, analysis: dict, metada
         }
 
 @tool
-def search_qdrant(query: str, limit: int = 5):
+def search_qdrant(query: str, limit: int = 5, filter_by: dict = None):
     """
-    Search for similar insights in Qdrant.
+    Search for similar insights in Qdrant with optional filtering.
     
     Args:
         query: Search query
         limit: Maximum number of results to return (default: 5)
+        filter_by: Optional dictionary for filtering results by metadata fields
+                  Example: {"topics": "crypto", "sentiment": "positive"}
         
     Returns:
         Dictionary containing search results
@@ -283,19 +372,75 @@ def search_qdrant(query: str, limit: int = 5):
         # Generate embedding for the query
         query_embedding = embeddings.embed_query(query)
         
-        # Search in Qdrant
+        # Prepare filter if provided
+        search_filter = None
+        if filter_by:
+            filter_conditions = []
+            
+            # Add topic filter if provided
+            if "topics" in filter_by:
+                topic = filter_by["topics"]
+                filter_conditions.append(
+                    models.FieldCondition(
+                        key="topics",
+                        match=models.MatchAny(any=[topic])
+                    )
+                )
+            
+            # Add sentiment filter if provided
+            if "sentiment" in filter_by:
+                sentiment = filter_by["sentiment"]
+                filter_conditions.append(
+                    models.FieldCondition(
+                        key="sentiment",
+                        match=models.MatchValue(value=sentiment)
+                    )
+                )
+            
+            # Add author filter if provided
+            if "author" in filter_by:
+                author = filter_by["author"]
+                filter_conditions.append(
+                    models.FieldCondition(
+                        key="author",
+                        match=models.MatchValue(value=author)
+                    )
+                )
+            
+            # Add date filter if provided
+            if "date" in filter_by:
+                date = filter_by["date"]
+                filter_conditions.append(
+                    models.FieldCondition(
+                        key="date",
+                        match=models.MatchValue(value=date)
+                    )
+                )
+            
+            # Combine all conditions with "must" (AND)
+            if filter_conditions:
+                search_filter = models.Filter(
+                    must=filter_conditions
+                )
+        
+        # Search in Qdrant with optional filter
         search_results = qdrant_client.search(
             collection_name="tweet_insights",
             query_vector=query_embedding,
-            limit=limit
+            limit=limit,
+            filter=search_filter
         )
         
-        # Extract results
+        # Extract results with enhanced metadata
         results = []
         for result in search_results:
             results.append({
                 "tweet_id": result.payload.get("tweet_id"),
                 "tweet_text": result.payload.get("tweet_text"),
+                "author": result.payload.get("author"),
+                "topics": result.payload.get("topics", []),
+                "sentiment": result.payload.get("sentiment"),
+                "date": result.payload.get("date"),
                 "analysis": result.payload.get("analysis"),
                 "score": result.score
             })
@@ -313,19 +458,18 @@ def search_qdrant(query: str, limit: int = 5):
         }
 
 @tool
-def generate_research_questions(tweet_text: str, num_questions: int = 3):
+def generate_research_question(tweet_text: str):
     """
-    Generate research questions for a tweet.
+    Generate a single focused research question to understand the author's intent in a tweet.
     
     Args:
         tweet_text: The text of the tweet
-        num_questions: Number of questions to generate (default: 3)
         
     Returns:
-        Dictionary containing generated questions
+        Dictionary containing the generated question
     """
     try:
-        # Use OpenAI to generate questions
+        # Use OpenAI to generate a focused question
         model = init_chat_model(
             model="gpt-4o-mini",
             model_provider="openai",
@@ -334,55 +478,37 @@ def generate_research_questions(tweet_text: str, num_questions: int = 3):
         )
         
         prompt = f"""
-        Given the following tweet, generate {num_questions} insightful research questions that would help extract valuable information and context from it:
+        Given the following tweet, generate ONE focused research question that would help understand what the author is truly trying to communicate:
         
         Tweet: "{tweet_text}"
         
-        Generate {num_questions} questions that would help understand:
-        1. The main topic or subject of the tweet
-        2. Any claims or statements made
-        3. The context or background information needed
-        4. Potential implications or consequences
+        Your question should aim to uncover:
+        - The author's underlying intent or message
+        - Any implicit assumptions or beliefs
+        - The broader context that gives this tweet meaning
         
-        Format your response as a JSON array of strings, with each string being a question.
+        Focus on generating a single, thoughtful question that gets to the heart of what this tweet is really about.
+        
+        Return ONLY the question text, with no additional formatting or explanation.
         """
         
         response = model.invoke(prompt)
         
-        # Parse the response to extract questions
-        try:
-            # Try to parse as JSON
-            questions_text = response.content
-            # Find JSON array in the text if it's not pure JSON
-            if not questions_text.strip().startswith('['):
-                import re
-                json_match = re.search(r'\[(.*?)\]', questions_text, re.DOTALL)
-                if json_match:
-                    questions_text = f"[{json_match.group(1)}]"
-                else:
-                    # Fall back to line-by-line parsing
-                    lines = questions_text.strip().split('\n')
-                    questions = [line.strip().strip('\"\'') for line in lines if line.strip() and not line.strip().startswith('#')]
-                    return {"result": questions[:num_questions]}
-            
-            questions = json.loads(questions_text)
-            return {"result": questions[:num_questions]}
-        except Exception as e:
-            # If JSON parsing fails, extract questions line by line
-            logger.warning(f"Failed to parse questions as JSON: {str(e)}")
-            lines = response.content.strip().split('\n')
-            questions = [line.strip().strip('\"\'').strip('0123456789.').strip() for line in lines if line.strip() and not line.strip().startswith('#')]
-            return {"result": questions[:num_questions]}
+        # Clean up the response to get just the question
+        question = response.content.strip().strip('"\'').strip()
+        
+        # Log the generated question
+        logger.info(f"Generated research question: {question}")
+        
+        return {
+            "result": question
+        }
         
     except Exception as e:
-        logger.error(f"Error generating research questions: {str(e)}")
+        logger.error(f"Error generating research question: {str(e)}")
         return {
-            "error": f"Failed to generate research questions: {str(e)}",
-            "result": [
-                "What is the main topic of this tweet?",
-                "What claims or statements are made in this tweet?",
-                "What is the context or background of this tweet?"
-            ]
+            "error": f"Failed to generate research question: {str(e)}",
+            "result": "What is the author of this tweet truly trying to communicate?"
         }
 
 async def create_tweet_research_agent(client, tools, agent_tools):
@@ -401,20 +527,18 @@ async def create_tweet_research_agent(client, tools, agent_tools):
                b. Execute the requested operation using your tools
                c. Send a response back to the sender with the results
             3. If no mentions are received (timeout):
-               a. Fetch unanalyzed tweets from Supabase using fetch_tweets_from_supabase
-               b. For each tweet:
-                  i. Generate research questions using generate_research_questions
-                  ii. Use Perplexity to analyze the tweet with these questions using analyze_tweet_perplexity
-                  iii. Store the analysis in Qdrant using store_analysis_qdrant
+               a. Fetch ONE unanalyzed tweet from Supabase using fetch_tweets_from_supabase (limit=1)
+               b. If a tweet is found:
+                  i. Generate a single focused research question using generate_research_question and save the returned question
+                  ii. Use Perplexity to analyze the tweet by passing the tweet_text AND the question to analyze_tweet_perplexity
+                  iii. Store the analysis in Qdrant using store_analysis_qdrant with the tweet_id, tweet_text, question, and analysis result
                   iv. Mark the tweet as analyzed using mark_tweet_as_analyzed
-               c. If interesting insights are found, notify blog_writing_agent
-            4. Wait for 2 seconds and repeat the process
+               c. Wait for 5 minutes before processing the next tweet (to avoid API rate limits)
             
-            When analyzing tweets, focus on extracting:
-            - Main topics and themes
-            - Key claims or statements
-            - Contextual information
-            - Potential implications
+            Your goal is to understand what the author of each tweet is truly trying to communicate. Focus on:
+            - The author's underlying intent or message
+            - Any implicit assumptions or beliefs
+            - The broader context that gives the tweet meaning
             
             These are the list of all tools (Coral + your tools): {tools_description}
             These are the list of your tools: {agent_tools_description}"""
@@ -456,7 +580,7 @@ async def main():
                     analyze_tweet_perplexity,
                     store_analysis_qdrant,
                     search_qdrant,
-                    generate_research_questions
+                    generate_research_question
                 ]
                 
                 # Combine Coral tools with agent-specific tools
@@ -469,8 +593,8 @@ async def main():
                     try:
                         logger.info("Starting new agent invocation")
                         await agent_executor.ainvoke({"agent_scratchpad": []})
-                        logger.info("Completed agent invocation, restarting loop")
-                        await asyncio.sleep(1)
+                        logger.info("Completed agent invocation, waiting 5 minutes before next tweet")
+                        await asyncio.sleep(300)  # Wait 5 minutes between processing tweets
                     except Exception as e:
                         logger.error(f"Error in agent loop: {str(e)}")
                         await asyncio.sleep(5)

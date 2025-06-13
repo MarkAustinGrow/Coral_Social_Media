@@ -116,3 +116,12 @@ To extend the agent's functionality:
 - **Twitter API Errors**: Check your Twitter API credentials and ensure you have the necessary permissions
 - **Supabase Errors**: Verify your Supabase URL and key, and ensure the tables exist
 - **Agent Communication Issues**: Make sure the Coral Server is running and the agent is connected to it
+
+## Recent Updates
+
+The agent has been updated to fix issues with the Twitter API rate limit checking. The main changes include:
+
+1. Simplified the get_api_usage function to use default values for rate limits since Tweepy doesn't provide direct access to rate limit status in newer versions
+2. Updated error handling to use TweepyException consistently
+
+If you encounter any issues with the Twitter API, make sure you have valid API credentials and that they have the necessary permissions.

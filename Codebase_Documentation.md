@@ -118,7 +118,19 @@ Creates long-form content based on insights from the Tweet Research Agent.
   - SEO optimization
   - Multiple writing styles through persona configuration
 
-### 4. Blog to Tweet Agent (`5_langchain_blog_to_tweet_agent.py`)
+### 4. Blog Critique Agent (`4_langchain_blog_critique_agent.py`)
+
+Reviews and fact-checks blog content before publication.
+
+- **Inputs**: Blog posts from the Blog Writing Agent
+- **Outputs**: Critique reports, fact-checking results, and improvement suggestions
+- **Key Features**:
+  - Fact verification using Perplexity API
+  - Content quality assessment
+  - Logical flow and argument evaluation
+  - Citation and source verification
+
+### 5. Blog to Tweet Agent (`5_langchain_blog_to_tweet_agent.py`)
 
 Converts blog posts into engaging tweet threads.
 
@@ -129,7 +141,7 @@ Converts blog posts into engaging tweet threads.
   - Narrative flow maintenance
   - Hashtag optimization
 
-### 5. X Reply Agent (`6_langchain_x_reply_agent.py`)
+### 6. X Reply Agent (`6_langchain_x_reply_agent.py`)
 
 Generates and posts replies to tweets and mentions.
 
@@ -140,7 +152,7 @@ Generates and posts replies to tweets and mentions.
   - Brand voice consistency
   - Escalation for complex inquiries
 
-### 6. Twitter Posting Agent (`7_langchain_twitter_posting_agent.py`)
+### 7. Twitter Posting Agent (`7_langchain_twitter_posting_agent.py`)
 
 Handles the scheduling and posting of tweets and threads.
 
@@ -187,6 +199,8 @@ Web_Interface/
 - **Config** (`app/config/page.tsx`): System configuration management
 - **Persona** (`app/persona/page.tsx`): Persona management for content generation
 - **Calendar** (`app/calendar/page.tsx`): Content scheduling calendar
+- **Accounts** (`app/accounts/page.tsx`): Twitter account management
+- **Debug** (`app/debug/page.tsx`): System debugging tools
 
 ### Setup Wizard
 
@@ -194,10 +208,33 @@ The setup wizard (`app/setup/page.tsx` and `components/setup-wizard.tsx`) guides
 
 1. **Welcome**: Introduction and overview
 2. **API Keys**: Configuration of external service credentials
+   - **OpenAI**: API key for content generation
+   - **AI Services**: Perplexity and Anthropic API keys for fact-checking and advanced reasoning
+   - **Twitter**: API credentials for social media interaction
 3. **Database**: Database connection setup
 4. **Agent Configuration**: Agent selection and settings
 5. **Persona**: Content style and tone configuration
 6. **Finish**: Review and completion
+
+### Account Management
+
+The account management system (`app/accounts/page.tsx` and related components) provides functionality for managing Twitter accounts:
+
+- **Account List** (`components/account-list.tsx`): Displays and manages monitored Twitter accounts
+- **Add Account Dialog** (`components/add-account-dialog.tsx`): Interface for adding new accounts to monitor
+- **Import Followed Accounts**: Functionality to import accounts the user follows on Twitter
+- **Account Prioritization**: Ability to set priority levels for different accounts
+- **Account Status**: Tracking of when account data was last fetched
+
+The account management system integrates with Supabase for data storage and the Twitter API for account information retrieval.
+
+### Debug Tools
+
+The debug tools (`app/debug/page.tsx` and related components) provide functionality for troubleshooting the application:
+
+- **Supabase Debug** (`components/supabase-debug.tsx`): Tests connection to Supabase and displays account data
+- **API Endpoint** (`app/api/debug/supabase/route.ts`): Backend support for Supabase connection testing
+- **Error Visualization**: Clear display of connection errors and troubleshooting information
 
 ## State Management and Error Handling
 
@@ -218,10 +255,14 @@ This component is used throughout the dashboard to provide consistent error hand
 
 The Supabase integration is handled through several key components:
 
-- **Supabase Client** (`lib/supabase.ts`): Creates and manages the Supabase client instance
+- **Supabase Client** (`lib/supabase.ts`): Creates and manages the Supabase client instance with robust error handling
 - **Environment Variable Loader** (`lib/env-loader.ts`): Loads environment variables from the root `.env` file
 - **API Endpoint** (`app/api/env/route.ts`): Provides environment variables to client-side code
 - **Database Hooks** (`hooks/use-supabase-data.ts`): Custom React hooks for data fetching with proper state management
+- **Fallback Data Handling**: Support for fallback data when Supabase is not available
+- **Connection Testing**: Tools for testing and debugging Supabase connections
+
+The system now includes enhanced error handling for Supabase operations, with clear error messages and recovery options. The `useSupabaseData` hook provides a standardized way to fetch data with proper loading, error, and empty states.
 
 ### Environment Variable Management
 
@@ -239,8 +280,10 @@ Dashboard components implement comprehensive error handling:
 - **Stats Cards** (`components/stats-cards.tsx`): Shows error states for database statistics
 - **System Status Panel** (`components/system-status-panel.tsx`): Displays system status with error handling
 - **Recent Activity** (`components/recent-activity.tsx`): Shows activity feed with proper error states
+- **Account List** (`components/account-list.tsx`): Handles database connection errors gracefully
+- **Supabase Debug** (`components/supabase-debug.tsx`): Provides detailed error information for troubleshooting
 
-Each component uses the `DataState` component to handle loading, error, and empty states consistently.
+Each component uses the `DataState` component to handle loading, error, and empty states consistently. The system now includes more sophisticated error recovery mechanisms and clearer error messaging for users.
 
 ## Coral Protocol Integration
 
@@ -264,14 +307,14 @@ The system uses Supabase for structured data storage. The schema is defined in `
 - **tweets**: Stores collected tweets with metadata
 - **blogs**: Stores generated blog content
 - **tweet_threads**: Stores generated tweet threads
-- **accounts**: Stores monitored Twitter accounts
+- **x_accounts**: Stores monitored Twitter accounts with priority and status information
 - **agent_logs**: Stores agent activity logs
 - **system_config**: Stores system configuration
 - **personas**: Stores content generation personas
 
 ### Relationships
 
-- Tweets belong to accounts
+- Tweets belong to accounts (x_accounts)
 - Blog posts are based on tweet research
 - Tweet threads are based on blog posts
 - Agent logs reference specific agents and actions
@@ -307,6 +350,8 @@ The system requires several key configuration parameters:
 
 - **API Keys**:
   - OpenAI API key for content generation
+  - Perplexity API key for fact-checking and research
+  - Anthropic API key for advanced reasoning and analysis
   - Twitter API credentials for social media interaction
   - Supabase credentials for database access
 
@@ -409,13 +454,14 @@ Planned enhancements for the system include:
 1. **Authentication**: User authentication and multi-user support
 2. **Advanced Analytics**: Enhanced metrics and performance tracking
 3. **Content Approval Workflow**: Human-in-the-loop approval for generated content
-4. **Additional Platforms**: Support for more social media platforms
+4. **Additional Platforms**: Support for more social media platforms beyond Twitter
 5. **Enhanced Personalization**: More advanced persona configuration
 6. **API Endpoints**: REST API for external integration
-7. **Enhanced Error Handling**: More sophisticated error recovery mechanisms
+7. **Enhanced Account Management**: More sophisticated account prioritization and filtering
 8. **Offline Mode**: Support for working without database connectivity
 9. **Real-time Updates**: WebSocket integration for live data updates
 10. **Comprehensive Testing**: Automated tests for error states and edge cases
+11. **Advanced Debugging Tools**: More sophisticated debugging and troubleshooting capabilities
 
 ---
 

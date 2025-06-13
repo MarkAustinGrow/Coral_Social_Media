@@ -29,19 +29,20 @@ export function SetupWizard() {
   const [formData, setFormData] = useState({
     apiKeys: {
       openai: "",
+      perplexity: "",
+      anthropic: "",
       twitter: "",
       twitterBearer: "",
       twitterApiKey: "",
       twitterApiSecret: "",
       twitterAccessToken: "",
       twitterAccessSecret: "",
-      supabaseUrl: "",
-      supabaseKey: "",
     },
     database: {
       supabaseUrl: "",
       supabaseKey: "",
       qdrantUrl: "http://localhost:6333",
+      qdrantCollection: "tweets",
       enablePooling: true,
       poolSize: 10,
     },
@@ -80,16 +81,73 @@ export function SetupWizard() {
     if (currentStepIndex === steps.length - 1) {
       setIsSubmitting(true)
       
-      // Simulate API call to save configuration
       try {
-        await new Promise(resolve => setTimeout(resolve, 2000))
-        // In a real implementation, this would save the configuration to the server
-        console.log("Form submitted:", formData)
+        // Save configuration to .env file via API
+        const response = await fetch('/api/save-config', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(formData),
+        });
         
-        // Redirect to dashboard after successful submission
-        window.location.href = "/"
+        const result = await response.json();
+        
+        if (!response.ok || !result.success) {
+          throw new Error(result.message || 'Failed to save configuration');
+        }
+        
+        console.log("Configuration saved successfully:", result);
+        
+        // Create a success message element
+        const successMessage = document.createElement('div')
+        successMessage.style.position = 'fixed'
+        successMessage.style.top = '20px'
+        successMessage.style.left = '50%'
+        successMessage.style.transform = 'translateX(-50%)'
+        successMessage.style.backgroundColor = '#10b981'
+        successMessage.style.color = 'white'
+        successMessage.style.padding = '1rem 2rem'
+        successMessage.style.borderRadius = '0.5rem'
+        successMessage.style.boxShadow = '0 4px 6px rgba(0, 0, 0, 0.1)'
+        successMessage.style.zIndex = '9999'
+        successMessage.textContent = 'Setup completed successfully! Configuration saved to .env file.'
+        
+        // Add the success message to the document
+        document.body.appendChild(successMessage)
+        
+        // Remove the success message after a few seconds
+        setTimeout(() => {
+          if (document.body.contains(successMessage)) {
+            document.body.removeChild(successMessage)
+          }
+        }, 5000)
       } catch (error) {
-        console.error("Error submitting form:", error)
+        console.error("Error saving configuration:", error)
+        
+        // Create an error message element
+        const errorMessage = document.createElement('div')
+        errorMessage.style.position = 'fixed'
+        errorMessage.style.top = '20px'
+        errorMessage.style.left = '50%'
+        errorMessage.style.transform = 'translateX(-50%)'
+        errorMessage.style.backgroundColor = '#ef4444'
+        errorMessage.style.color = 'white'
+        errorMessage.style.padding = '1rem 2rem'
+        errorMessage.style.borderRadius = '0.5rem'
+        errorMessage.style.boxShadow = '0 4px 6px rgba(0, 0, 0, 0.1)'
+        errorMessage.style.zIndex = '9999'
+        errorMessage.textContent = `Error saving configuration: ${error instanceof Error ? error.message : String(error)}`
+        
+        // Add the error message to the document
+        document.body.appendChild(errorMessage)
+        
+        // Remove the error message after a few seconds
+        setTimeout(() => {
+          if (document.body.contains(errorMessage)) {
+            document.body.removeChild(errorMessage)
+          }
+        }, 5000)
       } finally {
         setIsSubmitting(false)
       }
@@ -142,10 +200,91 @@ export function SetupWizard() {
           </div>
           
           <div className="min-h-[300px]">
-            <CurrentStepComponent 
-              formData={formData[currentStep.id === "welcome" ? "apiKeys" : currentStep.id === "finish" ? "agents" : currentStep.id as keyof typeof formData]} 
-              updateFormData={(data: any) => updateFormData(currentStep.id === "welcome" ? "apiKeys" : currentStep.id === "finish" ? "agents" : currentStep.id, data)} 
-            />
+            {currentStep.id === "welcome" ? (
+              <WelcomeStep 
+                formData={formData.apiKeys} 
+                updateFormData={(data: any) => updateFormData("apiKeys", data)} 
+              />
+            ) : currentStep.id === "api-keys" ? (
+              <ApiKeysStep 
+                formData={formData.apiKeys} 
+                updateFormData={(data: any) => updateFormData("apiKeys", data)} 
+              />
+            ) : currentStep.id === "database" ? (
+              <DatabaseStep 
+                formData={formData.database} 
+                updateFormData={(data: any) => updateFormData("database", data)} 
+              />
+            ) : currentStep.id === "agents" ? (
+              <AgentConfigStep 
+                formData={formData.agents} 
+                updateFormData={(data: any) => updateFormData("agents", data)} 
+              />
+            ) : currentStep.id === "persona" ? (
+              <PersonaStep 
+                formData={formData.persona} 
+                updateFormData={(data: any) => updateFormData("persona", data)} 
+              />
+            ) : (
+              <FinishStep 
+                formData={{
+                  ...formData.apiKeys,
+                  ...formData.database,
+                  ...formData.agents,
+                  ...formData.persona
+                }} 
+                updateFormData={(data: any) => {
+                  // Determine which section each field belongs to
+                  const apiKeysData: any = {};
+                  const databaseData: any = {};
+                  const agentsData: any = {};
+                  const personaData: any = {};
+                  
+                  // API Keys fields
+                  if ('openai' in data) apiKeysData.openai = data.openai;
+                  if ('perplexity' in data) apiKeysData.perplexity = data.perplexity;
+                  if ('anthropic' in data) apiKeysData.anthropic = data.anthropic;
+                  if ('twitter' in data) apiKeysData.twitter = data.twitter;
+                  if ('twitterBearer' in data) apiKeysData.twitterBearer = data.twitterBearer;
+                  if ('twitterApiKey' in data) apiKeysData.twitterApiKey = data.twitterApiKey;
+                  if ('twitterApiSecret' in data) apiKeysData.twitterApiSecret = data.twitterApiSecret;
+                  if ('twitterAccessToken' in data) apiKeysData.twitterAccessToken = data.twitterAccessToken;
+                  if ('twitterAccessSecret' in data) apiKeysData.twitterAccessSecret = data.twitterAccessSecret;
+                  
+                  // Database fields
+                  if ('supabaseUrl' in data) databaseData.supabaseUrl = data.supabaseUrl;
+                  if ('supabaseKey' in data) databaseData.supabaseKey = data.supabaseKey;
+                  if ('qdrantUrl' in data) databaseData.qdrantUrl = data.qdrantUrl;
+                  if ('qdrantCollection' in data) databaseData.qdrantCollection = data.qdrantCollection;
+                  if ('enablePooling' in data) databaseData.enablePooling = data.enablePooling;
+                  if ('poolSize' in data) databaseData.poolSize = data.poolSize;
+                  
+                  // Agents fields
+                  if ('tweetScraping' in data) agentsData.tweetScraping = data.tweetScraping;
+                  if ('tweetResearch' in data) agentsData.tweetResearch = data.tweetResearch;
+                  if ('blogWriting' in data) agentsData.blogWriting = data.blogWriting;
+                  if ('blogToTweet' in data) agentsData.blogToTweet = data.blogToTweet;
+                  if ('xReply' in data) agentsData.xReply = data.xReply;
+                  if ('twitterPosting' in data) agentsData.twitterPosting = data.twitterPosting;
+                  if ('maxConcurrentAgents' in data) agentsData.maxConcurrentAgents = data.maxConcurrentAgents;
+                  if ('enableAutoRestart' in data) agentsData.enableAutoRestart = data.enableAutoRestart;
+                  
+                  // Persona fields
+                  if ('name' in data) personaData.name = data.name;
+                  if ('description' in data) personaData.description = data.description;
+                  if ('tone' in data) personaData.tone = data.tone;
+                  if ('humor' in data) personaData.humor = data.humor;
+                  if ('enthusiasm' in data) personaData.enthusiasm = data.enthusiasm;
+                  if ('assertiveness' in data) personaData.assertiveness = data.assertiveness;
+                  
+                  // Update each section with its respective data
+                  if (Object.keys(apiKeysData).length > 0) updateFormData("apiKeys", apiKeysData);
+                  if (Object.keys(databaseData).length > 0) updateFormData("database", databaseData);
+                  if (Object.keys(agentsData).length > 0) updateFormData("agents", agentsData);
+                  if (Object.keys(personaData).length > 0) updateFormData("persona", personaData);
+                }} 
+              />
+            )}
           </div>
           
           <div className="flex justify-between pt-4">

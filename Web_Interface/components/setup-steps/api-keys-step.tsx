@@ -10,14 +10,14 @@ import { Eye, EyeOff, CheckCircle, XCircle } from "lucide-react"
 interface ApiKeysStepProps {
   formData: {
     openai: string
+    perplexity: string
+    anthropic: string
     twitter: string
     twitterBearer: string
     twitterApiKey: string
     twitterApiSecret: string
     twitterAccessToken: string
     twitterAccessSecret: string
-    supabaseUrl: string
-    supabaseKey: string
   }
   updateFormData: (data: any) => void
 }
@@ -69,8 +69,8 @@ export function ApiKeysStep({ formData, updateFormData }: ApiKeysStepProps) {
       <Tabs defaultValue="openai" className="w-full">
         <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="openai">OpenAI</TabsTrigger>
+          <TabsTrigger value="ai-services">AI Services</TabsTrigger>
           <TabsTrigger value="twitter">Twitter</TabsTrigger>
-          <TabsTrigger value="supabase">Supabase</TabsTrigger>
         </TabsList>
         
         <TabsContent value="openai" className="space-y-4 pt-4">
@@ -113,6 +113,92 @@ export function ApiKeysStep({ formData, updateFormData }: ApiKeysStepProps) {
             <p className="text-xs text-muted-foreground">
               Your OpenAI API key is used for content generation and analysis.
             </p>
+          </div>
+        </TabsContent>
+        
+        <TabsContent value="ai-services" className="space-y-4 pt-4">
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <div className="flex justify-between items-center">
+                <Label htmlFor="perplexity">Perplexity API Key</Label>
+                {validationStatus.perplexity === true && <CheckCircle className="h-4 w-4 text-green-500" />}
+                {validationStatus.perplexity === false && <XCircle className="h-4 w-4 text-red-500" />}
+              </div>
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <Input
+                    id="perplexity"
+                    name="perplexity"
+                    type={visibleKeys.perplexity ? "text" : "password"}
+                    placeholder="pplx-..."
+                    value={formData.perplexity}
+                    onChange={handleInputChange}
+                  />
+                </div>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => toggleKeyVisibility("perplexity")}
+                >
+                  {visibleKeys.perplexity ? (
+                    <EyeOff className="h-4 w-4" />
+                  ) : (
+                    <Eye className="h-4 w-4" />
+                  )}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => validateKey("perplexity")}
+                  disabled={isValidating.perplexity || !formData.perplexity}
+                >
+                  {isValidating.perplexity ? "Validating..." : "Validate"}
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Perplexity API key is used for fact-checking and research in the blog critique agent.
+              </p>
+            </div>
+            
+            <div className="space-y-2">
+              <div className="flex justify-between items-center">
+                <Label htmlFor="anthropic">Anthropic API Key</Label>
+                {validationStatus.anthropic === true && <CheckCircle className="h-4 w-4 text-green-500" />}
+                {validationStatus.anthropic === false && <XCircle className="h-4 w-4 text-red-500" />}
+              </div>
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <Input
+                    id="anthropic"
+                    name="anthropic"
+                    type={visibleKeys.anthropic ? "text" : "password"}
+                    placeholder="sk-ant-..."
+                    value={formData.anthropic}
+                    onChange={handleInputChange}
+                  />
+                </div>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => toggleKeyVisibility("anthropic")}
+                >
+                  {visibleKeys.anthropic ? (
+                    <EyeOff className="h-4 w-4" />
+                  ) : (
+                    <Eye className="h-4 w-4" />
+                  )}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => validateKey("anthropic")}
+                  disabled={isValidating.anthropic || !formData.anthropic}
+                >
+                  {isValidating.anthropic ? "Validating..." : "Validate"}
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Anthropic API key is used for advanced reasoning and analysis tasks.
+              </p>
+            </div>
           </div>
         </TabsContent>
         
@@ -205,78 +291,6 @@ export function ApiKeysStep({ formData, updateFormData }: ApiKeysStepProps) {
           </div>
         </TabsContent>
         
-        <TabsContent value="supabase" className="space-y-4 pt-4">
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <div className="flex justify-between items-center">
-                <Label htmlFor="supabaseUrl">Supabase URL</Label>
-                {validationStatus.supabaseUrl === true && <CheckCircle className="h-4 w-4 text-green-500" />}
-                {validationStatus.supabaseUrl === false && <XCircle className="h-4 w-4 text-red-500" />}
-              </div>
-              <div className="flex gap-2">
-                <div className="relative flex-1">
-                  <Input
-                    id="supabaseUrl"
-                    name="supabaseUrl"
-                    type="text"
-                    placeholder="https://example.supabase.co"
-                    value={formData.supabaseUrl}
-                    onChange={handleInputChange}
-                  />
-                </div>
-                <Button
-                  variant="outline"
-                  onClick={() => validateKey("supabaseUrl")}
-                  disabled={isValidating.supabaseUrl || !formData.supabaseUrl}
-                >
-                  {isValidating.supabaseUrl ? "Validating..." : "Validate"}
-                </Button>
-              </div>
-            </div>
-            
-            <div className="space-y-2">
-              <div className="flex justify-between items-center">
-                <Label htmlFor="supabaseKey">Supabase API Key</Label>
-                {validationStatus.supabaseKey === true && <CheckCircle className="h-4 w-4 text-green-500" />}
-                {validationStatus.supabaseKey === false && <XCircle className="h-4 w-4 text-red-500" />}
-              </div>
-              <div className="flex gap-2">
-                <div className="relative flex-1">
-                  <Input
-                    id="supabaseKey"
-                    name="supabaseKey"
-                    type={visibleKeys.supabaseKey ? "text" : "password"}
-                    placeholder="eyJ..."
-                    value={formData.supabaseKey}
-                    onChange={handleInputChange}
-                  />
-                </div>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  onClick={() => toggleKeyVisibility("supabaseKey")}
-                >
-                  {visibleKeys.supabaseKey ? (
-                    <EyeOff className="h-4 w-4" />
-                  ) : (
-                    <Eye className="h-4 w-4" />
-                  )}
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => validateKey("supabaseKey")}
-                  disabled={isValidating.supabaseKey || !formData.supabaseKey}
-                >
-                  {isValidating.supabaseKey ? "Validating..." : "Validate"}
-                </Button>
-              </div>
-            </div>
-            
-            <p className="text-xs text-muted-foreground">
-              Supabase is used for storing tweets, blogs, and other data.
-            </p>
-          </div>
-        </TabsContent>
       </Tabs>
     </div>
   )

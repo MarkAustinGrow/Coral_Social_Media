@@ -14,6 +14,7 @@ import {
   Twitter,
   Users,
   Zap,
+  Bug,
 } from "lucide-react"
 
 const items = [
@@ -21,6 +22,11 @@ const items = [
     title: "Dashboard",
     href: "/",
     icon: LayoutDashboard,
+  },
+  {
+    title: "Debug Tools",
+    href: "/debug",
+    icon: Bug,
   },
   {
     title: "X API Usage",
@@ -74,17 +80,17 @@ export function SideNav() {
 
   return (
     <nav className="hidden w-full flex-col md:flex">
-      <div className="space-y-1 py-2">
+      <div className="space-y-2.5 py-4">
         {items.map((item) => (
           <Link
             key={item.href}
             href={item.href}
             className={cn(
-              "group flex items-center rounded-md px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground",
-              pathname === item.href ? "bg-accent" : "transparent",
+              "group flex items-center rounded-md px-4 py-2.5 text-sm font-medium hover:bg-accent hover:text-accent-foreground transition-colors",
+              pathname === item.href ? "bg-accent text-accent-foreground font-semibold" : "text-muted-foreground",
             )}
           >
-            <item.icon className="mr-2 h-4 w-4" />
+            <item.icon className="mr-3 h-5 w-5" />
             <span>{item.title}</span>
           </Link>
         ))}

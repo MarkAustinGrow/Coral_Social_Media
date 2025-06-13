@@ -1,12 +1,9 @@
-import type { Metadata } from "next"
+"use client"
+
 import { SetupWizard } from "@/components/setup-wizard"
 
-export const metadata: Metadata = {
-  title: "Setup Wizard | Social Media Agent System",
-  description: "Configure your Social Media Agent System",
-}
-
 export default function SetupPage() {
+  
   return (
     <div className="container relative min-h-screen flex-col items-center justify-center grid lg:max-w-none lg:grid-cols-1 lg:px-0">
       <div className="mx-auto flex w-full max-w-4xl flex-col justify-center space-y-6 p-4 md:p-8">

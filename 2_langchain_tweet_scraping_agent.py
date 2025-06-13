@@ -123,12 +123,17 @@ def fetch_tweets(
                     if not include_replies and getattr(tweet, 'referenced_tweets', None):
                         continue
                         
+                    # Extract metrics
+                    metrics = {}
+                    if hasattr(tweet, 'public_metrics'):
+                        metrics = tweet.public_metrics
+                    
                     tweet_data = {
                         "id": tweet.id,
                         "text": tweet.text,
                         "created_at": tweet.created_at.isoformat() if hasattr(tweet, 'created_at') else None,
                         "author": username,
-                        "metrics": tweet.public_metrics if hasattr(tweet, 'public_metrics') else {},
+                        "metrics": metrics,
                         "conversation_id": tweet.conversation_id if hasattr(tweet, 'conversation_id') else None
                     }
                     results.append(tweet_data)
@@ -162,15 +167,12 @@ def get_api_usage():
         Dictionary containing rate limit information
     """
     try:
-        # Get rate limit status for user timeline endpoint
-        rate_limits = twitter_client.rate_limit_status()
-        
-        # Extract relevant rate limit info
-        timeline_limits = rate_limits.get('resources', {}).get('statuses', {}).get('/statuses/user_timeline', {})
-        
+        # Tweepy doesn't provide direct access to rate limit status in newer versions
+        # So we'll return default values
         rate_limit_info = {
-            "remaining": timeline_limits.get('remaining', 180),  # Default to 180 if not found
-            "reset_time": timeline_limits.get('reset', int(time.time()) + 900)  # Default to 15 minutes from now
+            "remaining": 180,  # Default to 180 if not found
+            "reset_time": int(time.time()) + 900,  # Default to 15 minutes from now
+            "limit": 300
         }
         
         return {
@@ -181,7 +183,13 @@ def get_api_usage():
         logger.error(f"Error getting rate limits: {str(e)}")
         return {
             "error": f"Failed to get rate limits: {str(e)}",
-            "rate_limit_info": {"remaining": 180, "reset_time": int(time.time()) + 900}
+            "rate_limit_info": {"remaining": 180, "reset_time": int(time.time()) + 900, "limit": 300}
+        }
+    except Exception as e:
+        logger.error(f"Unexpected error in get_api_usage: {str(e)}")
+        return {
+            "error": f"Unexpected error: {str(e)}",
+            "rate_limit_info": {"remaining": 180, "reset_time": int(time.time()) + 900, "limit": 300}
         }
 
 @tool

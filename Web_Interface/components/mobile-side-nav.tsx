@@ -91,18 +91,18 @@ export function MobileSideNav() {
           <span className="font-bold">Social Media Agent System</span>
         </Link>
         <ScrollArea className="my-4 h-[calc(100vh-8rem)] pb-10">
-          <div className="flex flex-col space-y-1">
+          <div className="flex flex-col space-y-2.5">
             {items.map((item) => (
               <Link
                 key={item.href}
                 href={item.href}
                 onClick={() => setOpen(false)}
                 className={cn(
-                  "flex items-center rounded-md px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground",
-                  pathname === item.href ? "bg-accent" : "transparent",
+                  "flex items-center rounded-md px-4 py-2.5 text-sm font-medium hover:bg-accent hover:text-accent-foreground transition-colors",
+                  pathname === item.href ? "bg-accent text-accent-foreground font-semibold" : "text-muted-foreground",
                 )}
               >
-                <item.icon className="mr-2 h-4 w-4" />
+                <item.icon className="mr-3 h-5 w-5" />
                 <span>{item.title}</span>
               </Link>
             ))}

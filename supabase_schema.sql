@@ -10,11 +10,13 @@ CREATE TABLE IF NOT EXISTS tweets_cache (
   replies INTEGER DEFAULT 0,
   conversation_id TEXT,
   analyzed BOOLEAN DEFAULT FALSE,
+  engagement_processed BOOLEAN DEFAULT FALSE,
   inserted_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 -- Create indexes for tweets_cache
 CREATE INDEX IF NOT EXISTS idx_tweets_cache_analyzed ON tweets_cache(analyzed);
+CREATE INDEX IF NOT EXISTS idx_tweets_cache_engagement_processed ON tweets_cache(engagement_processed);
 CREATE INDEX IF NOT EXISTS idx_tweets_cache_author ON tweets_cache(author);
 
 -- Create x_accounts table
@@ -102,7 +104,10 @@ CREATE TABLE IF NOT EXISTS engagement_metrics (
   id SERIAL PRIMARY KEY,
   topic TEXT UNIQUE NOT NULL,
   engagement_score INTEGER DEFAULT 0,
-  last_updated TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  last_updated TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  topic_description TEXT,
+  subtopics JSONB,
+  category TEXT
 );
 
 -- Create index for engagement_metrics
