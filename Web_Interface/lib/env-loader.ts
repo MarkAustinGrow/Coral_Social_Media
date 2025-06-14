@@ -19,8 +19,19 @@ export function loadEnvFromRoot(): Record<string, string> {
       return {};
     }
 
-    // Path to the root .env file (one directory up from the Web_Interface directory)
-    const rootEnvPath = path.resolve(process.cwd(), '../.env');
+    // Path to the root .env file
+    // First try the current directory
+    let rootEnvPath = path.resolve(process.cwd(), '.env');
+    
+    // If not found, try one level up (in case we're in the Web_Interface directory)
+    if (!fs.existsSync(rootEnvPath)) {
+      rootEnvPath = path.resolve(process.cwd(), '../.env');
+    }
+    
+    // If still not found, try two levels up
+    if (!fs.existsSync(rootEnvPath)) {
+      rootEnvPath = path.resolve(process.cwd(), '../../.env');
+    }
     
     // Check if the file exists
     if (!fs.existsSync(rootEnvPath)) {

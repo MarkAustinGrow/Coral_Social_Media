@@ -16,6 +16,12 @@ from datetime import datetime, timedelta
 import tweepy
 from tweepy.errors import TweepyException
 
+import signal
+import sys
+import atexit
+import agent_status_updater as asu
+
+
 # Setup logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -71,6 +77,23 @@ if not os.getenv("TWITTER_BEARER_TOKEN"):
     raise ValueError("TWITTER_BEARER_TOKEN is not set in environment variables.")
 if not os.getenv("SUPABASE_URL") or not os.getenv("SUPABASE_KEY"):
     raise ValueError("SUPABASE_URL or SUPABASE_KEY is not set in environment variables.")
+
+# Agent name for status updates - must match exactly what's in the database
+AGENT_NAME = "Twitter Posting Agent"
+
+# Register signal handlers for graceful shutdown
+def signal_handler(sig, frame):
+    """Handle Ctrl+C and other signals to gracefully shut down"""
+    print("Shutting down gracefully...")
+    asu.mark_agent_stopped(AGENT_NAME)
+    sys.exit(0)
+
+# Register signal handlers
+signal.signal(signal.SIGINT, signal_handler)  # Ctrl+C
+signal.signal(signal.SIGTERM, signal_handler)  # Termination signal
+
+# Register function to mark agent as stopped when the script exits
+atexit.register(lambda: asu.mark_agent_stopped(AGENT_NAME))
 
 def get_tools_description(tools):
     return "\n".join(
@@ -390,4 +413,17 @@ async def main():
                 raise
 
 if __name__ == "__main__":
+        try:
+        # Mark agent as started
+    asu.mark_agent_started(AGENT_NAME)
+    
     asyncio.run(main())
+        except Exception as e:
+                # Report error in status
+                asu.report_error(AGENT_NAME, f"Fatal error: {str(e)}")
+                
+                # Re-raise the exception
+                raise
+        finally:
+                # Mark agent as stopped
+                asu.mark_agent_stopped(AGENT_NAME)

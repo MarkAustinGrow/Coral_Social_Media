@@ -241,6 +241,98 @@ The debug tools (`app/debug/page.tsx` and related components) provide functional
 - **API Endpoint** (`app/api/debug/supabase/route.ts`): Backend support for Supabase connection testing
 - **Error Visualization**: Clear display of connection errors and troubleshooting information
 
+## Agent Status Monitoring
+
+The system includes a comprehensive agent status monitoring system that tracks the health and activity of all agents. This system helps identify and fix issues with agents that may become stuck or unresponsive.
+
+### Agent Status Table
+
+The `agent_status` table in the Supabase database stores the current status of each agent:
+
+```sql
+CREATE TABLE agent_status (
+  id SERIAL PRIMARY KEY,
+  agent_name TEXT NOT NULL UNIQUE,
+  status TEXT NOT NULL DEFAULT 'stopped',
+  health INTEGER NOT NULL DEFAULT 0,
+  last_heartbeat TIMESTAMPTZ,
+  last_error TEXT,
+  last_activity TEXT,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+```
+
+Each agent updates its status in this table as it runs, providing real-time information about its health and activity.
+
+### Agent Status Updater
+
+The `agent_status_updater.py` module provides functions for agents to update their status:
+
+- `mark_agent_started(agent_name)`: Mark an agent as started
+- `mark_agent_stopped(agent_name)`: Mark an agent as stopped
+- `update_agent_status(agent_name, status, health, last_activity)`: Update an agent's status
+- `send_heartbeat(agent_name)`: Send a heartbeat to indicate the agent is still running
+- `report_error(agent_name, error_message)`: Report an error
+- `report_warning(agent_name, warning_message, health)`: Report a warning
+
+### Agent Status Monitoring Tools
+
+The system includes several tools for monitoring and fixing agent status issues:
+
+1. **Agent Status Lock** (`agent_status_lock.py`): A utility for manually controlling agent statuses
+   - `force_agent_status(agent_name, status, health, last_activity)`: Force an agent's status
+   - `get_agent_status(agent_name)`: Get the current status of an agent
+   - `list_all_agents()`: List all agents and their statuses
+
+2. **Agent Status Monitor** (`agent_status_monitor.py`): A service that continuously monitors agent statuses
+   - Automatically detects agents that are stuck in the "running" state
+   - Checks if agent processes are actually running
+   - Monitors for agents that have been inactive for too long
+   - Automatically fixes agent statuses when issues are detected
+
+3. **Fix Agent Status** (`fix_agent_status.py`): A simple script for manually fixing agent statuses
+
+### Known Issues and Workarounds
+
+#### Agent Status Visibility Issue
+
+There was a situation where the Tweet Scraping Agent appeared to be stuck in the "running" state in the database, but was actually running properly in a background window. This created a discrepancy between the actual agent state and what was displayed in the web interface.
+
+The issue was primarily about visibility and process management rather than the agent being truly stuck:
+
+1. The agent was running in a background window that wasn't immediately visible
+2. Attempts to stop the agent through the web interface were ineffective because the process was still running
+3. The database showed the agent as "running" (which was technically correct), but the web interface couldn't properly manage it
+
+**Tools for Managing Agent Status:**
+
+1. **Manual Status Control**: Use the `agent_status_lock.py` utility to view or force an agent's status:
+   ```bash
+   # View all agent statuses
+   python agent_status_lock.py
+   
+   # Force an agent's status
+   python agent_status_lock.py "Tweet Scraping Agent" stopped 0
+   ```
+
+2. **Process Monitoring**: Run the `agent_status_monitor.py` script as a background service:
+   ```bash
+   # On Windows (PowerShell):
+   Start-Process -NoNewWindow python -ArgumentList "agent_status_monitor.py"
+   ```
+   This script monitors agent processes and ensures their database status accurately reflects their actual running state.
+
+3. **Process Verification**: Before starting any agents, check if they're already running in the background:
+   ```bash
+   # On Windows
+   tasklist | findstr python
+   
+   # On Linux/Mac
+   ps aux | grep python
+   ```
+
+These tools help maintain consistency between the actual running state of agents and their representation in the database and web interface.
+
 ## State Management and Error Handling
 
 The system implements robust state management and error handling to provide a better user experience, especially when dealing with database connections and external services.

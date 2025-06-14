@@ -11,7 +11,8 @@ export function useSupabaseData<T>(
     filter?: { column: string; value: any }[]
     limit?: number
     orderBy?: { column: string; ascending?: boolean }
-  }
+  },
+  refreshKey?: number
 ): DataState<T[]> {
   // Initialize with loading state
   const [state, setState] = useState<DataState<T[]>>({
@@ -84,9 +85,20 @@ export function useSupabaseData<T>(
           return
         }
 
+        // Handle empty results more gracefully
+        const isEmpty = !data || (Array.isArray(data) && data.length === 0);
+        
         if (isMounted) {
           setState({
-            data: data as T[],
+            // For system status checks, we want to treat empty arrays as valid data
+            // This ensures tables that exist but are empty are still considered accessible
+            data: isEmpty && tableName in { 
+              tweets_cache: true, 
+              blog_posts: true, 
+              potential_tweets: true, 
+              tweet_insights: true, 
+              x_accounts: true 
+            } ? [{}] as T[] : data as T[],
             isLoading: false,
             error: null,
           })
@@ -108,7 +120,7 @@ export function useSupabaseData<T>(
     return () => {
       isMounted = false;
     }
-  }, [tableName, JSON.stringify(options)])
+  }, [tableName, JSON.stringify(options), refreshKey])
 
   return state
 }

@@ -3,86 +3,160 @@
 import { useState } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
-import { CheckCircle, AlertCircle, XCircle, RefreshCw, ServerCrash } from "lucide-react"
+import { CheckCircle, AlertCircle, XCircle, RefreshCw, ServerCrash, Play, Square, Info, AlertTriangle } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { 
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger
+} from "@/components/ui/dropdown-menu"
 import { useSupabaseData } from "@/hooks/use-supabase-data"
 import { DataState } from "@/components/ui/data-state"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { getSupabaseClient } from "@/lib/supabase"
+import { toast } from "sonner"
+import { formatDistanceToNow } from "date-fns"
 
 // Types for agent status
 interface AgentStatus {
-  name: string
+  id: number
+  agent_name: string
   status: "running" | "warning" | "error" | "stopped"
   health: number
-}
-
-// Map of agent names to their database tables
-const agentTableMap = {
-  "Content Collector": "tweets_cache",
-  "Blog Generator": "blog_posts",
-  "Tweet Scheduler": "potential_tweets",
-  "Engagement Analyzer": "tweet_insights",
-  "Account Manager": "x_accounts"
+  last_heartbeat: string | null
+  last_error: string | null
+  last_activity: string | null
+  updated_at: string
 }
 
 export function SystemStatusPanel() {
   const [refreshKey, setRefreshKey] = useState(0)
+  const [isStarting, setIsStarting] = useState<Record<string, boolean>>({})
+  const [isStopping, setIsStopping] = useState<Record<string, boolean>>({})
+  const [isForceUpdating, setIsForceUpdating] = useState<Record<string, boolean>>({})
   
-  // In a real implementation, we would fetch agent status from a dedicated table
-  // For now, we'll check if the tables exist and are accessible
-  const tableChecks = Object.entries(agentTableMap).map(([agentName, tableName]) => {
-    return {
-      agentName,
-      ...useSupabaseData<{ exists: boolean }>(
-        tableName,
-        { 
-          columns: 'count(*)',
-          limit: 1
-        }
-      )
-    }
-  })
-  
-  // Determine overall state
-  const isLoading = tableChecks.some(check => check.isLoading)
-  const hasError = tableChecks.some(check => check.error)
-  
-  // Combine errors if any
-  const error = hasError ? {
-    message: 'Error checking system status',
-    details: tableChecks
-      .filter(check => check.error)
-      .map(check => `${check.agentName}: ${check.error?.message}`)
-      .join(', ')
-  } : null
-  
-  // Create agent status data
-  const agentStatus: AgentStatus[] = !isLoading && !hasError 
-    ? tableChecks.map(check => {
-        // Simulate different statuses based on table access
-        // In a real implementation, this would come from a status table
-        const hasAccess = check.data !== null
-        const randomHealth = hasAccess 
-          ? Math.floor(Math.random() * 30) + 70 // 70-100 if accessible
-          : Math.floor(Math.random() * 40) // 0-40 if not accessible
-        
-        let status: AgentStatus["status"] = "stopped"
-        if (hasAccess) {
-          if (randomHealth > 90) status = "running"
-          else if (randomHealth > 75) status = "warning"
-          else status = "error"
-        }
-        
-        return {
-          name: check.agentName,
-          status,
-          health: randomHealth
-        }
-      })
-    : []
+  // Fetch agent status from the agent_status table
+  const agentStatusResult = useSupabaseData<AgentStatus>(
+    'agent_status',
+    { 
+      columns: '*',
+      orderBy: { column: 'agent_name', ascending: true }
+    },
+    refreshKey
+  )
   
   // Handle refresh
   const handleRefresh = () => {
     setRefreshKey(prev => prev + 1)
+  }
+  
+  // Handle starting an agent
+  const handleStartAgent = async (agentName: string) => {
+    try {
+      setIsStarting(prev => ({ ...prev, [agentName]: true }))
+      
+      // Call the API to start the agent
+      const response = await fetch('/api/agents/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ agentName })
+      })
+      
+      const data = await response.json()
+      
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to start agent')
+      }
+      
+      toast.success(`${agentName} started successfully`)
+      handleRefresh()
+    } catch (error: any) {
+      toast.error(`Failed to start ${agentName}: ${error.message}`)
+    } finally {
+      setIsStarting(prev => ({ ...prev, [agentName]: false }))
+    }
+  }
+  
+  // Handle stopping an agent
+  const handleStopAgent = async (agentName: string) => {
+    try {
+      setIsStopping(prev => ({ ...prev, [agentName]: true }))
+      
+      // Call the API to stop the agent
+      const response = await fetch('/api/agents/stop', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ agentName })
+      })
+      
+      const data = await response.json()
+      
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to stop agent')
+      }
+      
+      toast.success(`${agentName} stopped successfully`)
+      handleRefresh()
+    } catch (error: any) {
+      toast.error(`Failed to stop ${agentName}: ${error.message}`)
+    } finally {
+      setIsStopping(prev => ({ ...prev, [agentName]: false }))
+    }
+  }
+  
+  // Handle force updating an agent's status
+  const handleForceStatus = async (agentName: string, status: string) => {
+    try {
+      setIsForceUpdating(prev => ({ ...prev, [agentName]: true }))
+      
+      // Call the API to force update the agent's status
+      const response = await fetch('/api/agents/force-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          agentName,
+          status,
+          health: status === 'stopped' ? 0 : 100,
+          lastActivity: `Status force-updated to ${status}`
+        })
+      })
+      
+      const data = await response.json()
+      
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to force update agent status')
+      }
+      
+      toast.success(`${agentName} status force-updated to ${status}`)
+      handleRefresh()
+    } catch (error: any) {
+      toast.error(`Failed to force update ${agentName} status: ${error.message}`)
+    } finally {
+      setIsForceUpdating(prev => ({ ...prev, [agentName]: false }))
+    }
+  }
+  
+  // Handle starting all agents
+  const handleStartAllAgents = async () => {
+    try {
+      // Call the API to start all agents
+      const response = await fetch('/api/agents/start-all', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      })
+      
+      const data = await response.json()
+      
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to start all agents')
+      }
+      
+      toast.success('All agents started successfully')
+      handleRefresh()
+    } catch (error: any) {
+      toast.error(`Failed to start all agents: ${error.message}`)
+    }
   }
   
   // Status helpers
@@ -132,11 +206,21 @@ export function SystemStatusPanel() {
     }
   }
 
+  // Format time ago
+  const formatTimeAgo = (dateString: string | null) => {
+    if (!dateString) return 'Never'
+    try {
+      return formatDistanceToNow(new Date(dateString), { addSuffix: true })
+    } catch (error) {
+      return 'Invalid date'
+    }
+  }
+
   return (
     <DataState
-      isLoading={isLoading}
-      error={error}
-      data={agentStatus}
+      isLoading={agentStatusResult.isLoading}
+      error={agentStatusResult.error}
+      data={agentStatusResult.data}
       onRetry={handleRefresh}
       loadingComponent={
         <div className="space-y-4">
@@ -191,18 +275,166 @@ export function SystemStatusPanel() {
     >
       {(agents) => (
         <div className="space-y-4">
-          {agents.map((agent, index) => (
-            <div key={index} className="flex items-center gap-4 rounded-lg border p-4">
+          <div className="flex justify-end">
+            <Button 
+              onClick={handleStartAllAgents} 
+              className="bg-green-600 hover:bg-green-700"
+            >
+              Start All Agents
+            </Button>
+          </div>
+          
+          {agents.map((agent) => (
+            <div key={agent.id} className="flex items-center gap-4 rounded-lg border p-4">
               <div className="flex-none">{getStatusIcon(agent.status)}</div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between mb-2">
-                  <h4 className="font-medium">{agent.name}</h4>
+                  <h4 className="font-medium">{agent.agent_name}</h4>
                   {getStatusBadge(agent.status)}
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 mb-2">
                   <Progress value={agent.health} className="h-2" />
                   <span className="text-xs text-muted-foreground">{agent.health}%</span>
                 </div>
+                
+                <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground mt-2">
+                  {agent.last_activity && (
+                    <div className="flex items-center">
+                      <span className="mr-1">Last activity:</span>
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="underline decoration-dotted">
+                              {formatTimeAgo(agent.updated_at)}
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>{agent.last_activity}</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    </div>
+                  )}
+                  
+                  {agent.last_error && (
+                    <div className="flex items-center text-red-500">
+                      <span className="mr-1">Error:</span>
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="underline decoration-dotted">
+                              {agent.last_error.substring(0, 20)}...
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>{agent.last_error}</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    </div>
+                  )}
+                </div>
+              </div>
+              
+              <div className="flex-none flex items-center">
+                {agent.status === 'stopped' ? (
+                  <Button 
+                    size="sm" 
+                    variant="outline" 
+                    className="bg-green-100 text-green-800 hover:bg-green-200 dark:bg-green-900 dark:text-green-200 dark:hover:bg-green-800"
+                    onClick={() => handleStartAgent(agent.agent_name)}
+                    disabled={isStarting[agent.agent_name]}
+                  >
+                    {isStarting[agent.agent_name] ? (
+                      <>
+                        <RefreshCw className="h-4 w-4 mr-1 animate-spin" />
+                        Starting...
+                      </>
+                    ) : (
+                      <>
+                        <Play className="h-4 w-4 mr-1" />
+                        Start
+                      </>
+                    )}
+                  </Button>
+                ) : (
+                  <Button 
+                    size="sm" 
+                    variant="outline" 
+                    className="bg-red-100 text-red-800 hover:bg-red-200 dark:bg-red-900 dark:text-red-200 dark:hover:bg-red-800"
+                    onClick={() => handleStopAgent(agent.agent_name)}
+                    disabled={isStopping[agent.agent_name]}
+                  >
+                    {isStopping[agent.agent_name] ? (
+                      <>
+                        <RefreshCw className="h-4 w-4 mr-1 animate-spin" />
+                        Stopping...
+                      </>
+                    ) : (
+                      <>
+                        <Square className="h-4 w-4 mr-1" />
+                        Stop
+                      </>
+                    )}
+                  </Button>
+                )}
+                
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button 
+                      size="sm" 
+                      variant="ghost" 
+                      className="ml-1"
+                    >
+                      <AlertTriangle className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem
+                      onClick={() => handleForceStatus(agent.agent_name, 'stopped')}
+                      disabled={isForceUpdating[agent.agent_name]}
+                      className="text-red-600 focus:text-red-600"
+                    >
+                      {isForceUpdating[agent.agent_name] ? (
+                        <>
+                          <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                          Updating...
+                        </>
+                      ) : (
+                        <>
+                          <XCircle className="h-4 w-4 mr-2" />
+                          Force Stop
+                        </>
+                      )}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => handleForceStatus(agent.agent_name, 'running')}
+                      disabled={isForceUpdating[agent.agent_name]}
+                      className="text-green-600 focus:text-green-600"
+                    >
+                      {isForceUpdating[agent.agent_name] ? (
+                        <>
+                          <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                          Updating...
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle className="h-4 w-4 mr-2" />
+                          Force Running
+                        </>
+                      )}
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                
+                <Button 
+                  size="sm" 
+                  variant="ghost" 
+                  className="ml-1"
+                  onClick={handleRefresh}
+                >
+                  <RefreshCw className="h-4 w-4" />
+                </Button>
               </div>
             </div>
           ))}

@@ -17,6 +17,12 @@ from anyio import ClosedResourceError
 import urllib.parse
 import requests
 
+import signal
+import sys
+import atexit
+import agent_status_updater as asu
+
+
 # Setup logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -81,11 +87,81 @@ if not os.getenv("SUPABASE_URL") or not os.getenv("SUPABASE_KEY"):
 if not os.getenv("PERPLEXITY_API_KEY"):
     raise ValueError("PERPLEXITY_API_KEY is not set in environment variables.")
 
+# Agent name for status updates - must match exactly what's in the database
+AGENT_NAME = "Tweet Research Agent"
+
+# Register signal handlers for graceful shutdown
+def signal_handler(sig, frame):
+    """Handle Ctrl+C and other signals to gracefully shut down"""
+    print("Shutting down gracefully...")
+    asu.mark_agent_stopped(AGENT_NAME)
+    sys.exit(0)
+
+# Register signal handlers
+signal.signal(signal.SIGINT, signal_handler)  # Ctrl+C
+signal.signal(signal.SIGTERM, signal_handler)  # Termination signal
+
+# Register function to mark agent as stopped when the script exits
+atexit.register(lambda: asu.mark_agent_stopped(AGENT_NAME))
+
 def get_tools_description(tools):
     return "\n".join(
         f"Tool: {tool.name}, Schema: {json.dumps(tool.args).replace('{', '{{').replace('}', '}}')}"
         for tool in tools
     )
+
+@tool
+def fetch_persona():
+    """
+    Fetch the current persona from Supabase.
+    
+    Returns:
+        Dictionary containing persona details or default values if not found
+    """
+    logger.info("Fetching persona from Supabase")
+    
+    try:
+        # Fetch persona from Supabase
+        query = supabase_client.table("personas").select("*").limit(1)
+        
+        result = query.execute()
+        
+        if result.data and len(result.data) > 0:
+            persona = result.data[0]
+            logger.info(f"Found persona: {persona.get('name')}")
+            return {
+                "result": persona
+            }
+        else:
+            # Return default persona values
+            logger.info("No persona found, using default values")
+            default_persona = {
+                "name": "Content Reviewer",
+                "description": "A meticulous and objective reviewer who prioritizes factual accuracy, logical consistency, and narrative flow in all content.",
+                "tone": 70,  # More formal
+                "humor": 30,  # More serious
+                "enthusiasm": 60,  # Moderately enthusiastic
+                "assertiveness": 80  # Quite confident
+            }
+            return {
+                "result": default_persona
+            }
+        
+    except Exception as e:
+        logger.error(f"Error fetching persona from Supabase: {str(e)}")
+        # Return default persona values on error
+        default_persona = {
+            "name": "Content Reviewer",
+            "description": "A meticulous and objective reviewer who prioritizes factual accuracy, logical consistency, and narrative flow in all content.",
+            "tone": 70,  # More formal
+            "humor": 30,  # More serious
+            "enthusiasm": 60,  # Moderately enthusiastic
+            "assertiveness": 80  # Quite confident
+        }
+        return {
+            "error": f"Failed to fetch persona: {str(e)}",
+            "result": default_persona
+        }
 
 @tool
 def fetch_tweets_from_supabase(limit: int = 1, analyzed: bool = False):
@@ -157,13 +233,14 @@ def mark_tweet_as_analyzed(tweet_ids: list):
         }
 
 @tool
-def analyze_tweet_perplexity(tweet_text: str, question: str):
+def analyze_tweet_perplexity(tweet_text: str, question: str, persona: dict = None):
     """
     Use Perplexity to analyze tweet content with a single focused question.
     
     Args:
         tweet_text: The text of the tweet to analyze
         question: The research question to ask about the tweet
+        persona: Optional persona details to customize the analysis style
         
     Returns:
         Dictionary containing analysis result
@@ -172,6 +249,17 @@ def analyze_tweet_perplexity(tweet_text: str, question: str):
     logger.info(f"Research question: {question}")
     
     try:
+        # Use default persona if none provided
+        if not persona:
+            persona_response = fetch_persona.invoke({})
+            persona = persona_response.get("result", {})
+        
+        # Customize prompt based on persona
+        tone_descriptor = "formal" if persona.get("tone", 50) > 70 else "conversational" if persona.get("tone", 50) < 30 else "balanced"
+        humor_descriptor = "serious" if persona.get("humor", 50) < 30 else "light-hearted" if persona.get("humor", 50) > 70 else "occasionally humorous"
+        enthusiasm_descriptor = "enthusiastic" if persona.get("enthusiasm", 50) > 70 else "reserved" if persona.get("enthusiasm", 50) < 30 else "moderately enthusiastic"
+        assertiveness_descriptor = "confident and direct" if persona.get("assertiveness", 50) > 70 else "tentative and nuanced" if persona.get("assertiveness", 50) < 30 else "balanced"
+        
         api_key = os.getenv("PERPLEXITY_API_KEY")
         headers = {
             "Authorization": f"Bearer {api_key}",
@@ -183,12 +271,14 @@ def analyze_tweet_perplexity(tweet_text: str, question: str):
             question = "What is the author of this tweet truly trying to communicate?"
             logger.warning("No question provided, using default question")
         
-        prompt = f"Tweet: \"{tweet_text}\"\n\nQuestion: {question}"
+        prompt = f"Tweet: \"{tweet_text}\"\n\nQuestion: {question}\n\nPlease analyze this tweet in a {tone_descriptor} tone, with a {humor_descriptor} approach, maintaining a {enthusiasm_descriptor} energy level, and presenting your analysis in a {assertiveness_descriptor} manner."
+        
+        system_prompt = f"You are {persona.get('name', 'Content Reviewer')}, {persona.get('description', 'a meticulous and objective reviewer who prioritizes factual accuracy, logical consistency, and narrative flow in all content.')} Provide a thoughtful, insightful response that helps understand the author's true intent and the broader context of this tweet."
         
         data = {
             "model": "sonar",
             "messages": [
-                {"role": "system", "content": "You are an AI assistant analyzing tweets. Provide a thoughtful, insightful response that helps understand the author's true intent and the broader context of this tweet."},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": prompt}
             ]
         }
@@ -458,17 +548,29 @@ def search_qdrant(query: str, limit: int = 5, filter_by: dict = None):
         }
 
 @tool
-def generate_research_question(tweet_text: str):
+def generate_research_question(tweet_text: str, persona: dict = None):
     """
     Generate a single focused research question to understand the author's intent in a tweet.
     
     Args:
         tweet_text: The text of the tweet
+        persona: Optional persona details to customize the question generation style
         
     Returns:
         Dictionary containing the generated question
     """
     try:
+        # Use default persona if none provided
+        if not persona:
+            persona_response = fetch_persona.invoke({})
+            persona = persona_response.get("result", {})
+        
+        # Customize prompt based on persona
+        tone_descriptor = "formal" if persona.get("tone", 50) > 70 else "conversational" if persona.get("tone", 50) < 30 else "balanced"
+        humor_descriptor = "serious" if persona.get("humor", 50) < 30 else "light-hearted" if persona.get("humor", 50) > 70 else "occasionally humorous"
+        enthusiasm_descriptor = "enthusiastic" if persona.get("enthusiasm", 50) > 70 else "reserved" if persona.get("enthusiasm", 50) < 30 else "moderately enthusiastic"
+        assertiveness_descriptor = "confident and direct" if persona.get("assertiveness", 50) > 70 else "tentative and nuanced" if persona.get("assertiveness", 50) < 30 else "balanced"
+        
         # Use OpenAI to generate a focused question
         model = init_chat_model(
             model="gpt-4o-mini",
@@ -476,6 +578,8 @@ def generate_research_question(tweet_text: str):
             api_key=os.getenv("OPENAI_API_KEY"),
             temperature=0.7
         )
+        
+        system_prompt = f"You are {persona.get('name', 'Content Reviewer')}, {persona.get('description', 'a meticulous and objective reviewer who prioritizes factual accuracy, logical consistency, and narrative flow in all content.')} Generate a research question in a {tone_descriptor} tone, with a {humor_descriptor} approach, maintaining a {enthusiasm_descriptor} energy level, and presenting your question in a {assertiveness_descriptor} manner."
         
         prompt = f"""
         Given the following tweet, generate ONE focused research question that would help understand what the author is truly trying to communicate:
@@ -575,6 +679,7 @@ async def main():
                 
                 # Define agent-specific tools
                 agent_tools = [
+                    fetch_persona,
                     fetch_tweets_from_supabase,
                     mark_tweet_as_analyzed,
                     analyze_tweet_perplexity,
@@ -619,4 +724,17 @@ async def main():
                 raise
 
 if __name__ == "__main__":
+        try:
+        # Mark agent as started
+    asu.mark_agent_started(AGENT_NAME)
+    
     asyncio.run(main())
+        except Exception as e:
+                # Report error in status
+                asu.report_error(AGENT_NAME, f"Fatal error: {str(e)}")
+                
+                # Re-raise the exception
+                raise
+        finally:
+                # Mark agent as stopped
+                asu.mark_agent_stopped(AGENT_NAME)
