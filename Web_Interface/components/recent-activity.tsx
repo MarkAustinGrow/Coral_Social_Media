@@ -35,12 +35,24 @@ function generateActivityItems(
   
   // Add tweets
   tweets.forEach((tweet, index) => {
+    // Extract position information if available (format: "1/10", "2/10", etc.)
+    const positionMatch = tweet.content?.match(/^(\d+\/\d+)/);
+    const position = positionMatch ? positionMatch[1] + " " : "";
+    
+    // Get the content without the position prefix
+    const contentWithoutPosition = positionMatch 
+      ? tweet.content?.substring(positionMatch[0].length).trim() 
+      : tweet.content;
+    
+    // Format the message
+    const formattedContent = contentWithoutPosition?.substring(0, 60) + (contentWithoutPosition?.length > 60 ? "..." : "");
+    
     items.push({
       id: 2000 + index,
       type: "tweet",
       message: tweet.status === 'posted' 
-        ? `Tweet posted: "${tweet.content?.substring(0, 30)}..."`
-        : `Tweet scheduled for ${new Date(tweet.scheduled_for || '').toLocaleString()}`,
+        ? `Tweet posted: ${position}"${formattedContent}"`
+        : `Tweet scheduled: ${position}"${formattedContent}" (${new Date(tweet.scheduled_for || '').toLocaleString()})`,
       timestamp: tweet.created_at || new Date().toISOString()
     })
   })

@@ -37,7 +37,13 @@ params = {
 query_string = urllib.parse.urlencode(params)
 MCP_SERVER_URL = f"{base_url}?{query_string}"
 
-AGENT_NAME = "hot_topic_agent"
+# Connection retry settings
+MAX_RETRIES = 5
+INITIAL_RETRY_DELAY = 2  # seconds
+MAX_RETRY_DELAY = 30  # seconds
+
+# Internal agent name for MCP
+MCP_AGENT_NAME = "hot_topic_agent"
 
 # Initialize API clients
 try:
@@ -538,20 +544,51 @@ async def create_hot_topic_agent(client, tools, agent_tools):
     return AgentExecutor(agent=agent, tools=tools, verbose=True)
 
 async def main():
-    max_retries = 3
-    for attempt in range(max_retries):
+    attempt = 0
+    while True:
         try:
+            # Calculate exponential backoff delay if this is a retry
+            if attempt > 0:
+                delay = min(INITIAL_RETRY_DELAY * (2 ** (attempt - 1)), MAX_RETRY_DELAY)
+                logger.info(f"Retry attempt {attempt} of {MAX_RETRIES}, waiting {delay} seconds...")
+                await asyncio.sleep(delay)
+                
+            # Check if we've exceeded max retries
+            if attempt >= MAX_RETRIES:
+                logger.error(f"Maximum retry attempts ({MAX_RETRIES}) reached. Exiting.")
+                asu.report_error(AGENT_NAME, f"Maximum retry attempts ({MAX_RETRIES}) reached")
+                return
+                
+            # Increment attempt counter
+            attempt += 1
+            
+            # Update agent status to show reconnection attempt
+            if attempt > 1:
+                asu.update_agent_status(
+                    AGENT_NAME, 
+                    "reconnecting", 
+                    50, 
+                    f"Reconnection attempt {attempt} of {MAX_RETRIES}"
+                )
+            
+            # Connect to MCP server with reduced timeouts
             async with MultiServerMCPClient(
                 connections={
                     "coral": {
                         "transport": "sse",
                         "url": MCP_SERVER_URL,
-                        "timeout": 300,
-                        "sse_read_timeout": 300,
+                        "timeout": 60,  # Reduced from 300
+                        "sse_read_timeout": 60,  # Reduced from 300
                     }
                 }
             ) as client:
                 logger.info(f"Connected to MCP server at {MCP_SERVER_URL}")
+                
+                # Reset attempt counter on successful connection
+                attempt = 0
+                
+                # Update agent status to show running
+                asu.update_agent_status(AGENT_NAME, "running", 100, "Connected to MCP server")
                 
                 # Define agent-specific tools
                 agent_tools = [
@@ -571,47 +608,62 @@ async def main():
                 # Create and run the agent
                 agent_executor = await create_hot_topic_agent(client, tools, agent_tools)
                 
+                # Inner loop for agent invocations
                 while True:
                     try:
+                        # Send heartbeat to indicate agent is still running
+                        asu.send_heartbeat(AGENT_NAME)
+                        
                         logger.info("Starting new agent invocation")
                         await agent_executor.ainvoke({"agent_scratchpad": []})
                         logger.info("Completed agent invocation, waiting 5 minutes before next batch")
-                        await asyncio.sleep(300)  # Wait 5 minutes between processing batches
-                    except Exception as e:
-                        logger.error(f"Error in agent loop: {str(e)}")
-                        await asyncio.sleep(5)
                         
+                        # Send heartbeat before long sleep
+                        asu.send_heartbeat(AGENT_NAME)
+                        asu.update_agent_status(AGENT_NAME, "waiting", 100, "Waiting for next batch processing cycle")
+                        
+                        # Wait 5 minutes between processing batches, with periodic heartbeats
+                        for _ in range(30):  # 30 * 10 seconds = 5 minutes
+                            await asyncio.sleep(10)
+                            asu.send_heartbeat(AGENT_NAME)
+                        
+                        # Update status back to running
+                        asu.update_agent_status(AGENT_NAME, "running", 100, "Processing next batch")
+                        
+                    except ClosedResourceError as e:
+                        # Connection closed, break inner loop to reconnect
+                        logger.error(f"Connection closed: {str(e)}")
+                        asu.report_warning(AGENT_NAME, f"Connection closed: {str(e)}", 50)
+                        break
+                        
+                    except Exception as e:
+                        # Other errors, log and continue
+                        logger.error(f"Error in agent loop: {str(e)}")
+                        asu.report_warning(AGENT_NAME, f"Error in agent loop: {str(e)}", 75)
+                        await asyncio.sleep(5)
+                
         except ClosedResourceError as e:
-            logger.error(f"ClosedResourceError on attempt {attempt + 1}: {e}")
-            if attempt < max_retries - 1:
-                logger.info("Retrying in 5 seconds...")
-                await asyncio.sleep(5)
-                continue
-            else:
-                logger.error("Max retries reached. Exiting.")
-                raise
+            # Connection error, will retry with exponential backoff
+            logger.error(f"ClosedResourceError on attempt {attempt}: {e}")
+            asu.report_warning(AGENT_NAME, f"Connection error: {str(e)}", 25)
+            
         except Exception as e:
-            logger.error(f"Unexpected error on attempt {attempt + 1}: {e}")
-            if attempt < max_retries - 1:
-                logger.info("Retrying in 5 seconds...")
-                await asyncio.sleep(5)
-                continue
-            else:
-                logger.error("Max retries reached. Exiting.")
-                raise
+            # Unexpected error, will retry with exponential backoff
+            logger.error(f"Unexpected error on attempt {attempt}: {e}")
+            asu.report_warning(AGENT_NAME, f"Unexpected error: {str(e)}", 25)
 
 if __name__ == "__main__":
-        try:
-        # Mark agent as started
+    # Mark agent as started
     asu.mark_agent_started(AGENT_NAME)
     
-    asyncio.run(main())
-        except Exception as e:
-                # Report error in status
-                asu.report_error(AGENT_NAME, f"Fatal error: {str(e)}")
-                
-                # Re-raise the exception
-                raise
-        finally:
-                # Mark agent as stopped
-                asu.mark_agent_stopped(AGENT_NAME)
+    try:
+        asyncio.run(main())
+    except Exception as e:
+        # Report error in status
+        asu.report_error(AGENT_NAME, f"Fatal error: {str(e)}")
+        
+        # Re-raise the exception
+        raise
+    finally:
+        # Mark agent as stopped
+        asu.mark_agent_stopped(AGENT_NAME)

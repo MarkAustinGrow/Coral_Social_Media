@@ -89,15 +89,16 @@ async function killProcessByName(processName: string): Promise<boolean> {
 const runningProcesses: Record<string, ChildProcess> = {};
 
 // Map of agent names to their file paths
+// Ordered according to the workflow
 const agentFilePaths: Record<string, string> = {
-  'Tweet Scraping Agent': '2_langchain_tweet_scraping_agent_with_status.py',
-  'Tweet Research Agent': '3_langchain_tweet_research_agent.py',
-  'Hot Topic Agent': '3.5_langchain_hot_topic_agent.py',
-  'Blog Critique Agent': '4_langchain_blog_critique_agent.py',
+  'Tweet Scraping Agent': '2_langchain_tweet_scraping_agent_simple.py',
+  'Hot Topic Agent': '3.5_langchain_hot_topic_agent_simple.py',
+  'Tweet Research Agent': '3_langchain_tweet_research_agent_simple.py',
   'Blog Writing Agent': '4_langchain_blog_writing_agent.py',
+  'Blog Critique Agent': '4_langchain_blog_critique_agent.py',
   'Blog to Tweet Agent': '5_langchain_blog_to_tweet_agent.py',
-  'X Reply Agent': '6_langchain_x_reply_agent.py',
-  'Twitter Posting Agent': '7_langchain_twitter_posting_agent_v3.py'
+  'Twitter Posting Agent': '7_langchain_twitter_posting_agent_v3.py',
+  'X Reply Agent': '6_langchain_x_reply_agent_simple.py'
 };
 
 /**
@@ -254,9 +255,21 @@ export async function stopAgent(agentName: string): Promise<boolean> {
  */
 export async function startAllAgents(): Promise<boolean> {
   try {
-    // Start each agent
+    // Define the order in which agents should be started
+    const agentOrder = [
+      'Tweet Scraping Agent',
+      'Hot Topic Agent',
+      'Tweet Research Agent',
+      'Blog Writing Agent',
+      'Blog Critique Agent',
+      'Blog to Tweet Agent',
+      'Twitter Posting Agent',
+      'X Reply Agent'
+    ];
+    
+    // Start each agent in the defined order
     const results = await Promise.all(
-      Object.keys(agentFilePaths).map(agentName => startAgent(agentName))
+      agentOrder.map(agentName => startAgent(agentName))
     );
 
     // Return true if all agents were started successfully

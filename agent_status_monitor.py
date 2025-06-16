@@ -43,15 +43,16 @@ load_dotenv()
 # Configuration
 CHECK_INTERVAL = 60  # seconds - check every minute
 MAX_RUNNING_TIME_WITHOUT_ACTIVITY = 300  # 5 minutes - more reasonable timeout
+# Agent process names ordered according to the workflow
 AGENT_PROCESS_NAMES = {
     "Tweet Scraping Agent": "2_langchain_tweet_scraping_agent_with_status.py",
-    "Tweet Research Agent": "3_langchain_tweet_research_agent.py",
     "Hot Topic Agent": "3.5_langchain_hot_topic_agent.py",
-    "Blog Critique Agent": "4_langchain_blog_critique_agent.py",
+    "Tweet Research Agent": "3_langchain_tweet_research_agent.py",
     "Blog Writing Agent": "4_langchain_blog_writing_agent.py",
+    "Blog Critique Agent": "4_langchain_blog_critique_agent.py",
     "Blog to Tweet Agent": "5_langchain_blog_to_tweet_agent.py",
-    "X Reply Agent": "6_langchain_x_reply_agent.py",
-    "Twitter Posting Agent": "7_langchain_twitter_posting_agent.py"
+    "Twitter Posting Agent": "7_langchain_twitter_posting_agent.py",
+    "X Reply Agent": "6_langchain_x_reply_agent.py"
 }
 
 def is_process_running(process_name):

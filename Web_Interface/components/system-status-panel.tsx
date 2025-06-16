@@ -41,10 +41,38 @@ export function SystemStatusPanel() {
     'agent_status',
     { 
       columns: '*',
-      orderBy: { column: 'agent_name', ascending: true }
+      // We'll sort the data after fetching to match the workflow order
     },
     refreshKey
   )
+  
+  // Define the desired order of agents to match the workflow
+  const agentOrder = [
+    "Tweet Scraping Agent",
+    "Hot Topic Agent",
+    "Tweet Research Agent",
+    "Blog Writing Agent",
+    "Blog Critique Agent",
+    "Blog to Tweet Agent",
+    "Twitter Posting Agent",
+    "X Reply Agent"
+  ]
+  
+  // Sort the agents according to the workflow order
+  const sortedAgentStatusResult = {
+    ...agentStatusResult,
+    data: agentStatusResult.data ? [...agentStatusResult.data].sort((a, b) => {
+      const aIndex = agentOrder.indexOf(a.agent_name)
+      const bIndex = agentOrder.indexOf(b.agent_name)
+      
+      // If an agent name isn't in our order list, put it at the end
+      if (aIndex === -1) return 1
+      if (bIndex === -1) return -1
+      
+      // Otherwise sort by the index in our order array
+      return aIndex - bIndex
+    }) : null
+  }
   
   // Handle refresh
   const handleRefresh = () => {
@@ -220,7 +248,7 @@ export function SystemStatusPanel() {
     <DataState
       isLoading={agentStatusResult.isLoading}
       error={agentStatusResult.error}
-      data={agentStatusResult.data}
+      data={sortedAgentStatusResult.data}
       onRetry={handleRefresh}
       loadingComponent={
         <div className="space-y-4">

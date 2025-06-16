@@ -22,22 +22,33 @@ export function loadEnvFromRoot(): Record<string, string> {
     // Path to the root .env file
     // First try the current directory
     let rootEnvPath = path.resolve(process.cwd(), '.env');
+    console.log('Trying to load .env from:', rootEnvPath);
     
     // If not found, try one level up (in case we're in the Web_Interface directory)
     if (!fs.existsSync(rootEnvPath)) {
       rootEnvPath = path.resolve(process.cwd(), '../.env');
+      console.log('Not found, trying:', rootEnvPath);
     }
     
     // If still not found, try two levels up
     if (!fs.existsSync(rootEnvPath)) {
       rootEnvPath = path.resolve(process.cwd(), '../../.env');
+      console.log('Not found, trying:', rootEnvPath);
+    }
+    
+    // If still not found, try absolute path
+    if (!fs.existsSync(rootEnvPath)) {
+      rootEnvPath = 'e:/Plank pushers/Core-Social-Infrastructure/.env';
+      console.log('Not found, trying absolute path:', rootEnvPath);
     }
     
     // Check if the file exists
     if (!fs.existsSync(rootEnvPath)) {
-      console.error('Root .env file not found at:', rootEnvPath);
+      console.error('Root .env file not found at any location. Last tried:', rootEnvPath);
       return {};
     }
+    
+    console.log('Found .env file at:', rootEnvPath);
 
     // Read the file
     const envContent = fs.readFileSync(rootEnvPath, 'utf8');

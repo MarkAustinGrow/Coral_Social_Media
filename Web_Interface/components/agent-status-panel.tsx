@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/card"
 import { PlayCircle, StopCircle, RefreshCw, AlertTriangle } from "lucide-react"
 
 // Mock data - would be fetched from API in real implementation
+// Ordered according to the workflow
 const mockAgents = [
   {
     id: 1,
@@ -18,6 +19,14 @@ const mockAgents = [
   },
   {
     id: 2,
+    name: "Hot Topic Agent",
+    status: "running",
+    startTime: "2025-06-10T08:31:00Z",
+    lastActivity: "2025-06-10T09:23:00Z",
+    description: "Identifies trending topics from tweets",
+  },
+  {
+    id: 3,
     name: "Tweet Research Agent",
     status: "running",
     startTime: "2025-06-10T08:31:15Z",
@@ -25,7 +34,7 @@ const mockAgents = [
     description: "Analyzes tweets and extracts insights",
   },
   {
-    id: 3,
+    id: 4,
     name: "Blog Writing Agent",
     status: "error",
     startTime: "2025-06-10T08:32:30Z",
@@ -34,7 +43,15 @@ const mockAgents = [
     error: "API rate limit exceeded",
   },
   {
-    id: 4,
+    id: 5,
+    name: "Blog Critique Agent",
+    status: "stopped",
+    startTime: null,
+    lastActivity: "2025-06-09T18:40:00Z",
+    description: "Reviews and fact-checks blog content",
+  },
+  {
+    id: 6,
     name: "Blog to Tweet Agent",
     status: "stopped",
     startTime: null,
@@ -42,20 +59,20 @@ const mockAgents = [
     description: "Converts blog posts into tweet threads",
   },
   {
-    id: 5,
-    name: "X Reply Agent",
-    status: "running",
-    startTime: "2025-06-10T08:34:45Z",
-    lastActivity: "2025-06-10T09:26:18Z",
-    description: "Generates and posts replies to tweets",
-  },
-  {
-    id: 6,
+    id: 7,
     name: "Twitter Posting Agent",
     status: "running",
     startTime: "2025-06-10T08:35:30Z",
     lastActivity: "2025-06-10T09:20:05Z",
     description: "Posts scheduled tweets to Twitter",
+  },
+  {
+    id: 8,
+    name: "X Reply Agent",
+    status: "running",
+    startTime: "2025-06-10T08:34:45Z",
+    lastActivity: "2025-06-10T09:26:18Z",
+    description: "Generates and posts replies to tweets",
   },
 ]
 

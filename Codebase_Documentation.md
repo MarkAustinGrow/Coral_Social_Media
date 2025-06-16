@@ -107,7 +107,20 @@ Analyzes collected tweets to extract insights and identify patterns.
   - Topic identification
   - Engagement pattern tracking
 
-### 3. Blog Writing Agent (`4_langchain_blog_writing_agent.py`)
+### 3. Hot Topic Agent (`3.5_langchain_hot_topic_agent.py`)
+
+Analyzes tweets for engagement and identifies trending topics.
+
+- **Inputs**: Unprocessed tweets from the Tweet Scraping Agent
+- **Outputs**: Topic engagement metrics, trending topic notifications
+- **Key Features**:
+  - Topic extraction using Claude AI
+  - Engagement scoring based on likes, retweets, and replies
+  - Topic categorization and subtopic tracking
+  - Trending topic identification
+  - Integration with Blog Writing Agent for content suggestions
+
+### 4. Blog Writing Agent (`4_langchain_blog_writing_agent.py`)
 
 Creates long-form content based on insights from the Tweet Research Agent.
 
@@ -120,7 +133,7 @@ Creates long-form content based on insights from the Tweet Research Agent.
   - Topic rotation system for content diversity
   - Engagement-based topic selection
 
-### 4. Blog Critique Agent (`4_langchain_blog_critique_agent.py`)
+### 5. Blog Critique Agent (`4_langchain_blog_critique_agent.py`)
 
 Reviews and fact-checks blog content before publication.
 
@@ -132,7 +145,7 @@ Reviews and fact-checks blog content before publication.
   - Logical flow and argument evaluation
   - Citation and source verification
 
-### 5. Blog to Tweet Agent (`5_langchain_blog_to_tweet_agent.py`)
+### 6. Blog to Tweet Agent (`5_langchain_blog_to_tweet_agent.py`)
 
 Converts blog posts into engaging tweet threads.
 
@@ -146,7 +159,7 @@ Converts blog posts into engaging tweet threads.
   - Community-focused final tweets
   - Persona-based content generation
 
-### 6. X Reply Agent (`6_langchain_x_reply_agent.py`)
+### 7. X Reply Agent (`6_langchain_x_reply_agent.py`)
 
 Generates and posts replies to tweets and mentions.
 
@@ -157,7 +170,7 @@ Generates and posts replies to tweets and mentions.
   - Brand voice consistency
   - Escalation for complex inquiries
 
-### 7. Twitter Posting Agent (`7_langchain_twitter_posting_agent.py`)
+### 8. Twitter Posting Agent (`7_langchain_twitter_posting_agent.py`)
 
 Handles the scheduling and posting of tweets and threads.
 
@@ -402,6 +415,8 @@ The system uses Supabase for structured data storage. The schema is defined in `
 ### Main Tables
 
 - **tweets**: Stores collected tweets with metadata
+- **tweets_cache**: Stores collected tweets for processing by the Hot Topic Agent
+- **engagement_metrics**: Stores topic engagement metrics tracked by the Hot Topic Agent
 - **blogs**: Stores generated blog content
 - **tweet_threads**: Stores generated tweet threads
 - **x_accounts**: Stores monitored Twitter accounts with priority and status information

@@ -44,7 +44,7 @@ export default function BlogsPage() {
             <BlogList status="draft" />
           </TabsContent>
           <TabsContent value="review" className="space-y-4">
-            <BlogList status="review" />
+            <BlogList withCritiques={true} />
           </TabsContent>
           <TabsContent value="published" className="space-y-4">
             <BlogList status="published" />

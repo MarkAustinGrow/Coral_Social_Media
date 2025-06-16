@@ -589,17 +589,17 @@ async def main():
                 raise
 
 if __name__ == "__main__":
-        try:
-        # Mark agent as started
+    # Mark agent as started
     asu.mark_agent_started(AGENT_NAME)
     
-    asyncio.run(main())
-        except Exception as e:
-                # Report error in status
-                asu.report_error(AGENT_NAME, f"Fatal error: {str(e)}")
-                
-                # Re-raise the exception
-                raise
-        finally:
-                # Mark agent as stopped
-                asu.mark_agent_stopped(AGENT_NAME)
+    try:
+        asyncio.run(main())
+    except Exception as e:
+        # Report error in status
+        asu.report_error(AGENT_NAME, f"Fatal error: {str(e)}")
+        
+        # Re-raise the exception
+        raise
+    finally:
+        # Mark agent as stopped
+        asu.mark_agent_stopped(AGENT_NAME)

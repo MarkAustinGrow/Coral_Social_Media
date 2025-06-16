@@ -259,11 +259,17 @@ def get_scheduled_tweets(limit: int = 10):
             "count": 0
         }
 
-# Internal function for posting a tweet (not decorated with @tool)
-def _post_tweet(content, in_reply_to_id=None):
+@tool
+def post_tweet(content: str, in_reply_to_id: str = None):
     """
-    Internal function to post a tweet to Twitter using the Twitter API v2 client.
-    This function is not decorated with @tool and can be called directly.
+    Post a tweet to Twitter using the Twitter API v2 client.
+
+    Args:
+        content: Text of the tweet.
+        in_reply_to_id: Optional ID to reply to.
+
+    Returns:
+        Dict containing result or error.
     """
     max_retries = 3
     retry_delay = 2
@@ -291,24 +297,15 @@ def _post_tweet(content, in_reply_to_id=None):
     return {"error": "Failed to post tweet after all attempts", "result": None}
 
 @tool
-def post_tweet(content: str, in_reply_to_id: str = None):
+def post_tweet_thread(tweets: list):
     """
-    Post a tweet to Twitter using the Twitter API v2 client.
+    Post a thread of one or more tweets to Twitter, updating Supabase after each post.
 
     Args:
-        content: Text of the tweet.
-        in_reply_to_id: Optional ID to reply to.
+        tweets: List of tweet records (must include 'id' and 'content')
 
     Returns:
-        Dict containing result or error.
-    """
-    return _post_tweet(content, in_reply_to_id)
-
-# Internal function for posting a thread (not decorated with @tool)
-def _post_tweet_thread(tweets):
-    """
-    Internal function to post a thread of tweets.
-    This function is not decorated with @tool and can be called directly.
+        Dictionary containing result or error
     """
     try:
         if not tweets:
@@ -322,7 +319,7 @@ def _post_tweet_thread(tweets):
         for index, tweet in enumerate(sorted_tweets):
             logger.info(f"Posting tweet {index + 1}/{len(sorted_tweets)} in thread")
 
-            response = _post_tweet(tweet.get("content", ""), previous_tweet_id)
+            response = post_tweet(tweet.get("content", ""), previous_tweet_id)
 
             if "error" in response:
                 logger.error(f"Failed to post tweet ID {tweet.get('id')}: {response.get('error')}")
@@ -369,19 +366,6 @@ def _post_tweet_thread(tweets):
             "error": str(e),
             "posted_tweets": []
         }
-
-@tool
-def post_tweet_thread(tweets: list):
-    """
-    Post a thread of one or more tweets to Twitter, updating Supabase after each post.
-
-    Args:
-        tweets: List of tweet records (must include 'id' and 'content')
-
-    Returns:
-        Dictionary containing result or error
-    """
-    return _post_tweet_thread(tweets)
 
 @tool
 def check_api_rate_limits():
@@ -542,7 +526,7 @@ async def post_tweet_direct(tweet_id, is_thread=False):
                 thread_tweets = [tweet]
             
             # Post the thread
-            result = _post_tweet_thread(thread_tweets)
+            result = post_tweet_thread(thread_tweets)
             
             if "error" in result:
                 logger.error(f"Error posting thread: {result['error']}")
@@ -552,7 +536,7 @@ async def post_tweet_direct(tweet_id, is_thread=False):
             return 0
         else:
             # Post a single tweet
-            response = _post_tweet(tweet["content"])
+            response = post_tweet(tweet["content"])
             
             if "error" in response:
                 logger.error(f"Error posting tweet: {response['error']}")
