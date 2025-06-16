@@ -97,7 +97,7 @@ const agentFilePaths: Record<string, string> = {
   'Blog Writing Agent': '4_langchain_blog_writing_agent.py',
   'Blog to Tweet Agent': '5_langchain_blog_to_tweet_agent.py',
   'X Reply Agent': '6_langchain_x_reply_agent.py',
-  'Twitter Posting Agent': '7_langchain_twitter_posting_agent.py'
+  'Twitter Posting Agent': '7_langchain_twitter_posting_agent_v3.py'
 };
 
 /**
