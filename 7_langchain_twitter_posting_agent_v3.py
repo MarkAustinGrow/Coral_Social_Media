@@ -374,6 +374,30 @@ if not os.getenv("OPENAI_API_KEY"):
 if not os.getenv("SUPABASE_URL") or not os.getenv("SUPABASE_KEY"):
     raise ValueError("SUPABASE_URL or SUPABASE_KEY is not set in environment variables.")
 
+# Agent name for database logging
+AGENT_NAME = "Twitter Posting Agent"
+
+def log_to_database(level, message, metadata=None):
+    """
+    Log agent activity to the agent_logs table in Supabase.
+    
+    Args:
+        level: Log level ('info', 'warning', 'error')
+        message: Log message
+        metadata: Optional JSON metadata
+    """
+    try:
+        # Insert log into agent_logs table
+        supabase_client.table("agent_logs").insert({
+            "timestamp": datetime.now().isoformat(),
+            "level": level,
+            "agent_name": AGENT_NAME,
+            "message": message,
+            "metadata": metadata
+        }).execute()
+    except Exception as e:
+        logger.error(f"Failed to log to database: {str(e)}")
+
 def get_tools_description(tools):
     return "\n".join(
         f"Tool: {tool.name}, Schema: {json.dumps(tool.args).replace('{', '{{').replace('}', '}}')}"
@@ -393,6 +417,7 @@ def get_scheduled_tweets(limit: int = 10):
         Dictionary containing scheduled tweets
     """
     try:
+        log_to_database("info", f"Fetching scheduled tweets (limit: {limit})")
         # Get current time
         now = datetime.now()
         
@@ -413,6 +438,7 @@ def get_scheduled_tweets(limit: int = 10):
         for blog_post_id in threads:
             threads[blog_post_id].sort(key=lambda x: x.get("position", 0))
         
+        log_to_database("info", f"Retrieved {len(tweets)} scheduled tweets", {"thread_count": len(threads)})
         return {
             "result": {
                 "tweets": tweets,
@@ -423,6 +449,7 @@ def get_scheduled_tweets(limit: int = 10):
         
     except Exception as e:
         logger.error(f"Error getting scheduled tweets: {str(e)}")
+        log_to_database("error", f"Error getting scheduled tweets: {str(e)}")
         return {
             "error": f"Failed to get scheduled tweets: {str(e)}",
             "count": 0
@@ -440,6 +467,7 @@ def post_tweet(content: str, in_reply_to_id: str = None):
     Returns:
         Dict containing result or error.
     """
+    log_to_database("info", f"Posting tweet: {content[:50]}..." + (f" (in reply to: {in_reply_to_id})" if in_reply_to_id else ""))
     max_retries = 3
     retry_delay = 2
 
@@ -451,6 +479,7 @@ def post_tweet(content: str, in_reply_to_id: str = None):
             # Extract tweet ID from response
             tweet_id = response['id_str']
             logger.info(f"Tweet posted successfully: {tweet_id}")
+            log_to_database("info", f"Tweet posted successfully", {"tweet_id": tweet_id})
             return {
                 "success": True,
                 "result": "Tweet posted successfully",
@@ -467,6 +496,7 @@ def post_tweet(content: str, in_reply_to_id: str = None):
             # Handle rate limiting
             if "rate limit" in error_message or "429" in error_message:
                 logger.warning(f"Rate limit exceeded on attempt {attempt+1}. Waiting before retry.")
+                log_to_database("warning", f"Rate limit exceeded on attempt {attempt+1}. Waiting before retry.")
                 # Use exponential backoff for rate limits
                 wait_time = retry_delay * (4 ** attempt)
                 time.sleep(wait_time)
@@ -474,6 +504,7 @@ def post_tweet(content: str, in_reply_to_id: str = None):
             
             # Handle authentication errors
             if "authentication" in error_message or "401" in error_message:
+                log_to_database("error", "Authentication failed. Please check your Twitter API credentials.")
                 return {
                     "success": False,
                     "error": str(e),
@@ -483,6 +514,7 @@ def post_tweet(content: str, in_reply_to_id: str = None):
             
             # Handle permission errors
             if "permission" in error_message or "403" in error_message:
+                log_to_database("error", "Permission denied. Your Twitter app may not have write permissions or the account may be restricted.")
                 return {
                     "success": False,
                     "error": str(e),
@@ -496,6 +528,7 @@ def post_tweet(content: str, in_reply_to_id: str = None):
                 continue
                 
             # If we've exhausted retries, return the error
+            log_to_database("error", f"Failed to post tweet after {max_retries} attempts: {str(e)}")
             return {
                 "success": False,
                 "error": str(e),
@@ -522,6 +555,7 @@ def post_tweet_thread(tweets: list):
         Dictionary containing result or error
     """
     try:
+        log_to_database("info", f"Posting tweet thread with {len(tweets)} tweets")
         if not tweets:
             return {"error": "No tweets provided", "posted_tweets": []}
 
@@ -537,6 +571,7 @@ def post_tweet_thread(tweets: list):
 
             if not response.get("success", False) or "error" in response:
                 logger.error(f"Failed to post tweet ID {tweet.get('id')}: {response.get('error') or response.get('message')}")
+                log_to_database("error", f"Failed to post tweet ID {tweet.get('id')} in thread", {"error": response.get('error')})
                 try:
                     supabase_client.table("potential_tweets").update({
                         "status": "failed"
@@ -556,6 +591,7 @@ def post_tweet_thread(tweets: list):
                     "posted_at": datetime.now().isoformat()
                 }).eq("id", tweet.get("id")).execute()
                 logger.info(f"Successfully updated Supabase for tweet {tweet.get('id')}")
+                log_to_database("info", f"Successfully updated tweet {tweet.get('id')} status to 'posted'")
             except Exception as db_error:
                 logger.error(f"Failed to update tweet {tweet.get('id')} in Supabase: {str(db_error)}")
 
@@ -569,6 +605,7 @@ def post_tweet_thread(tweets: list):
             # Avoid rate limit issues
             time.sleep(3)
 
+        log_to_database("info", f"Successfully posted thread of {len(posted_tweets)} tweets")
         return {
             "success": True,
             "result": "Tweet thread posted successfully",
@@ -579,6 +616,7 @@ def post_tweet_thread(tweets: list):
 
     except Exception as e:
         logger.error(f"Unhandled error posting thread: {str(e)}")
+        log_to_database("error", f"Unhandled error posting thread: {str(e)}")
         return {
             "success": False,
             "error": str(e),
@@ -595,6 +633,7 @@ def check_api_rate_limits():
         Dictionary containing rate limit information
     """
     try:
+        log_to_database("info", "Checking Twitter API rate limits")
         # Get rate limits from Twitter client
         rate_limit_info = twitter_client.get_rate_limits()
         
@@ -607,7 +646,7 @@ def check_api_rate_limits():
         reset_time = rate_limit_info.get("reset_time", 0)
         reset_time_str = datetime.fromtimestamp(reset_time).strftime('%Y-%m-%d %H:%M:%S')
         
-        return {
+        rate_limit_result = {
             "success": True,
             "result": {
                 **rate_limit_info,
@@ -616,8 +655,14 @@ def check_api_rate_limits():
             }
         }
         
+        log_to_database("info", f"API rate limits: {remaining}/{limit} remaining ({round(percentage_used, 2)}% used)", 
+                       {"remaining": remaining, "limit": limit, "reset_time": reset_time_str})
+        
+        return rate_limit_result
+        
     except Exception as e:
         logger.error(f"Error checking rate limits: {str(e)}")
+        log_to_database("error", f"Error checking rate limits: {str(e)}")
         
         # Default values
         default_reset_time = int(time.time()) + 900  # 15 minutes from now
@@ -701,6 +746,7 @@ async def main():
         }
     ) as client:
         logger.info(f"Connected to MCP server at {MCP_SERVER_URL}")
+        log_to_database("info", "Twitter Posting Agent connected to MCP server")
         
         # Define agent-specific tools
         agent_tools = [
@@ -720,11 +766,14 @@ async def main():
         while True:
             try:
                 logger.info("Starting new agent invocation")
+                log_to_database("info", "Starting new agent invocation cycle")
                 await agent_executor.ainvoke({"agent_scratchpad": []})
                 logger.info("Completed agent invocation, restarting loop")
+                log_to_database("info", "Completed agent invocation cycle")
                 await asyncio.sleep(1)
             except Exception as e:
                 logger.error(f"Error in agent loop: {str(e)}")
+                log_to_database("error", f"Error in agent loop: {str(e)}")
                 await asyncio.sleep(5)
 
 # Function to handle direct tweet posting (for API calls)
@@ -738,6 +787,7 @@ async def post_tweet_direct(tweet_id, is_thread=False):
         is_thread: Whether this is part of a thread
     """
     logger.info(f"Direct tweet posting mode. Tweet ID: {tweet_id}, Thread: {is_thread}")
+    log_to_database("info", f"Direct tweet posting mode initiated", {"tweet_id": tweet_id, "is_thread": is_thread})
     
     try:
         # Fetch the tweet from Supabase
@@ -745,6 +795,7 @@ async def post_tweet_direct(tweet_id, is_thread=False):
         
         if not result.data or len(result.data) == 0:
             logger.error(f"Tweet with ID {tweet_id} not found")
+            log_to_database("error", f"Tweet with ID {tweet_id} not found")
             return 1
         
         tweet = result.data[0]
@@ -761,6 +812,7 @@ async def post_tweet_direct(tweet_id, is_thread=False):
                 if thread_result.data and len(thread_result.data) > 0:
                     thread_tweets = thread_result.data
                     logger.info(f"Found {len(thread_tweets)} tweets in thread")
+                    log_to_database("info", f"Found {len(thread_tweets)} tweets in thread", {"blog_post_id": tweet["blog_post_id"]})
             
             if not thread_tweets:
                 # If no thread tweets found, just post the single tweet
@@ -771,9 +823,11 @@ async def post_tweet_direct(tweet_id, is_thread=False):
             
             if "error" in result:
                 logger.error(f"Error posting thread: {result['error']}")
+                log_to_database("error", f"Error posting thread: {result['error']}")
                 return 1
             
             logger.info(f"Thread posted successfully: {result}")
+            log_to_database("info", "Thread posted successfully", {"posted_count": len(result.get("posted_tweets", []))})
             return 0
         else:
             # Post a single tweet
@@ -781,6 +835,7 @@ async def post_tweet_direct(tweet_id, is_thread=False):
             
             if "error" in response:
                 logger.error(f"Error posting tweet: {response['error']}")
+                log_to_database("error", f"Error posting tweet: {response['error']}")
                 return 1
             
             # Update the tweet status in Supabase
@@ -790,10 +845,12 @@ async def post_tweet_direct(tweet_id, is_thread=False):
             }).eq("id", tweet_id).execute()
             
             logger.info(f"Tweet posted successfully: {response}")
+            log_to_database("info", "Tweet posted successfully", {"tweet_id": response.get("tweet_id")})
             return 0
     
     except Exception as e:
         logger.error(f"Error in post_tweet_direct: {str(e)}")
+        log_to_database("error", f"Error in post_tweet_direct: {str(e)}")
         return 1
 
 if __name__ == "__main__":
@@ -810,4 +867,5 @@ if __name__ == "__main__":
     else:
         # Otherwise, run the agent
         logger.info("Twitter Posting Agent (v3) started")
+        log_to_database("info", "Twitter Posting Agent started")
         asyncio.run(main())
