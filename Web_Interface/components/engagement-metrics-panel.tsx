@@ -5,110 +5,20 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
-import { Slider } from "@/components/ui/slider"
 import { Badge } from "@/components/ui/badge"
-import { Search, Plus, ArrowUpDown, Trash2 } from "lucide-react"
+import { DataState } from "@/components/ui/data-state"
+import { useTopicsData, Topic } from "@/hooks/use-topics-data"
+import { Search, Plus, ArrowUpDown, Trash2, RefreshCw } from "lucide-react"
+import { toast } from "@/hooks/use-toast"
 
-// Mock data - would be fetched from API in real implementation
-const mockTopics = [
-  {
-    id: 1,
-    name: "Artificial Intelligence",
-    score: 85,
-    active: true,
-    lastUpdated: "2025-06-08T14:30:00Z",
-    trend: "up",
-    relatedTopics: ["Machine Learning", "Neural Networks", "AI Ethics"]
-  },
-  {
-    id: 2,
-    name: "Web Development",
-    score: 78,
-    active: true,
-    lastUpdated: "2025-06-09T10:15:00Z",
-    trend: "stable",
-    relatedTopics: ["JavaScript", "React", "CSS"]
-  },
-  {
-    id: 3,
-    name: "Cybersecurity",
-    score: 92,
-    active: true,
-    lastUpdated: "2025-06-10T08:45:00Z",
-    trend: "up",
-    relatedTopics: ["Data Privacy", "Network Security", "Encryption"]
-  },
-  {
-    id: 4,
-    name: "Blockchain",
-    score: 65,
-    active: true,
-    lastUpdated: "2025-06-07T16:20:00Z",
-    trend: "down",
-    relatedTopics: ["Cryptocurrency", "Smart Contracts", "DeFi"]
-  },
-  {
-    id: 5,
-    name: "Cloud Computing",
-    score: 80,
-    active: true,
-    lastUpdated: "2025-06-06T11:30:00Z",
-    trend: "up",
-    relatedTopics: ["AWS", "Azure", "Serverless"]
-  },
-  {
-    id: 6,
-    name: "DevOps",
-    score: 72,
-    active: true,
-    lastUpdated: "2025-06-05T09:15:00Z",
-    trend: "stable",
-    relatedTopics: ["CI/CD", "Docker", "Kubernetes"]
-  },
-  {
-    id: 7,
-    name: "Data Science",
-    score: 88,
-    active: true,
-    lastUpdated: "2025-06-04T13:45:00Z",
-    trend: "up",
-    relatedTopics: ["Big Data", "Data Visualization", "Statistics"]
-  },
-  {
-    id: 8,
-    name: "Mobile Development",
-    score: 70,
-    active: true,
-    lastUpdated: "2025-06-03T15:30:00Z",
-    trend: "down",
-    relatedTopics: ["iOS", "Android", "React Native"]
-  },
-  {
-    id: 9,
-    name: "Internet of Things",
-    score: 68,
-    active: false,
-    lastUpdated: "2025-06-02T10:00:00Z",
-    trend: "down",
-    relatedTopics: ["Embedded Systems", "Sensors", "Smart Devices"]
-  },
-  {
-    id: 10,
-    name: "Augmented Reality",
-    score: 75,
-    active: true,
-    lastUpdated: "2025-06-01T14:15:00Z",
-    trend: "up",
-    relatedTopics: ["Virtual Reality", "Mixed Reality", "Spatial Computing"]
-  },
-]
 
 export function EngagementMetricsPanel() {
-  const [topics, setTopics] = useState(mockTopics)
+  const { data, isLoading, error, refreshTopics, addTopic, updateTopicStatus, deleteTopic } = useTopicsData()
   const [searchQuery, setSearchQuery] = useState("")
-  const [sortBy, setSortBy] = useState<"name" | "score">("score")
+  const [sortBy, setSortBy] = useState<"topic" | "engagement_score">("engagement_score")
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc")
   const [newTopic, setNewTopic] = useState("")
+  const [isRefreshing, setIsRefreshing] = useState(false)
   
   const formatDateTime = (dateString: string) => {
     const date = new Date(dateString)
@@ -119,94 +29,138 @@ export function EngagementMetricsPanel() {
     })
   }
   
-  const handleScoreChange = (id: number, value: number[]) => {
-    setTopics(prev => 
-      prev.map(topic => 
-        topic.id === id ? { ...topic, score: value[0] } : topic
-      )
-    )
+  const handleActiveChange = async (id: number, checked: boolean) => {
+    try {
+      const result = await updateTopicStatus(id, checked)
+      if (result) {
+        toast({
+          title: "Topic updated",
+          description: `Topic has been ${checked ? 'activated' : 'deactivated'}.`,
+        })
+      } else {
+        toast({
+          title: "Error updating topic",
+          description: "Failed to update topic status. Please try again.",
+          variant: "destructive",
+        })
+      }
+    } catch (error) {
+      console.error("Error updating topic status:", error)
+      toast({
+        title: "Error updating topic",
+        description: "An unexpected error occurred. Please try again.",
+        variant: "destructive",
+      })
+    }
   }
   
-  const handleActiveChange = (id: number, checked: boolean) => {
-    setTopics(prev => 
-      prev.map(topic => 
-        topic.id === id ? { ...topic, active: checked } : topic
-      )
-    )
-  }
-  
-  const handleSort = (by: "name" | "score") => {
+  const handleSort = (by: "topic" | "engagement_score") => {
     if (sortBy === by) {
       setSortDirection(prev => prev === "asc" ? "desc" : "asc")
     } else {
       setSortBy(by)
-      setSortDirection(by === "name" ? "asc" : "desc")
+      setSortDirection(by === "topic" ? "asc" : "desc")
     }
   }
   
-  const handleAddTopic = () => {
+  const handleAddTopic = async () => {
     if (newTopic.trim() !== "") {
-      const newId = Math.max(...topics.map(t => t.id)) + 1
-      setTopics(prev => [
-        ...prev,
-        {
-          id: newId,
-          name: newTopic.trim(),
-          score: 50,
-          active: true,
-          lastUpdated: new Date().toISOString(),
-          trend: "stable",
-          relatedTopics: []
+      try {
+        const result = await addTopic({
+          topic: newTopic.trim(),
+          topic_description: "",
+          subtopics: [],
+          category: ""
+        })
+        
+        if (result) {
+          toast({
+            title: "Topic added",
+            description: `"${newTopic.trim()}" has been added to topics.`,
+          })
+          setNewTopic("")
+        } else {
+          toast({
+            title: "Error adding topic",
+            description: "Failed to add topic. Please try again.",
+            variant: "destructive",
+          })
         }
-      ])
-      setNewTopic("")
-    }
-  }
-  
-  const handleDeleteTopic = (id: number) => {
-    setTopics(prev => prev.filter(topic => topic.id !== id))
-  }
-  
-  const getTrendBadge = (trend: string) => {
-    switch (trend) {
-      case "up":
-        return (
-          <Badge variant="outline" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
-            Trending Up
-          </Badge>
-        )
-      case "down":
-        return (
-          <Badge variant="outline" className="bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200">
-            Trending Down
-          </Badge>
-        )
-      case "stable":
-        return (
-          <Badge variant="outline" className="bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
-            Stable
-          </Badge>
-        )
-      default:
-        return null
-    }
-  }
-  
-  const filteredTopics = topics
-    .filter(topic => 
-      topic.name.toLowerCase().includes(searchQuery.toLowerCase())
-    )
-    .sort((a, b) => {
-      if (sortBy === "name") {
-        return sortDirection === "asc" 
-          ? a.name.localeCompare(b.name)
-          : b.name.localeCompare(a.name)
-      } else {
-        return sortDirection === "asc" 
-          ? a.score - b.score
-          : b.score - a.score
+      } catch (error) {
+        console.error("Error adding topic:", error)
+        toast({
+          title: "Error adding topic",
+          description: "An unexpected error occurred. Please try again.",
+          variant: "destructive",
+        })
       }
+    }
+  }
+  
+  const handleDeleteTopic = async (id: number) => {
+    try {
+      const success = await deleteTopic(id)
+      
+      if (success) {
+        toast({
+          title: "Topic deleted",
+          description: "The topic has been deleted successfully.",
+        })
+      } else {
+        toast({
+          title: "Error deleting topic",
+          description: "Failed to delete topic. Please try again.",
+          variant: "destructive",
+        })
+      }
+    } catch (error) {
+      console.error("Error deleting topic:", error)
+      toast({
+        title: "Error deleting topic",
+        description: "An unexpected error occurred. Please try again.",
+        variant: "destructive",
+      })
+    }
+  }
+  
+  // Category badge for visual distinction
+  const getCategoryBadge = (category: string | null) => {
+    if (!category) return null;
+    
+    return (
+      <Badge variant="outline" className="bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
+        {category}
+      </Badge>
+    )
+  }
+  
+  const handleRefresh = async () => {
+    setIsRefreshing(true)
+    await refreshTopics()
+    setIsRefreshing(false)
+    toast({
+      title: "Data refreshed",
+      description: "Topic data has been refreshed.",
     })
+  }
+  
+  const getFilteredTopics = (topics: Topic[]) => {
+    return topics
+      .filter(topic => 
+        topic.topic.toLowerCase().includes(searchQuery.toLowerCase())
+      )
+      .sort((a, b) => {
+        if (sortBy === "topic") {
+          return sortDirection === "asc" 
+            ? a.topic.localeCompare(b.topic)
+            : b.topic.localeCompare(a.topic)
+        } else {
+          return sortDirection === "asc" 
+            ? a.engagement_score - b.engagement_score
+            : b.engagement_score - a.engagement_score
+        }
+      })
+  }
   
   return (
     <div className="space-y-6">
@@ -222,79 +176,96 @@ export function EngagementMetricsPanel() {
           />
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => handleSort("name")}>
-            Name
+          <Button variant="outline" size="sm" onClick={() => handleSort("topic")}>
+            Topic
             <ArrowUpDown className="ml-2 h-3 w-3" />
           </Button>
-          <Button variant="outline" size="sm" onClick={() => handleSort("score")}>
+          <Button variant="outline" size="sm" onClick={() => handleSort("engagement_score")}>
             Score
             <ArrowUpDown className="ml-2 h-3 w-3" />
+          </Button>
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={handleRefresh}
+            disabled={isRefreshing}
+          >
+            <RefreshCw className={`mr-2 h-3 w-3 ${isRefreshing ? 'animate-spin' : ''}`} />
+            Refresh
           </Button>
         </div>
       </div>
       
-      <div className="space-y-4">
-        {filteredTopics.map((topic) => (
-          <div key={topic.id} className="rounded-lg border p-4">
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-2">
-                <h3 className="font-medium">{topic.name}</h3>
-                {getTrendBadge(topic.trend)}
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-muted-foreground">
-                  Updated: {formatDateTime(topic.lastUpdated)}
-                </span>
-                <Button 
-                  variant="ghost" 
-                  size="icon" 
-                  className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                  onClick={() => handleDeleteTopic(topic.id)}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-2">
-                <div className="flex justify-between">
-                  <Label>Engagement Score: {topic.score}</Label>
-                  <span className="text-sm text-muted-foreground">
-                    {topic.score < 30 ? "Low" : topic.score > 70 ? "High" : "Medium"}
-                  </span>
+      <DataState
+        isLoading={isLoading}
+        error={error}
+        data={data}
+        onRetry={refreshTopics}
+      >
+        {(topics) => (
+          <div className="space-y-4">
+            {getFilteredTopics(topics).map((topic) => (
+              <div key={topic.id} className="rounded-lg border p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-medium">{topic.topic}</h3>
+                    {getCategoryBadge(topic.category)}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground">
+                      Updated: {formatDateTime(topic.last_updated)}
+                    </span>
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                      onClick={() => handleDeleteTopic(topic.id)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </div>
-                <Slider
-                  defaultValue={[topic.score]}
-                  max={100}
-                  step={1}
-                  onValueChange={(value) => handleScoreChange(topic.id, value)}
-                />
-              </div>
-              <div className="flex items-center space-x-2">
-                <Switch
-                  id={`active-${topic.id}`}
-                  checked={topic.active}
-                  onCheckedChange={(checked) => handleActiveChange(topic.id, checked)}
-                />
-                <Label htmlFor={`active-${topic.id}`}>Active</Label>
-                <div className="flex-1"></div>
-                <div className="flex flex-wrap gap-1 justify-end">
-                  {topic.relatedTopics.slice(0, 2).map((relatedTopic, i) => (
-                    <Badge key={i} variant="secondary" className="text-xs">
-                      {relatedTopic}
-                    </Badge>
-                  ))}
-                  {topic.relatedTopics.length > 2 && (
-                    <Badge variant="secondary" className="text-xs">
-                      +{topic.relatedTopics.length - 2} more
-                    </Badge>
-                  )}
+                
+                {topic.topic_description && (
+                  <p className="text-sm text-muted-foreground mb-3">{topic.topic_description}</p>
+                )}
+                
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <div className="flex justify-between mb-2">
+                      <Label>Engagement Score: {topic.engagement_score}</Label>
+                      <span className="text-sm text-muted-foreground">
+                        {topic.engagement_score < 30 ? "Low" : topic.engagement_score > 70 ? "High" : "Medium"}
+                      </span>
+                    </div>
+                    {topic.last_used_at && (
+                      <div className="text-xs text-muted-foreground">
+                        Last Used: {formatDateTime(topic.last_used_at)}
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Switch
+                      id={`active-${topic.id}`}
+                      checked={topic.is_active}
+                      onCheckedChange={(checked) => handleActiveChange(topic.id, checked)}
+                    />
+                    <Label htmlFor={`active-${topic.id}`}>Active</Label>
+                    <div className="flex-1"></div>
+                    <div className="flex flex-wrap gap-1 justify-end">
+                      {topic.subtopics && topic.subtopics.length > 0 && topic.subtopics.map((subtopic, i) => (
+                        <Badge key={i} variant="secondary" className="text-xs">
+                          {subtopic}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               </div>
-            </div>
+            ))}
           </div>
-        ))}
-      </div>
+        )}
+      </DataState>
       
       <div className="flex gap-2 pt-2">
         <Input
