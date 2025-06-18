@@ -88,7 +88,7 @@ export function MobileSideNav() {
       </SheetTrigger>
       <SheetContent side="left" className="pr-0">
         <Link href="/" className="flex items-center" onClick={() => setOpen(false)}>
-          <span className="font-bold">Social Media Agent System</span>
+          <span className="font-bold">Macro Economics Expert Agentic System</span>
         </Link>
         <ScrollArea className="my-4 h-[calc(100vh-8rem)] pb-10">
           <div className="flex flex-col space-y-2.5">

@@ -10,7 +10,7 @@ export function TopNav() {
         <MobileSideNav />
         <div className="mr-4 hidden md:flex">
           <Link href="/" className="mr-6 flex items-center space-x-2">
-            <span className="hidden font-bold sm:inline-block">Social Media Agent System</span>
+            <span className="hidden font-bold sm:inline-block">Macro Economics Expert Agentic System</span>
           </Link>
         </div>
         <div className="flex flex-1 items-center justify-end space-x-4">

@@ -10,7 +10,7 @@ import { DatabaseConfigPanel } from "@/components/database-config-panel"
 import { Save, Download, Upload } from "lucide-react"
 
 export const metadata: Metadata = {
-  title: "System Configuration | Social Media Agent System",
+  title: "System Configuration | Macro Economics Expert Agentic System",
   description: "Manage system-wide settings and configurations",
 }
 
@@ -38,8 +38,6 @@ export default function ConfigPage() {
           <TabsTrigger value="general">General</TabsTrigger>
           <TabsTrigger value="api-keys">API Keys</TabsTrigger>
           <TabsTrigger value="database">Database</TabsTrigger>
-          <TabsTrigger value="scheduling">Scheduling</TabsTrigger>
-          <TabsTrigger value="notifications">Notifications</TabsTrigger>
         </TabsList>
         <TabsContent value="general" className="space-y-4">
           <Card>
@@ -80,38 +78,6 @@ export default function ConfigPage() {
             </CardContent>
             <CardFooter className="border-t px-6 py-4">
               <Button>Save Database Settings</Button>
-            </CardFooter>
-          </Card>
-        </TabsContent>
-        <TabsContent value="scheduling" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Scheduling Settings</CardTitle>
-              <CardDescription>Configure agent scheduling and frequency</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="text-center text-muted-foreground py-8">
-                Scheduling configuration will be implemented in a future update.
-              </div>
-            </CardContent>
-            <CardFooter className="border-t px-6 py-4">
-              <Button disabled>Save Scheduling Settings</Button>
-            </CardFooter>
-          </Card>
-        </TabsContent>
-        <TabsContent value="notifications" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Notification Settings</CardTitle>
-              <CardDescription>Configure system notifications and alerts</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="text-center text-muted-foreground py-8">
-                Notification configuration will be implemented in a future update.
-              </div>
-            </CardContent>
-            <CardFooter className="border-t px-6 py-4">
-              <Button disabled>Save Notification Settings</Button>
             </CardFooter>
           </Card>
         </TabsContent>
