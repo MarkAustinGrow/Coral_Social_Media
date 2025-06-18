@@ -16,7 +16,6 @@ const mockSettings = {
   showWeekNumbers: false,
   autoSchedule: true,
   schedulingPreference: "morning",
-  blogPostBuffer: 3, // days
   tweetThreadBuffer: 1, // days
   maxDailyPosts: 2,
   timeSlots: {
@@ -152,22 +151,6 @@ export function CalendarSettings() {
           </Select>
         </div>
         
-        <div className="space-y-2 pt-2">
-          <div className="flex justify-between">
-            <Label>Blog Post Buffer (days): {settings.blogPostBuffer}</Label>
-          </div>
-          <Slider
-            defaultValue={[settings.blogPostBuffer]}
-            max={7}
-            min={1}
-            step={1}
-            onValueChange={(value) => handleSliderChange("blogPostBuffer", value)}
-            disabled={!settings.autoSchedule}
-          />
-          <div className="text-xs text-muted-foreground">
-            Minimum days between blog posts
-          </div>
-        </div>
         
         <div className="space-y-2 pt-2">
           <div className="flex justify-between">

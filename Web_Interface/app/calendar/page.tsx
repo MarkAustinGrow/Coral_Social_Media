@@ -8,7 +8,7 @@ import { CalendarSettings } from "@/components/calendar-settings"
 import { Calendar, Download, Upload, RefreshCw } from "lucide-react"
 
 export const metadata: Metadata = {
-  title: "Content Calendar | Social Media Agent System",
+  title: "Content Calendar | Macro Economics Expert Agentic System",
   description: "Visualize and manage content schedules",
 }
 

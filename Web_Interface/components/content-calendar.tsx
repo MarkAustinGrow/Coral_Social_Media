@@ -1,89 +1,65 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { ChevronLeft, ChevronRight, FileText, MessageSquare } from "lucide-react"
-
-// Mock data - would be fetched from API in real implementation
-const mockEvents = [
-  {
-    id: 1,
-    title: "The Future of AI in Social Media Marketing",
-    type: "blog",
-    status: "published",
-    date: "2025-06-15T14:00:00Z",
-  },
-  {
-    id: 2,
-    title: "10 Ways to Improve Your Twitter Engagement",
-    type: "blog",
-    status: "draft",
-    date: "2025-06-18T10:00:00Z",
-  },
-  {
-    id: 3,
-    title: "Understanding Algorithm Changes in 2025",
-    type: "blog",
-    status: "review",
-    date: "2025-06-22T09:00:00Z",
-  },
-  {
-    id: 4,
-    title: "Thread: AI Trends Shaping Our Future",
-    type: "tweet",
-    status: "scheduled",
-    date: "2025-06-16T15:30:00Z",
-  },
-  {
-    id: 5,
-    title: "Thread: Cybersecurity Best Practices",
-    type: "tweet",
-    status: "scheduled",
-    date: "2025-06-19T11:00:00Z",
-  },
-  {
-    id: 6,
-    title: "Tweet: New Blog Post Announcement",
-    type: "tweet",
-    status: "scheduled",
-    date: "2025-06-15T16:00:00Z",
-  },
-  {
-    id: 7,
-    title: "How to Create Viral Content That Converts",
-    type: "blog",
-    status: "draft",
-    date: "2025-06-25T13:00:00Z",
-  },
-  {
-    id: 8,
-    title: "Thread: Cloud Computing Trends",
-    type: "tweet",
-    status: "scheduled",
-    date: "2025-06-23T14:00:00Z",
-  },
-  {
-    id: 9,
-    title: "The Psychology Behind Social Sharing",
-    type: "blog",
-    status: "review",
-    date: "2025-06-28T10:00:00Z",
-  },
-  {
-    id: 10,
-    title: "Tweet: Tech Industry News Roundup",
-    type: "tweet",
-    status: "scheduled",
-    date: "2025-06-20T09:00:00Z",
-  },
-]
+import { ChevronLeft, ChevronRight, FileText, MessageSquare, RefreshCw, Trash2 } from "lucide-react"
+import { useCalendarData, CalendarEvent } from "@/hooks/use-calendar-data"
+import { DataState } from "@/components/ui/data-state"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 
 export function ContentCalendar() {
   const [viewMode, setViewMode] = useState<"month" | "week" | "day">("week")
-  const [currentDate, setCurrentDate] = useState(new Date("2025-06-15"))
+  const [currentDate, setCurrentDate] = useState(new Date())
+  const [refreshKey, setRefreshKey] = useState(0)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [eventToDelete, setEventToDelete] = useState<CalendarEvent | null>(null)
+  
+  // Calculate start and end dates based on current date and view mode
+  const getDateRange = () => {
+    const startDate = new Date(currentDate)
+    const endDate = new Date(currentDate)
+    
+    if (viewMode === "month") {
+      startDate.setDate(1)
+      endDate.setMonth(endDate.getMonth() + 1)
+      endDate.setDate(0)
+    } else if (viewMode === "week") {
+      const day = startDate.getDay()
+      startDate.setDate(startDate.getDate() - day)
+      endDate.setDate(endDate.getDate() + (6 - day))
+    }
+    
+    return {
+      startDate: startDate.toISOString(),
+      endDate: endDate.toISOString()
+    }
+  }
+  
+  const { startDate, endDate } = getDateRange()
+  
+  // Fetch calendar data
+  const { 
+    data: events, 
+    isLoading, 
+    error, 
+    refreshEvents,
+    deleteEvent 
+  } = useCalendarData(
+    { startDate, endDate },
+    refreshKey
+  )
   
   // Generate days for the calendar based on view mode and current date
   const getDays = () => {
@@ -156,7 +132,9 @@ export function ContentCalendar() {
   
   // Get events for a specific day
   const getEventsForDay = (date: Date) => {
-    return mockEvents.filter(event => {
+    if (!events) return []
+    
+    return events.filter(event => {
       const eventDate = new Date(event.date)
       return eventDate.getDate() === date.getDate() &&
         eventDate.getMonth() === date.getMonth() &&
@@ -195,27 +173,68 @@ export function ContentCalendar() {
     setCurrentDate(new Date())
   }
   
+  // Handle refresh button click
+  const handleRefresh = () => {
+    setRefreshKey(prev => prev + 1)
+  }
+  
+  // Handle delete button click
+  const handleDeleteClick = (event: CalendarEvent) => {
+    setEventToDelete(event)
+    setDeleteDialogOpen(true)
+  }
+  
+  // Handle delete confirmation
+  const handleDeleteConfirm = async () => {
+    if (!eventToDelete) return
+    
+    try {
+      await deleteEvent(eventToDelete)
+      setDeleteDialogOpen(false)
+      setEventToDelete(null)
+    } catch (error) {
+      console.error('Error deleting event:', error)
+    }
+  }
+  
   // Render event card
-  const renderEvent = (event: any) => {
+  const renderEvent = (event: CalendarEvent) => {
     return (
       <Card key={event.id} className={`p-2 mb-1 text-xs border-l-4 ${
-        event.type === 'blog' 
+        event.type === 'thread' 
           ? 'border-l-blue-500 bg-blue-50 dark:bg-blue-950' 
           : 'border-l-green-500 bg-green-50 dark:bg-green-950'
       }`}>
-        <div className="flex items-center gap-1">
-          {event.type === 'blog' ? (
-            <FileText className="h-3 w-3" />
-          ) : (
-            <MessageSquare className="h-3 w-3" />
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-1 truncate">
+            {event.type === 'thread' ? (
+              <MessageSquare className="h-3 w-3 flex-shrink-0" />
+            ) : (
+              <FileText className="h-3 w-3 flex-shrink-0" />
+            )}
+            <span className="font-medium truncate">
+              {event.title || (event.content ? event.content.substring(0, 30) + '...' : 'Untitled')}
+            </span>
+          </div>
+          {event.status === 'scheduled' && (
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              className="h-5 w-5 ml-1" 
+              onClick={(e) => {
+                e.stopPropagation()
+                handleDeleteClick(event)
+              }}
+            >
+              <Trash2 className="h-3 w-3" />
+            </Button>
           )}
-          <span className="font-medium truncate">{event.title}</span>
         </div>
         <div className="flex justify-between items-center mt-1">
           <Badge variant={
-            event.status === 'published' ? 'default' :
-            event.status === 'scheduled' ? 'default' :
-            event.status === 'review' ? 'outline' : 'secondary'
+            event.status === 'posted' ? 'default' :
+            event.status === 'scheduled' ? 'outline' :
+            event.status === 'failed' ? 'destructive' : 'secondary'
           } className="text-[10px] px-1 py-0 h-4">
             {event.status}
           </Badge>
@@ -227,7 +246,48 @@ export function ContentCalendar() {
     )
   }
   
-  return (
+  // Loading component for DataState
+  const loadingComponent = (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" disabled>
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <Button variant="outline" size="sm" disabled>
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+          <div className="h-6 w-32 animate-pulse bg-muted rounded"></div>
+          <Button variant="outline" size="sm" disabled>
+            Today
+          </Button>
+        </div>
+        <div className="h-10 w-[120px] animate-pulse bg-muted rounded"></div>
+      </div>
+      
+      <div className="grid grid-cols-7 gap-2">
+        {[...Array(7)].map((_, i) => (
+          <div key={i} className="text-center font-medium text-sm py-2">
+            {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][i]}
+          </div>
+        ))}
+        
+        {[...Array(7)].map((_, i) => (
+          <div key={i} className="border rounded-md p-2 min-h-[120px]">
+            <div className="text-right text-sm font-medium mb-1">
+              <div className="h-4 w-16 float-right animate-pulse bg-muted rounded"></div>
+            </div>
+            <div className="space-y-1">
+              <div className="h-12 animate-pulse bg-muted rounded"></div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+  
+  // Calendar content component
+  const calendarContent = (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
         <div className="flex items-center gap-2">
@@ -242,19 +302,24 @@ export function ContentCalendar() {
             Today
           </Button>
         </div>
-        <Select
-          value={viewMode}
-          onValueChange={(value: "month" | "week" | "day") => setViewMode(value)}
-        >
-          <SelectTrigger className="w-[120px]">
-            <SelectValue placeholder="View" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="month">Month</SelectItem>
-            <SelectItem value="week">Week</SelectItem>
-            <SelectItem value="day">Day</SelectItem>
-          </SelectContent>
-        </Select>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={handleRefresh}>
+            <RefreshCw className="h-4 w-4" />
+          </Button>
+          <Select
+            value={viewMode}
+            onValueChange={(value: "month" | "week" | "day") => setViewMode(value)}
+          >
+            <SelectTrigger className="w-[120px]">
+              <SelectValue placeholder="View" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="month">Month</SelectItem>
+              <SelectItem value="week">Week</SelectItem>
+              <SelectItem value="day">Day</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </div>
       
       <div className={`grid ${viewMode === 'month' ? 'grid-cols-7' : viewMode === 'week' ? 'grid-cols-7' : 'grid-cols-1'} gap-2`}>
@@ -286,7 +351,7 @@ export function ContentCalendar() {
                 {formatDate(day)}
               </div>
               <div className="space-y-1 overflow-y-auto max-h-[200px]">
-                {dayEvents.map(renderEvent)}
+                {dayEvents.map(event => renderEvent(event))}
                 {dayEvents.length === 0 && (
                   <div className="text-xs text-center text-muted-foreground py-4">
                     No events
@@ -298,5 +363,39 @@ export function ContentCalendar() {
         })}
       </div>
     </div>
+  )
+  
+  return (
+    <>
+      <DataState
+        isLoading={isLoading}
+        error={error}
+        data={events}
+        onRetry={handleRefresh}
+        loadingComponent={loadingComponent}
+      >
+        {(_data) => {
+          return calendarContent;
+        }}
+      </DataState>
+      
+      {/* Delete confirmation dialog */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you sure you want to delete this event?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. The event will be permanently deleted from the calendar.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteConfirm} className="bg-red-600 hover:bg-red-700">
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   )
 }
