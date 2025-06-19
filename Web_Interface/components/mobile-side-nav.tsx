@@ -19,6 +19,7 @@ import {
   Twitter,
   Users,
   Zap,
+  Database,
 } from "lucide-react"
 
 const items = [
@@ -51,6 +52,11 @@ const items = [
     title: "Agent Status & Logs",
     href: "/logs",
     icon: Zap,
+  },
+  {
+    title: "Research Memory",
+    href: "/memory",
+    icon: Database,
   },
   {
     title: "Content Calendar",
