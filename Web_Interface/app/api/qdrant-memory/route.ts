@@ -65,8 +65,8 @@ const env = loadEnvFromRoot()
 // Get Qdrant configuration
 const QDRANT_URL = getRootEnv("QDRANT_URL") || "http://localhost:6333"
 const QDRANT_API_KEY = getRootEnv("QDRANT_API_KEY") || ""
-// Use the same collection name as the Max-Memory project
-const COLLECTION_NAME = "macrobot_memory"
+// Use the tweet_insights collection
+const COLLECTION_NAME = "tweet_insights"
 
 export async function GET(req: NextRequest) {
   try {

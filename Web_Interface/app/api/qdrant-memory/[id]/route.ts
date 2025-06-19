@@ -7,7 +7,7 @@ const env = loadEnvFromRoot()
 // Get Qdrant configuration
 const QDRANT_URL = getRootEnv("QDRANT_URL") || "http://localhost:6333"
 const QDRANT_API_KEY = getRootEnv("QDRANT_API_KEY") || ""
-const COLLECTION_NAME = "macrobot_memory"
+const COLLECTION_NAME = "tweet_insights"
 
 export async function GET(
   req: NextRequest,
