@@ -166,10 +166,13 @@ export async function GET(req: NextRequest) {
     
     // Use scroll API instead of search API for listing all memories
     // This matches the approach used in the Max-Memory implementation
+    // Set a high limit to get all memories at once (no pagination)
     const scrollBody: any = {
-      limit,
-      with_payload: true,
-      offset: offset ? offset : null
+      limit: 1000, // High limit to get all memories
+      with_payload: {
+        include: ["content", "tweet_text", "tags", "topics", "sentiment", "persona_name", "character_version", "timestamp", "date", "persona_alignment_score"]
+      },
+      offset: null
     }
     
     console.log(`Connecting to Qdrant at ${QDRANT_URL}, collection: ${COLLECTION_NAME}`)
@@ -253,7 +256,7 @@ export async function GET(req: NextRequest) {
     
     const queryTime = Date.now() - startTime
     
-    // Format results with safer property access
+    // Format results with safer property access - only include fields needed for table view
     // Map fields from Max-Memory format to our expected format
     const formattedResults = points.map((result: any) => {
       const payload = result.payload || {};
@@ -262,9 +265,6 @@ export async function GET(req: NextRequest) {
         point_id: result.id,
         // Max-Memory uses "content" for the main text
         tweet_text: payload.content || payload.tweet_text || "No content available",
-        // Use analysis field or generate a summary
-        analysis: payload.analysis_result || payload.analysis || 
-                 (payload.content ? `Memory from source: ${payload.source || "unknown"}` : "No analysis available"),
         // Max-Memory uses "tags" instead of "topics"
         topics: Array.isArray(payload.tags) ? payload.tags : 
                 (Array.isArray(payload.topics) ? payload.topics : []),
@@ -276,21 +276,6 @@ export async function GET(req: NextRequest) {
         date: payload.timestamp || payload.date || new Date().toISOString(),
         // Use persona_alignment_score as confidence_score if available
         confidence_score: payload.persona_alignment_score || result.score || 1.0,
-        // Extract related entities or use matched_aspects
-        related_entities: Array.isArray(payload.related_entities) ? payload.related_entities : 
-                         (Array.isArray(payload.matched_aspects) ? payload.matched_aspects : []),
-        // Build metadata from available fields
-        metadata: {
-          author: payload.author || payload.source || "@unknown",
-          engagement_score: typeof payload.engagement_score === 'number' ? payload.engagement_score : 0,
-          retweet_count: typeof payload.retweet_count === 'number' ? payload.retweet_count : 0,
-          like_count: typeof payload.like_count === 'number' ? payload.like_count : 0,
-          source_url: payload.source_url || "",
-          // Add memory type if available
-          type: payload.type || "unknown",
-          // Add alignment explanation if available
-          alignment_explanation: payload.alignment_explanation || ""
-        },
       };
     });
     

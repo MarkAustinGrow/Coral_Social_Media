@@ -7,12 +7,15 @@ import { DateRange } from "react-day-picker"
 export interface QdrantMemory {
   point_id: string
   tweet_text: string
-  analysis: string
   topics: string[]
   sentiment: "positive" | "negative" | "neutral"
   persona_name: string
   date: string
   confidence_score: number
+}
+
+export interface QdrantMemoryDetail extends QdrantMemory {
+  analysis: string
   related_entities: string[]
   metadata: {
     author: string
@@ -20,6 +23,8 @@ export interface QdrantMemory {
     retweet_count: number
     like_count: number
     source_url: string
+    type?: string
+    alignment_explanation?: string
   }
 }
 
@@ -32,25 +37,27 @@ export interface MemoryFilters {
 
 export interface UseMemoryDataReturn {
   memories: QdrantMemory[]
+  selectedMemory: QdrantMemoryDetail | null
   isLoading: boolean
+  isLoadingDetail: boolean
   error: Error | null
   totalCount: number
   queryTime: number
-  nextPageOffset: string | null
   message: string | null
-  searchMemories: (query: string, filters: MemoryFilters, limit?: number, offset?: number) => Promise<void>
-  loadMoreMemories: () => Promise<void>
+  searchMemories: (query: string, filters: MemoryFilters) => Promise<void>
+  getMemoryDetail: (pointId: string) => Promise<void>
   deleteMemory: (pointId: string) => Promise<boolean>
   resetFilters: () => void
 }
 
 export function useMemoryData(): UseMemoryDataReturn {
   const [memories, setMemories] = useState<QdrantMemory[]>([])
+  const [selectedMemory, setSelectedMemory] = useState<QdrantMemoryDetail | null>(null)
   const [isLoading, setIsLoading] = useState<boolean>(false)
+  const [isLoadingDetail, setIsLoadingDetail] = useState<boolean>(false)
   const [error, setError] = useState<Error | null>(null)
   const [totalCount, setTotalCount] = useState<number>(0)
   const [queryTime, setQueryTime] = useState<number>(0)
-  const [nextPageOffset, setNextPageOffset] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const [currentQuery, setCurrentQuery] = useState<string>("")
   const [currentFilters, setCurrentFilters] = useState<MemoryFilters>({
@@ -59,7 +66,6 @@ export function useMemoryData(): UseMemoryDataReturn {
     persona: "all",
     dateRange: undefined,
   })
-  const [currentLimit, setCurrentLimit] = useState<number>(20)
 
   const resetFilters = useCallback(() => {
     // This function is just a placeholder for resetting filters
@@ -69,25 +75,21 @@ export function useMemoryData(): UseMemoryDataReturn {
   const searchMemories = useCallback(
     async (
       query: string,
-      filters: MemoryFilters,
-      limit: number = 20,
-      offset: number = 0
+      filters: MemoryFilters
     ): Promise<void> => {
       setIsLoading(true)
       setError(null)
       setMessage(null)
+      setSelectedMemory(null)
       
-      // Store current search parameters for pagination
+      // Store current search parameters
       setCurrentQuery(query)
       setCurrentFilters(filters)
-      setCurrentLimit(limit)
 
       try {
         // Build query parameters
         const params = new URLSearchParams()
         if (query) params.append("query", query)
-        if (limit) params.append("limit", limit.toString())
-        if (offset) params.append("offset", offset.toString())
 
         // Add filters as JSON
         const filtersToSend: Record<string, any> = {}
@@ -126,7 +128,6 @@ export function useMemoryData(): UseMemoryDataReturn {
         setMemories(data.result)
         setTotalCount(data.total || data.result.length)
         setQueryTime(data.query_time_ms || 0)
-        setNextPageOffset(data.next_page_offset || null)
         setMessage(data.message || null)
       } catch (err) {
         console.error("Error searching memories:", err)
@@ -134,7 +135,6 @@ export function useMemoryData(): UseMemoryDataReturn {
         setMemories([])
         setTotalCount(0)
         setQueryTime(0)
-        setNextPageOffset(null)
       } finally {
         setIsLoading(false)
       }
@@ -142,41 +142,15 @@ export function useMemoryData(): UseMemoryDataReturn {
     []
   )
   
-  const loadMoreMemories = useCallback(async (): Promise<void> => {
-    if (!nextPageOffset || isLoading) return
+  const getMemoryDetail = useCallback(async (pointId: string): Promise<void> => {
+    if (!pointId) return
     
-    setIsLoading(true)
+    setIsLoadingDetail(true)
+    setError(null)
     
     try {
-      // Build query parameters
-      const params = new URLSearchParams()
-      if (currentQuery) params.append("query", currentQuery)
-      params.append("limit", currentLimit.toString())
-      params.append("offset", nextPageOffset)
-      
-      // Add filters as JSON
-      const filtersToSend: Record<string, any> = {}
-      
-      if (currentFilters.topic && currentFilters.topic !== "all") {
-        filtersToSend.topics = [currentFilters.topic]
-      }
-      
-      if (currentFilters.sentiment && currentFilters.sentiment !== "all") {
-        filtersToSend.sentiment = currentFilters.sentiment
-      }
-      
-      if (currentFilters.persona && currentFilters.persona !== "all") {
-        filtersToSend.persona = currentFilters.persona
-      }
-      
-      if (currentFilters.dateRange?.from && currentFilters.dateRange?.to) {
-        filtersToSend.dateRange = currentFilters.dateRange
-      }
-      
-      params.append("filters", JSON.stringify(filtersToSend))
-      
-      // Make API request
-      const response = await fetch(`/api/qdrant-memory?${params.toString()}`)
+      // Make API request to get memory details
+      const response = await fetch(`/api/qdrant-memory/${pointId}`)
       
       if (!response.ok) {
         throw new Error(`API error: ${response.status}`)
@@ -188,16 +162,14 @@ export function useMemoryData(): UseMemoryDataReturn {
         throw new Error(data.error || "Unknown error")
       }
       
-      setMemories(prev => [...prev, ...data.result])
-      setTotalCount(prev => prev + data.result.length)
-      setNextPageOffset(data.next_page_offset || null)
+      setSelectedMemory(data.memory)
     } catch (err) {
-      console.error("Error loading more memories:", err)
+      console.error("Error fetching memory details:", err)
       setError(err instanceof Error ? err : new Error(String(err)))
     } finally {
-      setIsLoading(false)
+      setIsLoadingDetail(false)
     }
-  }, [nextPageOffset, isLoading, currentQuery, currentFilters, currentLimit])
+  }, [])
 
   const deleteMemory = useCallback(async (pointId: string): Promise<boolean> => {
     setIsLoading(true)
@@ -238,14 +210,15 @@ export function useMemoryData(): UseMemoryDataReturn {
 
   return {
     memories,
+    selectedMemory,
     isLoading,
+    isLoadingDetail,
     error,
     totalCount,
     queryTime,
-    nextPageOffset,
     message,
     searchMemories,
-    loadMoreMemories,
+    getMemoryDetail,
     deleteMemory,
     resetFilters,
   }

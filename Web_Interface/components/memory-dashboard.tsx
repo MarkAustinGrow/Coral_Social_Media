@@ -22,7 +22,7 @@ import { Search, RefreshCw, Download, Trash2, Eye } from "lucide-react"
 import { DatePickerWithRange } from "../components/date-range-picker"
 import { DataState } from "@/components/ui/data-state"
 import { useToast } from "@/hooks/use-toast"
-import { useMemoryData, QdrantMemory, MemoryFilters } from "@/hooks/use-memory-data"
+import { useMemoryData, QdrantMemory, QdrantMemoryDetail, MemoryFilters } from "@/hooks/use-memory-data"
 import type { DateRange } from "react-day-picker"
 
 export function MemoryDashboard() {
@@ -34,21 +34,23 @@ export function MemoryDashboard() {
     persona: "all",
     dateRange: undefined,
   })
-  const [selectedMemory, setSelectedMemory] = useState<QdrantMemory | null>(null)
+  // Local state for UI purposes
+  const [dialogOpen, setDialogOpen] = useState(false)
   const [uniqueTopics, setUniqueTopics] = useState<string[]>([])
   const [uniquePersonas, setUniquePersonas] = useState<string[]>([])
   const sentiments = ["positive", "negative", "neutral"]
 
   const {
     memories,
+    selectedMemory, // This is the QdrantMemoryDetail from the API
     isLoading,
+    isLoadingDetail,
     error,
     totalCount,
     queryTime,
-    nextPageOffset,
     message,
     searchMemories,
-    loadMoreMemories,
+    getMemoryDetail,
     deleteMemory,
     resetFilters,
   } = useMemoryData()
@@ -71,7 +73,6 @@ export function MemoryDashboard() {
   }, [memories])
 
   const handleSearch = async () => {
-    setSelectedMemory(null)
     await searchMemories(query, filters)
   }
 
@@ -296,8 +297,7 @@ export function MemoryDashboard() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="w-[300px]">Tweet</TableHead>
-                      <TableHead className="w-[200px]">Analysis</TableHead>
+                      <TableHead className="w-[500px]">Tweet</TableHead>
                       <TableHead>Topics</TableHead>
                       <TableHead>Sentiment</TableHead>
                       <TableHead>Persona</TableHead>
@@ -310,10 +310,7 @@ export function MemoryDashboard() {
                     {data.map((memory) => (
                       <TableRow key={memory.point_id}>
                         <TableCell className="font-medium">
-                          <div className="max-w-[280px] truncate">{memory.tweet_text}</div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="max-w-[180px] truncate text-sm text-muted-foreground">{memory.analysis}</div>
+                          <div className="max-w-[480px] truncate">{memory.tweet_text}</div>
                         </TableCell>
                         <TableCell>
                           <div className="flex flex-wrap gap-1">
@@ -345,17 +342,28 @@ export function MemoryDashboard() {
                                   variant="outline"
                                   size="icon"
                                   className="h-8 w-8"
-                                  onClick={() => setSelectedMemory(memory)}
+                                  onClick={() => {
+                                    getMemoryDetail(memory.point_id)
+                                    setDialogOpen(true)
+                                  }}
                                 >
                                   <Eye className="h-4 w-4" />
                                 </Button>
                               </DialogTrigger>
-                              <DialogContent className="max-w-4xl max-h-[80vh]">
+                              <DialogContent 
+                                className="max-w-4xl max-h-[80vh]"
+                                onInteractOutside={() => setDialogOpen(false)}
+                                onEscapeKeyDown={() => setDialogOpen(false)}
+                              >
                                 <DialogHeader>
                                   <DialogTitle>Memory Details</DialogTitle>
                                   <DialogDescription>Point ID: {memory.point_id}</DialogDescription>
                                 </DialogHeader>
-                                {selectedMemory && (
+                                {isLoadingDetail ? (
+                                  <div className="flex justify-center items-center py-12">
+                                    <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
+                                  </div>
+                                ) : selectedMemory ? (
                                   <ScrollArea className="max-h-[60vh]">
                                     <div className="space-y-4">
                                       <div>
@@ -387,7 +395,7 @@ export function MemoryDashboard() {
                                         <div>
                                           <h4 className="font-medium mb-2">Related Entities</h4>
                                           <div className="flex flex-wrap gap-1">
-                                            {selectedMemory.related_entities.map((entity) => (
+                                            {selectedMemory.related_entities.map((entity: string) => (
                                               <Badge key={entity} variant="outline">
                                                 {entity}
                                               </Badge>
@@ -448,6 +456,10 @@ export function MemoryDashboard() {
                                       </div>
                                     </div>
                                   </ScrollArea>
+                                ) : (
+                                  <div className="py-8 text-center text-muted-foreground">
+                                    <p>No memory details available</p>
+                                  </div>
                                 )}
                               </DialogContent>
                             </Dialog>
@@ -470,22 +482,6 @@ export function MemoryDashboard() {
             )}
           </DataState>
           
-          {nextPageOffset && (
-            <div className="flex justify-center mt-6">
-              <Button 
-                variant="outline" 
-                onClick={() => loadMoreMemories()} 
-                disabled={isLoading}
-                className="w-full max-w-xs"
-              >
-                {isLoading ? (
-                  <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <span>Load More</span>
-                )}
-              </Button>
-            </div>
-          )}
         </CardContent>
       </Card>
     </div>
