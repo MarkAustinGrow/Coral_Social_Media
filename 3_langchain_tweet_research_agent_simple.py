@@ -59,7 +59,7 @@ try:
     )
     
     # Ensure Qdrant collection exists
-    collection_name = "tweet_insights"
+    collection_name = "working_knowledge"
     collection_exists = False
     
     # First, try to check if collection exists using list_collections
@@ -235,7 +235,7 @@ def mark_tweet_as_analyzed(tweet_ids: list):
     Mark tweets as analyzed in Supabase.
     
     Args:
-        tweet_ids: List of tweet IDs to mark as analyzed
+        tweet_ids: List of tweet IDs to mark as analyzed (can be database IDs or tweet_ids)
         
     Returns:
         Dictionary containing operation result
@@ -243,9 +243,19 @@ def mark_tweet_as_analyzed(tweet_ids: list):
     try:
         # Update tweets in Supabase
         for tweet_id in tweet_ids:
-            supabase_client.table("tweets_cache").update(
-                {"analyzed": True}
-            ).eq("tweet_id", tweet_id).execute()
+            # Check if the ID is numeric (database ID) or a string (tweet_id)
+            if isinstance(tweet_id, int) or (isinstance(tweet_id, str) and tweet_id.isdigit()):
+                # It's a database ID, use the 'id' column
+                supabase_client.table("tweets_cache").update(
+                    {"analyzed": True}
+                ).eq("id", tweet_id).execute()
+                logger.info(f"Marked tweet with database ID {tweet_id} as analyzed")
+            else:
+                # It's a tweet_id, use the 'tweet_id' column
+                supabase_client.table("tweets_cache").update(
+                    {"analyzed": True}
+                ).eq("tweet_id", tweet_id).execute()
+                logger.info(f"Marked tweet with tweet_id {tweet_id} as analyzed")
         
         log_to_database("info", f"Marked {len(tweet_ids)} tweets as analyzed", {"tweet_ids": tweet_ids})
         return {
@@ -301,9 +311,24 @@ def analyze_tweet_perplexity(tweet_text: str, question: str, persona: dict = Non
             question = "What is the author of this tweet truly trying to communicate?"
             logger.warning("No question provided, using default question")
         
-        prompt = f"Tweet: \"{tweet_text}\"\n\nQuestion: {question}\n\nPlease analyze this tweet in a {tone_descriptor} tone, with a {humor_descriptor} approach, maintaining a {enthusiasm_descriptor} energy level, and presenting your analysis in a {assertiveness_descriptor} manner."
+        prompt = f"""
+        Research Question: {question}
+
+        Context (from a tweet): "{tweet_text}"
+
+        Please provide a comprehensive research response that:
+        1. Thoroughly explores the question from multiple perspectives
+        2. Provides specific data points, evidence, and examples where relevant
+        3. Considers historical context and future implications
+        4. Organizes insights into clear sections with logical flow
+        5. Identifies connections to related fields or topics
+        6. Presents a balanced view that considers different interpretations
+        7. Concludes with the most significant implications
+
+        Format your response with clear section headings, bullet points for key insights, and citations where appropriate. Present your analysis in a {tone_descriptor} tone, with a {humor_descriptor} approach, maintaining a {enthusiasm_descriptor} energy level, and presenting your analysis in a {assertiveness_descriptor} manner.
+        """
         
-        system_prompt = f"You are {persona.get('name', 'Content Reviewer')}, {persona.get('description', 'a meticulous and objective reviewer who prioritizes factual accuracy, logical consistency, and narrative flow in all content.')} Provide a thoughtful, insightful response that helps understand the author's true intent and the broader context of this tweet."
+        system_prompt = f"You are {persona.get('name', 'Content Reviewer')}, {persona.get('description', 'a meticulous and objective reviewer who prioritizes factual accuracy, logical consistency, and narrative flow in all content.')} Provide a thorough, well-researched response that explores the topic in depth, going beyond the tweet itself to examine broader implications and contexts."
         
         data = {
             "model": "sonar",
@@ -376,7 +401,7 @@ def analyze_tweet_perplexity(tweet_text: str, question: str, persona: dict = Non
         }
 
 @tool
-def store_analysis_qdrant(tweet_id: str, tweet_text: str, question: str, analysis_result: str, metadata: dict = None):
+def store_analysis_qdrant(tweet_id: str, tweet_text: str, question: str, analysis_result: str, tweet_data: dict = None, metadata: dict = None):
     """
     Store tweet analysis in Qdrant vector database with enhanced metadata for better searchability.
     
@@ -385,6 +410,7 @@ def store_analysis_qdrant(tweet_id: str, tweet_text: str, question: str, analysi
         tweet_text: Text of the tweet
         question: The research question that was asked
         analysis_result: The answer from Perplexity
+        tweet_data: Full tweet data object containing author and engagement metrics (optional)
         metadata: Additional metadata to store (optional)
         
     Returns:
@@ -398,9 +424,18 @@ def store_analysis_qdrant(tweet_id: str, tweet_text: str, question: str, analysi
         # Generate embedding
         embedding = embeddings.embed_query(analysis_text)
         
-        # Extract author from metadata if available
+        # Extract author and engagement metrics from tweet_data if available
         author = None
-        if metadata and "author" in metadata:
+        likes = 0
+        retweets = 0
+        replies = 0
+        
+        if tweet_data:
+            author = tweet_data.get("author", None)
+            likes = tweet_data.get("likes", 0)
+            retweets = tweet_data.get("retweets", 0)
+            replies = tweet_data.get("replies", 0)
+        elif metadata and "author" in metadata:
             author = metadata.get("author")
         
         # Extract topics and sentiment from analysis
@@ -435,19 +470,35 @@ def store_analysis_qdrant(tweet_id: str, tweet_text: str, question: str, analysi
         # Prepare enhanced payload
         if metadata is None:
             metadata = {}
-            
-        # Create structured payload with searchable fields
+        
+        # Import datetime for proper timestamp formatting
+        from datetime import datetime
+        
+        # Create structured payload that matches the macrobot schema
         payload = {
+            "content": tweet_text,
+            "type": "research",
+            "source": "perplexity:perplexity",
+            "timestamp": datetime.utcfromtimestamp(time.time()).isoformat(),
+            "tags": topics,
+            "persona_alignment_score": metadata.get("confidence_score", 1.0),
+            "matched_aspects": metadata.get("related_entities", []),
+            "alignment_explanation": analysis_result,  # Store the full analysis
+            "character_version": 1,  # Or parse from metadata if dynamic
+            "alignment_bypassed": False,
+            
+            # Keep original fields for backward compatibility
             "tweet_id": tweet_id,
-            "tweet_text": tweet_text,
             "author": author,
-            "topics": topics,
             "sentiment": sentiment,
             "question": question,
-            "analysis": analysis_result,
-            "custom_metadata": metadata,  # Store original metadata
-            "timestamp": time.time(),
-            "date": time.strftime("%Y-%m-%d", time.localtime())
+            "custom_metadata": {
+                "engagement_score": likes + (retweets * 2) + replies,  # Simple engagement score calculation
+                "like_count": likes,
+                "retweet_count": retweets,
+                "reply_count": replies,
+                "source_url": ""  # Add source URL if available
+            }
         }
         
         # Convert tweet_id to a valid Qdrant point ID
@@ -458,7 +509,7 @@ def store_analysis_qdrant(tweet_id: str, tweet_text: str, question: str, analysi
         
         # Store in Qdrant
         qdrant_client.upsert(
-            collection_name="tweet_insights",
+            collection_name="working_knowledge",
             points=[
                 models.PointStruct(
                     id=point_id,
@@ -509,7 +560,7 @@ def search_qdrant(query: str, limit: int = 5, filter_by: dict = None):
                 topic = filter_by["topics"]
                 filter_conditions.append(
                     models.FieldCondition(
-                        key="topics",
+                        key="tags",  # working_knowledge uses "tags" for topics
                         match=models.MatchAny(any=[topic])
                     )
                 )
@@ -539,7 +590,7 @@ def search_qdrant(query: str, limit: int = 5, filter_by: dict = None):
                 date = filter_by["date"]
                 filter_conditions.append(
                     models.FieldCondition(
-                        key="date",
+                        key="timestamp",  # working_knowledge uses "timestamp" for date
                         match=models.MatchValue(value=date)
                     )
                 )
@@ -552,7 +603,7 @@ def search_qdrant(query: str, limit: int = 5, filter_by: dict = None):
         
         # Search in Qdrant with optional filter
         search_results = qdrant_client.search(
-            collection_name="tweet_insights",
+            collection_name="working_knowledge",
             query_vector=query_embedding,
             limit=limit,
             filter=search_filter
@@ -563,12 +614,12 @@ def search_qdrant(query: str, limit: int = 5, filter_by: dict = None):
         for result in search_results:
             results.append({
                 "tweet_id": result.payload.get("tweet_id"),
-                "tweet_text": result.payload.get("tweet_text"),
+                "tweet_text": result.payload.get("content", result.payload.get("tweet_text", "")),
                 "author": result.payload.get("author"),
-                "topics": result.payload.get("topics", []),
+                "topics": result.payload.get("tags", result.payload.get("topics", [])),
                 "sentiment": result.payload.get("sentiment"),
-                "date": result.payload.get("date"),
-                "analysis": result.payload.get("analysis"),
+                "date": result.payload.get("timestamp", result.payload.get("date", "")),
+                "analysis": result.payload.get("alignment_explanation", result.payload.get("analysis", "")),
                 "score": result.score
             })
         
@@ -589,7 +640,7 @@ def search_qdrant(query: str, limit: int = 5, filter_by: dict = None):
 @tool
 def generate_research_question(tweet_text: str, persona: dict = None):
     """
-    Generate a single focused research question to understand the author's intent in a tweet.
+    Generate a single focused research question to understand the broader implications and context of the topic mentioned in a tweet.
     
     Args:
         tweet_text: The text of the tweet
@@ -617,23 +668,32 @@ def generate_research_question(tweet_text: str, persona: dict = None):
             model="gpt-4o-mini",
             model_provider="openai",
             api_key=os.getenv("OPENAI_API_KEY"),
-            temperature=0.7
+            temperature=0.9  # Higher temperature for more creative research questions
         )
         
         system_prompt = f"You are {persona.get('name', 'Content Reviewer')}, {persona.get('description', 'a meticulous and objective reviewer who prioritizes factual accuracy, logical consistency, and narrative flow in all content.')} Generate a research question in a {tone_descriptor} tone, with a {humor_descriptor} approach, maintaining a {enthusiasm_descriptor} energy level, and presenting your question in a {assertiveness_descriptor} manner."
         
         prompt = f"""
-        Given the following tweet, generate ONE focused research question that would help understand what the author is truly trying to communicate:
-        
+        Given the following tweet, generate ONE focused research question that would help understand the broader implications and context of the topic mentioned.
+
         Tweet: "{tweet_text}"
-        
-        Your question should aim to uncover:
-        - The author's underlying intent or message
-        - Any implicit assumptions or beliefs
-        - The broader context that gives this tweet meaning
-        
-        Focus on generating a single, thoughtful question that gets to the heart of what this tweet is really about.
-        
+
+        Your research question should:
+        1. Focus on the underlying topic rather than the tweet itself
+        2. Aim for depth and comprehensive understanding
+        3. Explore potential connections to related fields and broader implications
+        4. Be specific enough to guide detailed research
+        5. Be open-ended enough to allow for multiple perspectives
+        6. Encourage data-driven analysis and evidence-based exploration
+        7. Consider historical context and future implications
+
+        The ideal research question should lead to a comprehensive analysis that could include:
+        - Multiple perspectives on the topic
+        - Supporting evidence and data points
+        - Connections to related fields
+        - Historical context and future implications
+        - Potential impacts on various sectors or domains
+
         Return ONLY the question text, with no additional formatting or explanation.
         """
         
@@ -685,7 +745,7 @@ async def create_tweet_research_agent(client, tools, agent_tools):
             2. If a tweet is found:
                a. Generate a single focused research question using generate_research_question and save the returned question
                b. Use Perplexity to analyze the tweet by passing the tweet_text AND the question to analyze_tweet_perplexity
-               c. Store the analysis in Qdrant using store_analysis_qdrant with the tweet_id, tweet_text, question, and analysis result
+               c. Store the analysis in Qdrant using store_analysis_qdrant with the tweet_id, tweet_text, question, analysis result, AND the full tweet_data object to include author and engagement metrics
                d. Mark the tweet as analyzed using mark_tweet_as_analyzed
             3. Wait for 5 minutes before processing the next tweet (to avoid API rate limits)
             

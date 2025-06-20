@@ -79,7 +79,14 @@ The system uses LangChain for creating and managing AI agents. The integration i
 The system uses two database technologies:
 
 - **Supabase**: PostgreSQL-based database for structured data (tweets, blogs, user settings)
-- **Qdrant**: Vector database for semantic search capabilities
+- **Qdrant**: Vector database for semantic search and knowledge storage with the following capabilities:
+  - **Enhanced Metadata Schema**: Structured payload format with standardized fields for improved searchability
+  - **Macrobot Schema Alignment**: Compatibility with the macrobot schema for consistent data representation
+  - **Multi-parameter Filtering**: Advanced search capabilities by topic, sentiment, author, and date
+  - **Engagement Metrics**: Storage of engagement data (likes, retweets, replies) for relevance scoring
+  - **Topic Categorization**: Automatic extraction and indexing of topics from content
+  - **Sentiment Analysis**: Classification of content sentiment (positive, negative, neutral)
+  - **Vector Embeddings**: OpenAI embeddings for semantic similarity search
 
 ## LangChain Agents
 
@@ -96,16 +103,22 @@ Collects tweets from specified accounts and hashtags.
   - Metadata extraction
   - Filtering based on engagement metrics
 
-### 2. Tweet Research Agent (`3_langchain_tweet_research_agent.py`)
+### 2. Tweet Research Agent (`3_langchain_tweet_research_agent_simple.py`)
 
-Analyzes collected tweets to extract insights and identify patterns.
+Analyzes collected tweets to extract insights, identify patterns, and store enriched data in the Qdrant vector database.
 
 - **Inputs**: Tweet collections from the Tweet Scraping Agent
-- **Outputs**: Analysis reports, topic clusters, sentiment analysis
+- **Outputs**: Analysis reports, topic clusters, sentiment analysis, vector embeddings
 - **Key Features**:
-  - Sentiment analysis
-  - Topic identification
-  - Engagement pattern tracking
+  - Automatic research question generation for focused analysis
+  - In-depth content analysis using Perplexity API
+  - Sentiment analysis (positive, negative, neutral)
+  - Topic extraction and categorization
+  - Engagement metrics calculation (based on likes, retweets, replies)
+  - Enhanced metadata storage for improved searchability
+  - Structured schema alignment with macrobot format
+  - Advanced vector search with multi-parameter filtering
+  - Persona-based analysis customization
 
 ### 3. Hot Topic Agent (`3.5_langchain_hot_topic_agent.py`)
 
@@ -254,9 +267,52 @@ The debug tools (`app/debug/page.tsx` and related components) provide functional
 - **API Endpoint** (`app/api/debug/supabase/route.ts`): Backend support for Supabase connection testing
 - **Error Visualization**: Clear display of connection errors and troubleshooting information
 
+### Memory Dashboard
+
+The memory dashboard (`app/memory/page.tsx` and related components) provides a comprehensive interface for accessing and managing the knowledge stored in the Qdrant vector database:
+
+- **Memory Dashboard** (`components/memory-dashboard.tsx`): Main interface for searching, filtering, and browsing stored knowledge with the following features:
+  - **Advanced Search**: Full-text search across tweet content, analysis, topics, and related entities
+  - **Multi-parameter Filtering**: Filter by topic, sentiment, persona, and date range
+  - **Detailed Memory View**: Dialog with comprehensive display of memory content and metadata
+  - **Memory Management**: Delete individual memories when they're no longer needed
+  - **Data Export**: Export search results as JSON for external analysis or backup
+  - **Pagination**: Load more results with automatic offset tracking
+  - **Responsive Design**: Optimized for both desktop and mobile viewing
+
+- **API Endpoints**:
+  - **Collection Management** (`app/api/qdrant-collections/route.ts`): Manages Qdrant collections
+  - **Memory Retrieval** (`app/api/qdrant-memory/route.ts`): Retrieves stored memories with advanced filtering options and field mapping
+  - **Memory Detail** (`app/api/qdrant-memory/[id]/route.ts`): Retrieves detailed information about specific memories
+
+- **Data Integration**:
+  - **Macrobot Schema Compatibility**: Automatically maps between the macrobot schema and the UI display format
+  - **Field Mapping**: Intelligently maps between different field names (e.g., "tags" to "topics", "alignment_explanation" to "analysis")
+  - **Fallback Handling**: Provides sample data when Qdrant is unavailable or returns no results
+  - **Error Handling**: Graceful error handling with informative messages
+
+- **Memory Data Model** (`hooks/use-memory-data.ts`):
+  - **Structured Types**: TypeScript interfaces for memory data and filter parameters
+  - **Custom React Hooks**: Encapsulated data fetching logic with loading, error, and pagination states
+  - **Client-side Filtering**: Additional filtering capabilities beyond what the Qdrant API provides
+  - **Memory Management**: Functions for searching, loading more, and deleting memories
+
+- **Memory Display**:
+  - **Tabular View**: Compact table showing key memory attributes
+  - **Detail Dialog**: Comprehensive view of all memory data including:
+    - Original tweet content
+    - Analysis from Perplexity API
+    - Topics and related entities
+    - Sentiment analysis
+    - Persona information
+    - Confidence scores
+    - Engagement metrics (likes, retweets, replies)
+    - Metadata including author and timestamps
+  - **Visual Indicators**: Color-coded badges for sentiment and topics
+
 ## Agent Status Monitoring
 
-The system includes a comprehensive agent status monitoring system that tracks the health and activity of all agents. This system helps identify and fix issues with agents that may become stuck or unresponsive.
+The system includes a comprehensive agent status monitoring system that tracks the health and activity of all agents. This system helps identify and fix issues with agents that may become stuck or unresponsive. The "Start All Agents" functionality includes a 2-second delay between each agent startup to prevent system overload and ensure proper status registration.
 
 ### Agent Status Table
 

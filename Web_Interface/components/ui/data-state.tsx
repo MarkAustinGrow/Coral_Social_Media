@@ -6,7 +6,7 @@ import { SupabaseError } from "@/lib/supabase"
 
 interface DataStateProps<T> {
   isLoading: boolean
-  error: SupabaseError | null
+  error: Error | SupabaseError | null
   data: T | null
   loadingComponent?: React.ReactNode
   errorComponent?: React.ReactNode
@@ -49,8 +49,8 @@ export function DataState<T>({
         <AlertTitle>Error loading data</AlertTitle>
         <AlertDescription className="mt-2">
           <p>{error.message}</p>
-          {error.details && <p className="mt-1 text-xs">{error.details}</p>}
-          {error.hint && <p className="mt-1 text-xs">Hint: {error.hint}</p>}
+          {'details' in error && error.details && <p className="mt-1 text-xs">{error.details}</p>}
+          {'hint' in error && error.hint && <p className="mt-1 text-xs">Hint: {error.hint}</p>}
           {onRetry && (
             <Button variant="outline" size="sm" className="mt-2" onClick={onRetry}>
               Try again

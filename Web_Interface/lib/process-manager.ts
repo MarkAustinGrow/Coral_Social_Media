@@ -251,7 +251,14 @@ export async function stopAgent(agentName: string): Promise<boolean> {
 }
 
 /**
- * Start all agents
+ * Helper function to wait for a specified number of milliseconds
+ */
+function delay(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * Start all agents with a delay between each startup
  */
 export async function startAllAgents(): Promise<boolean> {
   try {
@@ -267,10 +274,28 @@ export async function startAllAgents(): Promise<boolean> {
       'X Reply Agent'
     ];
     
-    // Start each agent in the defined order
-    const results = await Promise.all(
-      agentOrder.map(agentName => startAgent(agentName))
-    );
+    // Start each agent sequentially with a 2-second delay between each
+    const results: boolean[] = [];
+    
+    for (const agentName of agentOrder) {
+      console.log(`Starting agent: ${agentName}`);
+      const success = await startAgent(agentName);
+      results.push(success);
+      
+      // Log the result
+      if (success) {
+        console.log(`Successfully started ${agentName}`);
+      } else {
+        console.error(`Failed to start ${agentName}`);
+      }
+      
+      // Wait for 2 seconds before starting the next agent
+      // Skip the delay after the last agent
+      if (agentName !== agentOrder[agentOrder.length - 1]) {
+        console.log(`Waiting 2 seconds before starting next agent...`);
+        await delay(2000);
+      }
+    }
 
     // Return true if all agents were started successfully
     return results.every(result => result);

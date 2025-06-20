@@ -65,8 +65,8 @@ const env = loadEnvFromRoot()
 // Get Qdrant configuration
 const QDRANT_URL = getRootEnv("QDRANT_URL") || "http://localhost:6333"
 const QDRANT_API_KEY = getRootEnv("QDRANT_API_KEY") || ""
-// Use the same collection name as the Max-Memory project
-const COLLECTION_NAME = "macrobot_memory"
+// Use the working_knowledge collection from the Tweet Research Agent
+const COLLECTION_NAME = "working_knowledge"
 
 export async function GET(req: NextRequest) {
   try {
@@ -118,11 +118,11 @@ export async function GET(req: NextRequest) {
     // Parse filters if provided
     const filters = filtersParam ? JSON.parse(filtersParam) : {}
     
-    // Build filter conditions - adapt to Max-Memory field names
+    // Build filter conditions - adapt to working_knowledge field names
     const filterConditions = []
     
     if (filters.topics && filters.topics.length > 0) {
-      // Max-Memory uses "tags" instead of "topics"
+      // working_knowledge uses "tags" field for topics
       filterConditions.push({
         key: "tags",
         match: {
@@ -139,15 +139,15 @@ export async function GET(req: NextRequest) {
     }
     
     if (filters.persona) {
-      // Max-Memory uses "character_version" instead of "persona_name"
+      // working_knowledge uses character_version for persona
       filterConditions.push({
         key: "character_version",
-        match: { value: filters.persona },
+        match: { value: parseInt(filters.persona) || 1 },
       })
     }
     
     if (filters.dateRange?.from && filters.dateRange?.to) {
-      // Max-Memory uses "timestamp" instead of "date"
+      // working_knowledge uses "timestamp" field for date
       filterConditions.push({
         key: "timestamp",
         range: {
@@ -242,54 +242,66 @@ export async function GET(req: NextRequest) {
     if (query && query.trim() !== "") {
       const lowerQuery = query.toLowerCase()
       points = points.filter((point: any) => {
-        // Check in content field (Max-Memory) or tweet_text field (our format)
+        // Check in all relevant fields from working_knowledge format
         const content = ((point.payload && point.payload.content) || "").toLowerCase()
         const tweetText = ((point.payload && point.payload.tweet_text) || "").toLowerCase()
-        const analysis = ((point.payload && point.payload.analysis_result) || 
+        const analysis = ((point.payload && point.payload.alignment_explanation) || 
                          (point.payload && point.payload.analysis) || "").toLowerCase()
-        return content.includes(lowerQuery) || tweetText.includes(lowerQuery) || analysis.includes(lowerQuery)
+        const tags = Array.isArray(point.payload.tags) ? 
+                    point.payload.tags.join(" ").toLowerCase() : ""
+        const matchedAspects = Array.isArray(point.payload.matched_aspects) ? 
+                              point.payload.matched_aspects.join(" ").toLowerCase() : ""
+                              
+        return content.includes(lowerQuery) || 
+               tweetText.includes(lowerQuery) || 
+               analysis.includes(lowerQuery) ||
+               tags.includes(lowerQuery) ||
+               matchedAspects.includes(lowerQuery)
       })
     }
     
     const queryTime = Date.now() - startTime
     
     // Format results with safer property access
-    // Map fields from Max-Memory format to our expected format
+    // Map fields from working_knowledge format to our expected format
     const formattedResults = points.map((result: any) => {
       const payload = result.payload || {};
       
       return {
         point_id: result.id,
-        // Max-Memory uses "content" for the main text
+        // working_knowledge uses "content" field
         tweet_text: payload.content || payload.tweet_text || "No content available",
-        // Use analysis field or generate a summary
-        analysis: payload.analysis_result || payload.analysis || 
-                 (payload.content ? `Memory from source: ${payload.source || "unknown"}` : "No analysis available"),
-        // Max-Memory uses "tags" instead of "topics"
+        // Use alignment_explanation field for analysis
+        analysis: payload.alignment_explanation || payload.analysis || "No analysis available",
+        // working_knowledge uses "tags" field for topics
         topics: Array.isArray(payload.tags) ? payload.tags : 
-                (Array.isArray(payload.topics) ? payload.topics : []),
+                Array.isArray(payload.topics) ? payload.topics : [],
         // Extract sentiment or default to neutral
         sentiment: payload.sentiment || "neutral",
         // Use character_version as persona_name if available
-        persona_name: payload.persona_name || payload.character_version || "Unknown",
-        // Use timestamp as date
+        persona_name: payload.character_version ? `Persona ${payload.character_version}` : 
+                     payload.author || "Unknown",
+        // Use timestamp field directly
         date: payload.timestamp || payload.date || new Date().toISOString(),
-        // Use persona_alignment_score as confidence_score if available
+        // Use persona_alignment_score as confidence_score
         confidence_score: payload.persona_alignment_score || result.score || 1.0,
-        // Extract related entities or use matched_aspects
-        related_entities: Array.isArray(payload.related_entities) ? payload.related_entities : 
-                         (Array.isArray(payload.matched_aspects) ? payload.matched_aspects : []),
+        // Extract matched_aspects as related entities
+        related_entities: Array.isArray(payload.matched_aspects) ? payload.matched_aspects : 
+                         Array.isArray(payload.related_entities) ? payload.related_entities : [],
         // Build metadata from available fields
         metadata: {
-          author: payload.author || payload.source || "@unknown",
-          engagement_score: typeof payload.engagement_score === 'number' ? payload.engagement_score : 0,
-          retweet_count: typeof payload.retweet_count === 'number' ? payload.retweet_count : 0,
-          like_count: typeof payload.like_count === 'number' ? payload.like_count : 0,
-          source_url: payload.source_url || "",
-          // Add memory type if available
-          type: payload.type || "unknown",
-          // Add alignment explanation if available
-          alignment_explanation: payload.alignment_explanation || ""
+          author: payload.author || "@unknown",
+          engagement_score: typeof payload.custom_metadata?.engagement_score === 'number' ? 
+                           payload.custom_metadata.engagement_score : 0,
+          retweet_count: typeof payload.custom_metadata?.retweet_count === 'number' ? 
+                        payload.custom_metadata.retweet_count : 0,
+          like_count: typeof payload.custom_metadata?.like_count === 'number' ? 
+                     payload.custom_metadata.like_count : 0,
+          source_url: payload.source || payload.custom_metadata?.source_url || "",
+          // Add question if available
+          question: payload.question || "",
+          // Add tweet_id if available
+          tweet_id: payload.tweet_id || ""
         },
       };
     });

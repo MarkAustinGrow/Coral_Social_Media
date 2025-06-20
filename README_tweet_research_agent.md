@@ -4,11 +4,13 @@ This agent is responsible for analyzing tweets, extracting insights, and storing
 
 ## Recent Updates
 
-- **Enhanced Qdrant Integration**: Added structured metadata extraction for better searchability
-- **Improved Perplexity API Integration**: Fixed response parsing and added robust error handling
+- **Enhanced Qdrant Integration**: Added structured metadata extraction with macrobot schema alignment for better searchability
+- **Improved Perplexity API Integration**: Fixed response parsing and added robust error handling with persona-based customization
 - **Optimized Processing**: Now processes one tweet at a time for better reliability
-- **Topic & Sentiment Analysis**: Automatically extracts topics and sentiment from tweet content
-- **Persona-Free Research Questions**: Questions are generated without any specific persona or bias
+- **Topic & Sentiment Analysis**: Automatically extracts topics and sentiment from both tweet content and analysis results
+- **Persona-Free Research Questions**: Questions are generated without any specific persona or bias using GPT-4o-mini
+- **Engagement Metrics**: Now calculates and stores engagement scores based on likes, retweets, and replies
+- **Advanced Vector Search**: Improved multi-parameter filtering by topic, sentiment, author, and date
 
 ## Prerequisites
 
@@ -77,8 +79,10 @@ python 2_langchain_tweet_scraping_agent.py
 In a new terminal window, run:
 
 ```bash
-python 3_langchain_tweet_research_agent.py
+python 3_langchain_tweet_research_agent_simple.py
 ```
+
+Alternatively, you can use the "Start All Agents" button in the web interface, which will start all agents sequentially with a 2-second delay between each startup to prevent system overload and ensure proper status registration.
 
 ## How It Works
 
@@ -163,33 +167,72 @@ To extend the agent's functionality:
 
 ### Enhanced Metadata Structure
 
-The agent now stores tweets with rich metadata for better searchability:
+The agent now stores tweets with rich metadata using a structured schema aligned with the macrobot format:
 
 ```python
 payload = {
+    "content": tweet_text,
+    "type": "research",
+    "source": "perplexity:perplexity",
+    "timestamp": "2025-06-20T08:30:00Z",
+    "tags": ["finance", "crypto", "markets"],  # Extracted from analysis
+    "persona_alignment_score": 1.0,
+    "matched_aspects": [],
+    "alignment_explanation": analysis_result,
+    "character_version": 1,
+    "alignment_bypassed": False,
+    
+    # Original fields for backward compatibility
     "tweet_id": tweet_id,
-    "tweet_text": tweet_text,
     "author": author,
-    "topics": ["finance", "crypto"],  # Extracted from analysis
     "sentiment": "positive",  # Extracted from analysis
-    "analysis": analysis,
-    "timestamp": time.time(),
-    "date": "2025-06-12"
+    "question": research_question,
+    "custom_metadata": {
+        "engagement_score": likes + (retweets * 2) + replies,
+        "like_count": likes,
+        "retweet_count": retweets,
+        "reply_count": replies,
+        "source_url": ""
+    }
 }
 ```
 
 ### Advanced Filtering
 
-You can filter search results by multiple criteria:
+You can filter search results by multiple criteria with the improved search capabilities:
 
 ```python
 search_qdrant(
     query="bitcoin market trends", 
     filter_by={
-        "topics": "crypto", 
+        "topics": "crypto",  # Searches in the "tags" field
         "sentiment": "positive",
         "author": "1MarkMoss",
-        "date": "2025-06-12"
+        "date": "2025-06-20"
     }
 )
 ```
+
+### Research Question Generation
+
+The agent now automatically generates focused research questions for each tweet using GPT-4o-mini:
+
+```python
+question = generate_research_question(
+    tweet_text="Bitcoin just hit $100k! This is just the beginning of the bull market. #BTC #Crypto"
+)
+
+# Example output:
+# "What economic and market factors are contributing to Bitcoin's current price surge, 
+# and what are the potential implications for the broader cryptocurrency ecosystem and 
+# traditional financial markets?"
+```
+
+The research questions are designed to:
+1. Focus on the underlying topic rather than the tweet itself
+2. Aim for depth and comprehensive understanding
+3. Explore potential connections to related fields
+4. Be specific enough to guide detailed research
+5. Be open-ended enough to allow for multiple perspectives
+6. Encourage data-driven analysis
+7. Consider historical context and future implications

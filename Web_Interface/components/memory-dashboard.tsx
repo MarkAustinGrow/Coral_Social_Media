@@ -18,7 +18,8 @@ import {
 } from "@/components/ui/dialog"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
-import { Search, RefreshCw, Download, Trash2, Eye } from "lucide-react"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { Search, RefreshCw, Download, Trash2, Eye, AlertCircle } from "lucide-react"
 import { DatePickerWithRange } from "../components/date-range-picker"
 import { DataState } from "@/components/ui/data-state"
 import { useToast } from "@/hooks/use-toast"
@@ -274,24 +275,34 @@ export function MemoryDashboard() {
               <p>{message}</p>
             </div>
           )}
-          <DataState
-            isLoading={isLoading}
-            error={error}
-            data={memories}
-            onRetry={handleSearch}
-            emptyComponent={
-              <div className="flex flex-col items-center justify-center py-8 text-center">
-                <h3 className="font-medium mb-2">No memories found</h3>
-                <p className="text-muted-foreground mb-4">
-                  Try adjusting your search criteria or adding more memories through the Tweet Research Agent.
-                </p>
-                <Button onClick={handleReset} variant="outline">
-                  Reset Filters
+          {/* Use a simpler approach without DataState for now */}
+          {isLoading ? (
+            <div className="flex flex-col items-center justify-center py-10">
+              <RefreshCw className="h-10 w-10 animate-spin text-muted-foreground" />
+              <p className="mt-4 text-center text-sm text-muted-foreground">Loading data...</p>
+            </div>
+          ) : error ? (
+            <Alert variant="destructive" className="mb-4">
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>Error loading data</AlertTitle>
+              <AlertDescription className="mt-2">
+                <p>{error.message}</p>
+                <Button variant="outline" size="sm" className="mt-2" onClick={handleSearch}>
+                  Try again
                 </Button>
-              </div>
-            }
-          >
-            {(data) => (
+              </AlertDescription>
+            </Alert>
+          ) : memories.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-8 text-center">
+              <h3 className="font-medium mb-2">No memories found</h3>
+              <p className="text-muted-foreground mb-4">
+                Try adjusting your search criteria or adding more memories through the Tweet Research Agent.
+              </p>
+              <Button onClick={handleReset} variant="outline">
+                Reset Filters
+              </Button>
+            </div>
+          ) : (
               <div className="rounded-md border">
                 <Table>
                   <TableHeader>
@@ -307,7 +318,7 @@ export function MemoryDashboard() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {data.map((memory) => (
+                    {memories.map((memory) => (
                       <TableRow key={memory.point_id}>
                         <TableCell className="font-medium">
                           <div className="max-w-[280px] truncate">{memory.tweet_text}</div>
@@ -467,8 +478,7 @@ export function MemoryDashboard() {
                   </TableBody>
                 </Table>
               </div>
-            )}
-          </DataState>
+          )}
           
           {nextPageOffset && (
             <div className="flex justify-center mt-6">
