@@ -2,6 +2,16 @@
 
 This agent is responsible for analyzing tweets, extracting insights, and storing them for future reference. It's part of a larger social media agentive system built on the Coral Protocol.
 
+## Recent Updates
+
+- **Enhanced Qdrant Integration**: Added structured metadata extraction with macrobot schema alignment for better searchability
+- **Improved Perplexity API Integration**: Fixed response parsing and added robust error handling with persona-based customization
+- **Optimized Processing**: Now processes one tweet at a time for better reliability
+- **Topic & Sentiment Analysis**: Automatically extracts topics and sentiment from both tweet content and analysis results
+- **Persona-Free Research Questions**: Questions are generated without any specific persona or bias using GPT-4o-mini
+- **Engagement Metrics**: Now calculates and stores engagement scores based on likes, retweets, and replies
+- **Advanced Vector Search**: Improved multi-parameter filtering by topic, sentiment, author, and date
+
 ## Prerequisites
 
 - Python 3.12.10
@@ -69,24 +79,28 @@ python 2_langchain_tweet_scraping_agent.py
 In a new terminal window, run:
 
 ```bash
-python 3_langchain_tweet_research_agent.py
+python 3_langchain_tweet_research_agent_simple.py
 ```
+
+Alternatively, you can use the "Start All Agents" button in the web interface, which will start all agents sequentially with a 2-second delay between each startup to prevent system overload and ensure proper status registration.
 
 ## How It Works
 
 The Tweet Research Agent performs the following tasks:
 
 1. **Tweet Analysis**: The agent:
-   - Fetches unanalyzed tweets from Supabase
+   - Fetches ONE unanalyzed tweet at a time from Supabase
    - Generates research questions for each tweet
    - Uses Perplexity to analyze the tweet content based on these questions
    - Extracts insights about main topics, key claims, context, and implications
-   - Stores the analysis in Qdrant as vector embeddings for semantic search
+   - Automatically identifies topics and sentiment from the analysis
+   - Stores the analysis in Qdrant as vector embeddings with enhanced metadata
    - Marks the tweets as analyzed in Supabase
    - Notifies the Blog Writing Agent if interesting insights are found
 
-2. **Semantic Search**: The agent can:
+2. **Enhanced Semantic Search**: The agent can:
    - Search for similar insights in Qdrant using semantic similarity
+   - Filter results by topic, sentiment, author, or date
    - Retrieve relevant tweet analyses based on queries
    - Provide context and background information for content generation
 
@@ -99,12 +113,27 @@ The Tweet Research Agent performs the following tasks:
 
 The agent has the following tools:
 
-1. `fetch_tweets_from_supabase`: Fetches tweets from Supabase that need analysis
+1. `fetch_tweets_from_supabase`: Fetches tweets from Supabase that need analysis (optimized to fetch one at a time)
 2. `mark_tweet_as_analyzed`: Marks tweets as analyzed in Supabase
-3. `analyze_tweet_perplexity`: Uses Perplexity to analyze tweet content
-4. `store_analysis_qdrant`: Stores tweet analysis in Qdrant vector database
-5. `search_qdrant`: Searches for similar insights in Qdrant
-6. `generate_research_questions`: Generates research questions for a tweet
+3. `analyze_tweet_perplexity`: Uses Perplexity to analyze tweet content with robust error handling
+4. `store_analysis_qdrant`: Stores tweet analysis in Qdrant with enhanced metadata (topics, sentiment, author, date)
+5. `search_qdrant`: Searches for similar insights in Qdrant with advanced filtering capabilities
+6. `generate_research_question`: Generates a single focused research question for a tweet without any persona bias
+
+## Persona-Free Research Approach
+
+The Tweet Research Agent intentionally generates research questions without using any specific persona or ideological lens. This design choice ensures:
+
+1. **Neutrality**: Questions focus on understanding the author's intent rather than evaluating it through a particular worldview
+2. **Objectivity**: Analysis remains centered on the content and context of the tweet itself
+3. **Deeper Understanding**: By avoiding bias, the agent can better uncover the underlying message and assumptions
+
+Example research question generated for a political tweet:
+```
+"How does the author's framing of the National Guard's deployment and Governor Newsom's lawsuit reflect their views on the effectiveness of Democratic leadership in contrasting with perceived Republican strength on law and order issues?"
+```
+
+This approach allows the agent to analyze tweets from any political perspective or on any topic while maintaining a consistent focus on understanding rather than judging the content.
 
 ## Extending the Agent
 
@@ -116,7 +145,94 @@ To extend the agent's functionality:
 
 ## Troubleshooting
 
-- **Perplexity API Errors**: Check your Perplexity API key and ensure you have the necessary permissions
-- **Qdrant Errors**: Verify your Qdrant URL and ensure the service is running
-- **Supabase Errors**: Verify your Supabase URL and key, and ensure the tables exist
-- **Agent Communication Issues**: Make sure the Coral Server is running and the agent is connected to it
+- **Perplexity API Errors**: 
+  - Check your Perplexity API key and ensure you have the necessary permissions
+  - Verify you're using the correct model name ("sonar")
+  - Check the response format if you're getting empty results
+
+- **Qdrant Errors**: 
+  - Verify your Qdrant URL and ensure the service is running
+  - If you see "invalid point ID" errors, check that IDs are being properly converted to valid formats
+  - For search issues, verify the filter syntax in your queries
+
+- **Supabase Errors**: 
+  - Verify your Supabase URL and key, and ensure the tables exist
+  - To reset all tweets for reprocessing: `UPDATE tweets_cache SET analyzed = FALSE;`
+
+- **Agent Communication Issues**: 
+  - Make sure the Coral Server is running and the agent is connected to it
+  - Check the logs for connection timeout errors
+
+## Advanced Features
+
+### Enhanced Metadata Structure
+
+The agent now stores tweets with rich metadata using a structured schema aligned with the macrobot format:
+
+```python
+payload = {
+    "content": tweet_text,
+    "type": "research",
+    "source": "perplexity:perplexity",
+    "timestamp": "2025-06-20T08:30:00Z",
+    "tags": ["finance", "crypto", "markets"],  # Extracted from analysis
+    "persona_alignment_score": 1.0,
+    "matched_aspects": [],
+    "alignment_explanation": analysis_result,
+    "character_version": 1,
+    "alignment_bypassed": False,
+    
+    # Original fields for backward compatibility
+    "tweet_id": tweet_id,
+    "author": author,
+    "sentiment": "positive",  # Extracted from analysis
+    "question": research_question,
+    "custom_metadata": {
+        "engagement_score": likes + (retweets * 2) + replies,
+        "like_count": likes,
+        "retweet_count": retweets,
+        "reply_count": replies,
+        "source_url": ""
+    }
+}
+```
+
+### Advanced Filtering
+
+You can filter search results by multiple criteria with the improved search capabilities:
+
+```python
+search_qdrant(
+    query="bitcoin market trends", 
+    filter_by={
+        "topics": "crypto",  # Searches in the "tags" field
+        "sentiment": "positive",
+        "author": "1MarkMoss",
+        "date": "2025-06-20"
+    }
+)
+```
+
+### Research Question Generation
+
+The agent now automatically generates focused research questions for each tweet using GPT-4o-mini:
+
+```python
+question = generate_research_question(
+    tweet_text="Bitcoin just hit $100k! This is just the beginning of the bull market. #BTC #Crypto"
+)
+
+# Example output:
+# "What economic and market factors are contributing to Bitcoin's current price surge, 
+# and what are the potential implications for the broader cryptocurrency ecosystem and 
+# traditional financial markets?"
+```
+
+The research questions are designed to:
+1. Focus on the underlying topic rather than the tweet itself
+2. Aim for depth and comprehensive understanding
+3. Explore potential connections to related fields
+4. Be specific enough to guide detailed research
+5. Be open-ended enough to allow for multiple perspectives
+6. Encourage data-driven analysis
+7. Consider historical context and future implications
