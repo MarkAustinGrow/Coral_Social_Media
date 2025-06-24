@@ -8,13 +8,15 @@ This document provides a comprehensive overview of the Coral Social Media Infras
 2. [Architecture](#architecture)
 3. [Core Components](#core-components)
 4. [LangChain Agents](#langchain-agents)
-5. [Web Interface](#web-interface)
-6. [State Management and Error Handling](#state-management-and-error-handling)
-7. [Coral Protocol Integration](#coral-protocol-integration)
-8. [Database Schema](#database-schema)
-9. [Setup and Configuration](#setup-and-configuration)
-10. [Development Workflow](#development-workflow)
-11. [Future Enhancements](#future-enhancements)
+5. [MCP Client Compatibility](#mcp-client-compatibility)
+6. [Web Interface](#web-interface)
+7. [State Management and Error Handling](#state-management-and-error-handling)
+8. [Coral Protocol Integration](#coral-protocol-integration)
+9. [Database Schema](#database-schema)
+10. [Setup and Configuration](#setup-and-configuration)
+11. [Development Workflow](#development-workflow)
+12. [Troubleshooting](#troubleshooting)
+13. [Future Enhancements](#future-enhancements)
 
 ## System Overview
 
@@ -183,7 +185,7 @@ Generates and posts replies to tweets and mentions.
   - Brand voice consistency
   - Escalation for complex inquiries
 
-### 8. Twitter Posting Agent (`7_langchain_twitter_posting_agent.py`)
+### 8. Twitter Posting Agent (`7_langchain_twitter_posting_agent_v3.py`)
 
 Handles the scheduling and posting of tweets and threads.
 
@@ -193,6 +195,118 @@ Handles the scheduling and posting of tweets and threads.
   - Scheduling optimization
   - Media attachment support
   - Performance monitoring
+  - Twitter API v2 integration with OAuth 1.0a
+  - Rate limiting protection
+  - Thread posting with proper sequencing
+
+## Agent Status Summary
+
+**All 8 Agents Currently Working (100% Operational):**
+- ✅ Tweet Scraping Agent - Collecting tweets from specified accounts
+- ✅ Tweet Research Agent - Analyzing tweets and storing insights in Qdrant
+- ✅ Hot Topic Agent - Identifying trending topics and engagement metrics
+- ✅ Blog Writing Agent - Creating long-form content based on research
+- ✅ Blog Critique Agent - Fact-checking and reviewing blog content
+- ✅ Blog to Tweet Agent - Converting blog posts into tweet threads
+- ✅ X Reply Agent - Generating and posting replies to mentions
+- ✅ Twitter Posting Agent v3 - Scheduling and posting tweets/threads
+
+## MCP Client Compatibility
+
+The system has been updated to ensure compatibility with the latest version of langchain-mcp-adapters (0.1.0+). This section documents the important changes made to maintain agent communication through the Coral MCP server.
+
+### MCP Client Pattern Update
+
+**Previous Pattern (Deprecated):**
+```python
+# OLD - No longer supported
+async with MultiServerMCPClient(
+    connections={
+        "coral": {
+            "transport": "sse",
+            "url": MCP_SERVER_URL,
+            "timeout": 300,
+            "sse_read_timeout": 300,
+        }
+    }
+) as client:
+    tools = client.get_tools() + agent_tools
+```
+
+**New Pattern (Current):**
+```python
+# NEW - Compatible with langchain-mcp-adapters 0.1.0+
+client = MultiServerMCPClient(
+    connections={
+        "coral": {
+            "transport": "sse",
+            "url": MCP_SERVER_URL,
+            "timeout": 300,
+            "sse_read_timeout": 300,
+        }
+    }
+)
+
+# Get Coral tools using the new pattern
+coral_tools = await client.get_tools()
+
+# Combine Coral tools with agent-specific tools
+tools = coral_tools + agent_tools
+```
+
+### Import Updates
+
+Several agents required import updates to use the correct LangChain modules:
+
+**Updated Imports:**
+```python
+# Correct import for OpenAI embeddings
+from langchain_openai import OpenAIEmbeddings
+
+# Instead of the deprecated:
+# from langchain_community.embeddings import OpenAIEmbeddings
+```
+
+### Affected Files
+
+The following agent files were updated with the new MCP client pattern:
+
+1. `2_langchain_tweet_scraping_agent_simple.py`
+2. `3_langchain_tweet_research_agent_simple.py`
+3. `3.5_langchain_hot_topic_agent_simple.py`
+4. `4_langchain_blog_critique_agent.py`
+5. `4_langchain_blog_writing_agent.py`
+6. `5_langchain_blog_to_tweet_agent.py`
+7. `6_langchain_x_reply_agent_simple.py`
+8. `7_langchain_twitter_posting_agent_v3.py`
+
+### Virtual Environment Requirements
+
+**Important:** All agents must be run in the `coral_env` virtual environment to ensure proper dependency management:
+
+```bash
+# Activate the virtual environment
+coral_env\Scripts\activate
+
+# Then run any agent
+python 3_langchain_tweet_research_agent_simple.py
+```
+
+### Compatibility Notes
+
+- **langchain-mcp-adapters**: Version 0.1.0+ required
+- **Context Manager**: No longer supported for MultiServerMCPClient
+- **Tool Access**: Must use `await client.get_tools()` pattern
+- **Error Handling**: Improved error handling for MCP connection issues
+
+### Testing MCP Compatibility
+
+To verify MCP client compatibility:
+
+1. **Check Connection**: Agents should successfully connect to Coral server
+2. **Tool Access**: Agents should be able to access Coral tools (wait_for_mentions, send_message)
+3. **Agent Communication**: Agents should be able to send and receive messages through threads
+4. **No Context Manager Errors**: No "NotImplementedError" related to context manager usage
 
 ## Web Interface
 
@@ -614,6 +728,159 @@ Example usage of the `DataState` component:
   )}
 </DataState>
 ```
+
+## Troubleshooting
+
+This section provides solutions to common issues encountered when running the Coral Social Media Infrastructure system.
+
+### MCP Client Issues
+
+**Problem**: `NotImplementedError: As of langchain-mcp-adapters 0.1.0, MultiServerMCPClient cannot be used as a context manager`
+
+**Solution**: Update the agent to use the new MCP client pattern:
+```python
+# Replace this pattern:
+async with MultiServerMCPClient(...) as client:
+
+# With this pattern:
+client = MultiServerMCPClient(...)
+coral_tools = await client.get_tools()
+```
+
+### Import Errors
+
+**Problem**: `ModuleNotFoundError: No module named 'langchain_community'`
+
+**Solution**: Update imports to use the correct LangChain modules:
+```python
+# Use this:
+from langchain_openai import OpenAIEmbeddings
+
+# Instead of:
+from langchain_community.embeddings import OpenAIEmbeddings
+```
+
+**Problem**: `ModuleNotFoundError: No module named 'supabase'`
+
+**Solution**: Ensure you're running in the correct virtual environment:
+```bash
+# Activate the coral_env virtual environment
+coral_env\Scripts\activate
+
+# Then run the agent
+python your_agent.py
+```
+
+### Virtual Environment Issues
+
+**Problem**: Agents fail to start due to missing dependencies
+
+**Solution**: 
+1. Always activate the `coral_env` virtual environment before running agents
+2. Verify the environment has all required packages installed
+3. If packages are missing, install them in the activated environment:
+```bash
+coral_env\Scripts\activate
+pip install -r requirements.txt
+```
+
+### Agent Communication Issues
+
+**Problem**: Agents can't communicate through Coral MCP server
+
+**Solution**:
+1. Verify the Coral server is running: `cd coral-server-master && ./gradlew run`
+2. Check that agents are using the correct MCP server URL
+3. Ensure agents are properly registered with the Coral server
+4. Verify no firewall is blocking localhost:5555
+
+### Database Connection Issues
+
+**Problem**: Agents can't connect to Supabase or Qdrant
+
+**Solution**:
+1. Verify environment variables are set correctly in the `.env` file
+2. Test database connections using the debug tools in the web interface
+3. Check network connectivity to external services
+4. Verify API keys and credentials are valid
+
+### Agent Status Issues
+
+**Problem**: Agents appear stuck in "running" state
+
+**Solution**:
+1. Check if the agent process is actually running:
+```bash
+# Windows
+tasklist | findstr python
+
+# Linux/Mac
+ps aux | grep python
+```
+
+2. Use the agent status tools to manually fix status:
+```bash
+# View all agent statuses
+python agent_status_lock.py
+
+# Force an agent's status
+python agent_status_lock.py "Agent Name" stopped 0
+```
+
+3. Run the agent status monitor to automatically detect and fix issues:
+```bash
+python agent_status_monitor.py
+```
+
+### Twitter API Issues
+
+**Problem**: Twitter API authentication failures
+
+**Solution**:
+1. Verify all Twitter API credentials are set in the `.env` file
+2. Ensure the Twitter app has the correct permissions (read/write)
+3. Check that API keys haven't expired or been revoked
+4. Verify rate limits haven't been exceeded
+
+### Performance Issues
+
+**Problem**: Agents running slowly or timing out
+
+**Solution**:
+1. Check API rate limits for external services (OpenAI, Perplexity, Twitter)
+2. Verify database connections aren't being throttled
+3. Monitor system resources (CPU, memory, network)
+4. Consider adjusting timeout values in agent configurations
+
+### Web Interface Issues
+
+**Problem**: Web interface shows connection errors
+
+**Solution**:
+1. Verify the `.env` file exists and contains valid configuration
+2. Check that the web interface can access the API endpoints
+3. Use the debug tools to test individual service connections
+4. Restart the web interface development server
+
+### Common Error Messages
+
+**Error**: `HTTP Request: POST ... "HTTP/2 429 Too Many Requests"`
+**Solution**: API rate limit exceeded. Wait for the rate limit to reset or implement rate limiting in the agent.
+
+**Error**: `Connection refused to localhost:5555`
+**Solution**: Coral MCP server is not running. Start it with `cd coral-server-master && ./gradlew run`
+
+**Error**: `Invalid API key`
+**Solution**: Check that API keys in the `.env` file are correct and haven't expired.
+
+### Getting Help
+
+If you encounter issues not covered in this troubleshooting guide:
+
+1. Check the agent logs in the web interface for detailed error messages
+2. Review the console output when running agents directly
+3. Use the debug tools in the web interface to test individual components
+4. Verify all dependencies are installed and up to date
 
 ## Future Enhancements
 

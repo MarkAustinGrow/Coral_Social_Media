@@ -772,8 +772,8 @@ async def create_tweet_research_agent(client, tools, agent_tools):
     return AgentExecutor(agent=agent, tools=tools, verbose=True)
 
 async def main():
-    # Use the same connection approach as the World News Agent
-    async with MultiServerMCPClient(
+    # Use the new MCP client pattern (langchain-mcp-adapters 0.1.0+)
+    client = MultiServerMCPClient(
         connections={
             "coral": {
                 "transport": "sse",
@@ -782,40 +782,44 @@ async def main():
                 "sse_read_timeout": 300,  # Same as World News Agent
             }
         }
-    ) as client:
-        logger.info(f"Connected to MCP server at {MCP_SERVER_URL}")
-        log_to_database("info", f"Tweet Research Agent started and connected to MCP server")
-        
-        # Define agent-specific tools
-        agent_tools = [
-            fetch_persona,
-            fetch_tweets_from_supabase,
-            mark_tweet_as_analyzed,
-            analyze_tweet_perplexity,
-            store_analysis_qdrant,
-            search_qdrant,
-            generate_research_question
-        ]
-        
-        # Combine Coral tools with agent-specific tools
-        tools = client.get_tools() + agent_tools
-        
-        # Create and run the agent
-        agent_executor = await create_tweet_research_agent(client, tools, agent_tools)
-        
-        # Use the same main loop as the World News Agent
-        while True:
-            try:
-                logger.info("Starting new agent invocation")
-                log_to_database("info", "Starting new agent invocation cycle")
-                await agent_executor.ainvoke({"agent_scratchpad": []})
-                logger.info("Completed agent invocation, restarting loop")
-                log_to_database("info", "Completed agent invocation cycle")
-                await asyncio.sleep(1)
-            except Exception as e:
-                logger.error(f"Error in agent loop: {str(e)}")
-                log_to_database("error", f"Error in agent loop: {str(e)}")
-                await asyncio.sleep(5)
+    )
+    
+    logger.info(f"Connected to MCP server at {MCP_SERVER_URL}")
+    log_to_database("info", f"Tweet Research Agent started and connected to MCP server")
+    
+    # Define agent-specific tools
+    agent_tools = [
+        fetch_persona,
+        fetch_tweets_from_supabase,
+        mark_tweet_as_analyzed,
+        analyze_tweet_perplexity,
+        store_analysis_qdrant,
+        search_qdrant,
+        generate_research_question
+    ]
+    
+    # Get Coral tools using the new pattern
+    coral_tools = await client.get_tools()
+    
+    # Combine Coral tools with agent-specific tools
+    tools = coral_tools + agent_tools
+    
+    # Create and run the agent
+    agent_executor = await create_tweet_research_agent(client, tools, agent_tools)
+    
+    # Use the same main loop as the World News Agent
+    while True:
+        try:
+            logger.info("Starting new agent invocation")
+            log_to_database("info", "Starting new agent invocation cycle")
+            await agent_executor.ainvoke({"agent_scratchpad": []})
+            logger.info("Completed agent invocation, restarting loop")
+            log_to_database("info", "Completed agent invocation cycle")
+            await asyncio.sleep(1)
+        except Exception as e:
+            logger.error(f"Error in agent loop: {str(e)}")
+            log_to_database("error", f"Error in agent loop: {str(e)}")
+            await asyncio.sleep(5)
 
 if __name__ == "__main__":
     logger.info("Tweet Research Agent (Simple) started")

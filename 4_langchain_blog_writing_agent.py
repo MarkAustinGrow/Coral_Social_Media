@@ -838,7 +838,8 @@ async def main():
     max_retries = 3
     for attempt in range(max_retries):
         try:
-            async with MultiServerMCPClient(
+            # Use the new MCP client pattern (langchain-mcp-adapters 0.1.0+)
+            client = MultiServerMCPClient(
                 connections={
                     "coral": {
                         "transport": "sse",
@@ -847,40 +848,44 @@ async def main():
                         "sse_read_timeout": 300,
                     }
                 }
-            ) as client:
-                logger.info(f"Connected to MCP server at {MCP_SERVER_URL}")
-                log_to_database("info", "Blog Writing Agent connected to MCP server")
-                
-                # Define agent-specific tools
-                agent_tools = [
-                    fetch_persona,
-                    get_engagement_metrics,
-                    search_tweet_insights,
-                    get_recent_blog_posts,
-                    generate_blog_topic,
-                    write_blog_post,
-                    save_blog_post
-                ]
-                
-                # Combine Coral tools with agent-specific tools
-                tools = client.get_tools() + agent_tools
-                
-                # Create and run the agent
-                agent_executor = await create_blog_writing_agent(client, tools, agent_tools)
-                
-                while True:
-                    try:
-                        logger.info("Starting new agent invocation")
-                        log_to_database("info", "Starting new agent invocation cycle")
-                        await agent_executor.ainvoke({"agent_scratchpad": []})
-                        logger.info("Completed agent invocation, restarting loop")
-                        log_to_database("info", "Completed agent invocation cycle")
-                        await asyncio.sleep(1)
-                    except Exception as e:
-                        logger.error(f"Error in agent loop: {str(e)}")
-                        log_to_database("error", f"Error in agent loop: {str(e)}")
-                        await asyncio.sleep(5)
-                        
+            )
+            
+            logger.info(f"Connected to MCP server at {MCP_SERVER_URL}")
+            log_to_database("info", "Blog Writing Agent connected to MCP server")
+            
+            # Define agent-specific tools
+            agent_tools = [
+                fetch_persona,
+                get_engagement_metrics,
+                search_tweet_insights,
+                get_recent_blog_posts,
+                generate_blog_topic,
+                write_blog_post,
+                save_blog_post
+            ]
+            
+            # Get Coral tools using the new pattern
+            coral_tools = await client.get_tools()
+            
+            # Combine Coral tools with agent-specific tools
+            tools = coral_tools + agent_tools
+            
+            # Create and run the agent
+            agent_executor = await create_blog_writing_agent(client, tools, agent_tools)
+            
+            while True:
+                try:
+                    logger.info("Starting new agent invocation")
+                    log_to_database("info", "Starting new agent invocation cycle")
+                    await agent_executor.ainvoke({"agent_scratchpad": []})
+                    logger.info("Completed agent invocation, restarting loop")
+                    log_to_database("info", "Completed agent invocation cycle")
+                    await asyncio.sleep(1)
+                except Exception as e:
+                    logger.error(f"Error in agent loop: {str(e)}")
+                    log_to_database("error", f"Error in agent loop: {str(e)}")
+                    await asyncio.sleep(5)
+                    
         except ClosedResourceError as e:
             logger.error(f"ClosedResourceError on attempt {attempt + 1}: {e}")
             log_to_database("error", f"ClosedResourceError on attempt {attempt + 1}: {e}")

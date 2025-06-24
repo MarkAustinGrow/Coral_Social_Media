@@ -582,7 +582,8 @@ async def main():
     max_retries = 3
     for attempt in range(max_retries):
         try:
-            async with MultiServerMCPClient(
+            # Use the new MCP client pattern (langchain-mcp-adapters 0.1.0+)
+            client = MultiServerMCPClient(
                 connections={
                     "coral": {
                         "transport": "sse",
@@ -591,38 +592,42 @@ async def main():
                         "sse_read_timeout": 300,
                     }
                 }
-            ) as client:
-                logger.info(f"Connected to MCP server at {MCP_SERVER_URL}")
-                log_to_database("info", "Blog Critique Agent connected to MCP server")
-                
-                # Define agent-specific tools
-                agent_tools = [
-                    fetch_pending_blogs,
-                    fetch_persona,
-                    fact_check_blog_with_perplexity,
-                    store_critique_report,
-                    list_fact_check_status
-                ]
-                
-                # Combine Coral tools with agent-specific tools
-                tools = client.get_tools() + agent_tools
-                
-                # Create and run the agent
-                agent_executor = await create_blog_critique_agent(client, tools, agent_tools)
-                
-                while True:
-                    try:
-                        logger.info("Starting new agent invocation")
-                        log_to_database("info", "Starting new agent invocation cycle")
-                        await agent_executor.ainvoke({"agent_scratchpad": []})
-                        logger.info("Completed agent invocation, waiting 5 minutes before next blog")
-                        log_to_database("info", "Completed agent invocation cycle, waiting 5 minutes before next blog")
-                        await asyncio.sleep(300)  # Wait 5 minutes between processing blogs
-                    except Exception as e:
-                        logger.error(f"Error in agent loop: {str(e)}")
-                        log_to_database("error", f"Error in agent loop: {str(e)}")
-                        await asyncio.sleep(5)
-                        
+            )
+            
+            logger.info(f"Connected to MCP server at {MCP_SERVER_URL}")
+            log_to_database("info", "Blog Critique Agent connected to MCP server")
+            
+            # Define agent-specific tools
+            agent_tools = [
+                fetch_pending_blogs,
+                fetch_persona,
+                fact_check_blog_with_perplexity,
+                store_critique_report,
+                list_fact_check_status
+            ]
+            
+            # Get Coral tools using the new pattern
+            coral_tools = await client.get_tools()
+            
+            # Combine Coral tools with agent-specific tools
+            tools = coral_tools + agent_tools
+            
+            # Create and run the agent
+            agent_executor = await create_blog_critique_agent(client, tools, agent_tools)
+            
+            while True:
+                try:
+                    logger.info("Starting new agent invocation")
+                    log_to_database("info", "Starting new agent invocation cycle")
+                    await agent_executor.ainvoke({"agent_scratchpad": []})
+                    logger.info("Completed agent invocation, waiting 5 minutes before next blog")
+                    log_to_database("info", "Completed agent invocation cycle, waiting 5 minutes before next blog")
+                    await asyncio.sleep(300)  # Wait 5 minutes between processing blogs
+                except Exception as e:
+                    logger.error(f"Error in agent loop: {str(e)}")
+                    log_to_database("error", f"Error in agent loop: {str(e)}")
+                    await asyncio.sleep(5)
+                    
         except ClosedResourceError as e:
             logger.error(f"ClosedResourceError on attempt {attempt + 1}: {e}")
             log_to_database("error", f"ClosedResourceError on attempt {attempt + 1}: {e}")

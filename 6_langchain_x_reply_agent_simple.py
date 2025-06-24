@@ -8,7 +8,7 @@ from langchain.prompts import ChatPromptTemplate
 from langchain.chat_models import init_chat_model
 from langchain.agents import create_tool_calling_agent, AgentExecutor
 from langchain_core.tools import tool
-from langchain_community.embeddings import OpenAIEmbeddings
+from langchain_openai import OpenAIEmbeddings
 from supabase import create_client, Client
 from qdrant_client import QdrantClient
 from qdrant_client.http import models
@@ -418,8 +418,8 @@ async def create_x_reply_agent(client, tools, agent_tools):
     return AgentExecutor(agent=agent, tools=tools, verbose=True)
 
 async def main():
-    # Use the same connection approach as the World News Agent
-    async with MultiServerMCPClient(
+    # Use the new MCP client pattern (langchain-mcp-adapters 0.1.0+)
+    client = MultiServerMCPClient(
         connections={
             "coral": {
                 "transport": "sse",
@@ -428,36 +428,40 @@ async def main():
                 "sse_read_timeout": 300,  # Same as World News Agent
             }
         }
-    ) as client:
-        logger.info(f"Connected to MCP server at {MCP_SERVER_URL}")
-        log_to_database("info", "X Reply Agent connected to MCP server")
-        
-        # Define agent-specific tools (simplified)
-        agent_tools = [
-            get_mentions_and_replies,
-            search_knowledge_for_reply,
-            generate_and_post_reply
-        ]
-        
-        # Combine Coral tools with agent-specific tools
-        tools = client.get_tools() + agent_tools
-        
-        # Create and run the agent
-        agent_executor = await create_x_reply_agent(client, tools, agent_tools)
-        
-        # Use the same main loop as the World News Agent
-        while True:
-            try:
-                logger.info("Starting new agent invocation")
-                log_to_database("info", "Starting new agent invocation cycle")
-                await agent_executor.ainvoke({"agent_scratchpad": []})
-                logger.info("Completed agent invocation, restarting loop")
-                log_to_database("info", "Completed agent invocation cycle")
-                await asyncio.sleep(1)
-            except Exception as e:
-                logger.error(f"Error in agent loop: {str(e)}")
-                log_to_database("error", f"Error in agent loop: {str(e)}")
-                await asyncio.sleep(5)
+    )
+    
+    logger.info(f"Connected to MCP server at {MCP_SERVER_URL}")
+    log_to_database("info", "X Reply Agent connected to MCP server")
+    
+    # Define agent-specific tools (simplified)
+    agent_tools = [
+        get_mentions_and_replies,
+        search_knowledge_for_reply,
+        generate_and_post_reply
+    ]
+    
+    # Get Coral tools using the new pattern
+    coral_tools = await client.get_tools()
+    
+    # Combine Coral tools with agent-specific tools
+    tools = coral_tools + agent_tools
+    
+    # Create and run the agent
+    agent_executor = await create_x_reply_agent(client, tools, agent_tools)
+    
+    # Use the same main loop as the World News Agent
+    while True:
+        try:
+            logger.info("Starting new agent invocation")
+            log_to_database("info", "Starting new agent invocation cycle")
+            await agent_executor.ainvoke({"agent_scratchpad": []})
+            logger.info("Completed agent invocation, restarting loop")
+            log_to_database("info", "Completed agent invocation cycle")
+            await asyncio.sleep(1)
+        except Exception as e:
+            logger.error(f"Error in agent loop: {str(e)}")
+            log_to_database("error", f"Error in agent loop: {str(e)}")
+            await asyncio.sleep(5)
 
 if __name__ == "__main__":
     logger.info("X Reply Agent (Simple) started")
