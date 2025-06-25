@@ -245,10 +245,10 @@ CREATE INDEX IF NOT EXISTS idx_x_accounts_priority ON x_accounts(priority);
 
 -- Insert default system configuration
 INSERT INTO system_config (key, value, description) VALUES
-('setup_completed', 'true', 'Indicates if initial setup is complete'),
-('agent_check_interval', '300', 'Agent health check interval in seconds'),
-('max_tweets_per_hour', '10', 'Maximum tweets to post per hour'),
-('default_persona', 'professional', 'Default writing persona')
+('setup_completed', '"true"', 'Indicates if initial setup is complete'),
+('agent_check_interval', '"300"', 'Agent health check interval in seconds'),
+('max_tweets_per_hour', '"10"', 'Maximum tweets to post per hour'),
+('default_persona', '"professional"', 'Default writing persona')
 ON CONFLICT (key) DO NOTHING;
 
 -- Insert default persona
@@ -264,6 +264,22 @@ INSERT INTO engagement_metrics (topic, engagement_score, topic_description, cate
 ('Social Media', 75, 'Social media trends and platform updates', 'Social'),
 ('Programming', 80, 'Software development and programming topics', 'Technology')
 ON CONFLICT (topic) DO NOTHING;
+
+-- Insert agent status entries for all agents
+INSERT INTO agent_status (agent_name, status, health, last_activity) VALUES
+('Tweet Scraping Agent', 'stopped', 0, 'Agent initialized during setup'),
+('Tweet Research Agent', 'stopped', 0, 'Agent initialized during setup'),
+('Hot Topic Agent', 'stopped', 0, 'Agent initialized during setup'),
+('Blog Writing Agent', 'stopped', 0, 'Agent initialized during setup'),
+('Blog Critique Agent', 'stopped', 0, 'Agent initialized during setup'),
+('Blog to Tweet Agent', 'stopped', 0, 'Agent initialized during setup'),
+('X Reply Agent', 'stopped', 0, 'Agent initialized during setup'),
+('Twitter Posting Agent', 'stopped', 0, 'Agent initialized during setup')
+ON CONFLICT (agent_name) DO UPDATE SET
+  status = EXCLUDED.status,
+  health = EXCLUDED.health,
+  last_activity = EXCLUDED.last_activity,
+  updated_at = NOW();
 
 -- =====================================================
 -- VERIFICATION QUERIES

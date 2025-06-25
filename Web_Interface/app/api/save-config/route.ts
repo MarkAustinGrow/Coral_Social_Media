@@ -53,15 +53,13 @@ export async function POST(request: NextRequest) {
     envContent += '\n# Setup Status\n';
     envContent += 'SETUP_COMPLETE="true"\n';
     
-    // Write to .env file in the root directory
+    // Write to .env file in the root directory only
     const rootDir = path.resolve(process.cwd(), '../');
     const envPath = path.join(rootDir, '.env');
     
     fs.writeFileSync(envPath, envContent);
     
-    // Also create a .env.local file in the Web_Interface directory
-    const webInterfaceEnvPath = path.join(process.cwd(), '.env.local');
-    fs.writeFileSync(webInterfaceEnvPath, envContent);
+    console.log('Configuration saved to root .env file:', envPath);
     
     // Save persona data to Supabase
     try {

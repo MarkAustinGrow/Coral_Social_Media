@@ -5,6 +5,51 @@ import path from 'path';
 let envCache: Record<string, string> | null = null;
 
 /**
+ * Clear the environment variable cache
+ */
+export function clearEnvCache(): void {
+  envCache = null;
+}
+
+/**
+ * Parse environment file content into key-value pairs
+ */
+function parseEnvContent(envContent: string): Record<string, string> {
+  const envVars: Record<string, string> = {};
+  const lines = envContent.split('\n');
+  
+  lines.forEach((line, index) => {
+    // Skip comments and empty lines
+    if (line.startsWith('#') || !line.trim()) {
+      return;
+    }
+    
+    // Find the position of the first equals sign
+    const equalsPos = line.indexOf('=');
+    
+    // If there's no equals sign, skip this line
+    if (equalsPos === -1) {
+      return;
+    }
+    
+    // Extract key and value based on the position of the equals sign
+    const key = line.substring(0, equalsPos).trim();
+    let value = line.substring(equalsPos + 1).trim();
+    
+    // Remove quotes if present
+    if ((value.startsWith('"') && value.endsWith('"')) || 
+        (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.substring(1, value.length - 1);
+    }
+    
+    // Store the key-value pair
+    envVars[key] = value;
+  });
+  
+  return envVars;
+}
+
+/**
  * Load environment variables from the root .env file
  */
 export function loadEnvFromRoot(): Record<string, string> {
@@ -19,32 +64,34 @@ export function loadEnvFromRoot(): Record<string, string> {
       return {};
     }
 
-    // Path to the root .env file
-    // First try the absolute path (most reliable)
-    let rootEnvPath = 'E:/Plank pushers/Core-Social-Infrastructure/.env';
-    console.log('Trying to load .env from absolute path:', rootEnvPath);
-    
-    // If not found, try the current directory
-    if (!fs.existsSync(rootEnvPath)) {
-      rootEnvPath = path.resolve(process.cwd(), '.env');
-      console.log('Not found, trying current directory:', rootEnvPath);
-    }
-    
-    // If not found, try one level up (in case we're in the Web_Interface directory)
-    if (!fs.existsSync(rootEnvPath)) {
-      rootEnvPath = path.resolve(process.cwd(), '../.env');
-      console.log('Not found, trying one level up:', rootEnvPath);
-    }
-    
-    // If still not found, try two levels up
-    if (!fs.existsSync(rootEnvPath)) {
-      rootEnvPath = path.resolve(process.cwd(), '../../.env');
-      console.log('Not found, trying two levels up:', rootEnvPath);
-    }
+    // Force the path to the root .env file
+    // We know the structure: Web_Interface is inside Core-Social-Infrastructure
+    const rootEnvPath = path.resolve(process.cwd(), '../.env');
+    console.log('Loading .env from root directory:', rootEnvPath);
+    console.log('Current working directory:', process.cwd());
     
     // Check if the file exists
     if (!fs.existsSync(rootEnvPath)) {
-      console.error('Root .env file not found at any location. Last tried:', rootEnvPath);
+      console.error('Root .env file not found at:', rootEnvPath);
+      // Try alternative paths as fallback
+      const alternatives = [
+        path.resolve(process.cwd(), '.env'),
+        path.resolve(process.cwd(), '../../.env'),
+        path.resolve(__dirname, '../../../.env'),
+      ];
+      
+      for (const altPath of alternatives) {
+        console.log('Trying alternative path:', altPath);
+        if (fs.existsSync(altPath)) {
+          console.log('Found .env file at alternative path:', altPath);
+          const envContent = fs.readFileSync(altPath, 'utf8');
+          const envVars = parseEnvContent(envContent);
+          envCache = envVars;
+          return envVars;
+        }
+      }
+      
+      console.error('Root .env file not found at any location');
       return {};
     }
     
