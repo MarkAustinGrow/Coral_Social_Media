@@ -172,6 +172,15 @@ export async function POST(request: NextRequest) {
 let cachedSetupStatus: { setupComplete: boolean, timestamp: number } | null = null;
 const CACHE_TTL = 5000; // 5 seconds
 
+/**
+ * Clear the setup status cache (for resetting to vanilla state)
+ */
+export function clearSetupStatusCache(): void {
+  console.log('Clearing setup status cache...')
+  cachedSetupStatus = null;
+  console.log('Setup status cache cleared')
+}
+
 export async function GET(request: NextRequest) {
   try {
     // Check URL for noCache parameter

@@ -7,6 +7,24 @@ let supabaseInstance: ReturnType<typeof createClient> | null = null
 // Cache for environment variables fetched from API
 let envCache: { SUPABASE_URL?: string; SUPABASE_KEY?: string } | null = null
 
+/**
+ * Clear all Supabase-related caches (for resetting to vanilla state)
+ */
+export function clearSupabaseCaches(): void {
+  console.log('Clearing Supabase caches...')
+  supabaseInstance = null
+  envCache = null
+  console.log('Supabase caches cleared')
+}
+
+/**
+ * Check if Supabase is configured (has cached credentials)
+ */
+export function isSupabaseConfigured(): boolean {
+  return !!(envCache?.SUPABASE_URL && envCache?.SUPABASE_KEY) || 
+         !!(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)
+}
+
 export type SupabaseError = {
   message: string
   details?: string

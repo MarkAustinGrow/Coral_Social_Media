@@ -5,6 +5,22 @@ import path from 'path';
 let envCache: Record<string, string> | null = null;
 
 /**
+ * Clear the environment variable cache (for resetting to vanilla state)
+ */
+export function clearEnvCache(): void {
+  console.log('Clearing environment variable cache...')
+  envCache = null;
+  console.log('Environment variable cache cleared')
+}
+
+/**
+ * Check if environment variables are cached
+ */
+export function isEnvCached(): boolean {
+  return envCache !== null && Object.keys(envCache).length > 0;
+}
+
+/**
  * Load environment variables from the root .env file
  */
 export function loadEnvFromRoot(): Record<string, string> {
