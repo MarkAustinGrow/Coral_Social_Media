@@ -16,6 +16,11 @@ from dotenv import load_dotenv
 from anyio import ClosedResourceError
 import urllib.parse
 
+import signal
+import sys
+import atexit
+import agent_status_updater as asu
+
 # Setup logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -63,6 +68,20 @@ if not os.getenv("TWITTER_BEARER_TOKEN"):
     raise ValueError("TWITTER_BEARER_TOKEN is not set in environment variables.")
 if not os.getenv("SUPABASE_URL") or not os.getenv("SUPABASE_KEY"):
     raise ValueError("SUPABASE_URL or SUPABASE_KEY is not set in environment variables.")
+
+# Register signal handlers for graceful shutdown
+def signal_handler(sig, frame):
+    """Handle Ctrl+C and other signals to gracefully shut down"""
+    print("Shutting down gracefully...")
+    asu.mark_agent_stopped(AGENT_NAME)
+    sys.exit(0)
+
+# Register signal handlers
+signal.signal(signal.SIGINT, signal_handler)  # Ctrl+C
+signal.signal(signal.SIGTERM, signal_handler)  # Termination signal
+
+# Register function to mark agent as stopped when the script exits
+atexit.register(lambda: asu.mark_agent_stopped(AGENT_NAME))
 
 # Rate limiting variables
 last_execution_time = 0
@@ -487,7 +506,7 @@ async def main():
     ]
     
     # Get Coral tools using the new pattern
-    coral_tools = await client.get_tools()
+    coral_tools = client.get_tools()
     
     # Combine Coral tools with agent-specific tools
     tools = coral_tools + agent_tools
@@ -510,17 +529,18 @@ async def main():
             await asyncio.sleep(5)
 
 if __name__ == "__main__":
-    logger.info("Tweet Scraping Agent (Simple) started")
-    log_to_database("info", "Tweet Scraping Agent (Simple) started")
+    # Mark agent as started
+    asu.mark_agent_started(AGENT_NAME)
+    log_to_database("info", "Tweet Scraping Agent started")
+    
     try:
         asyncio.run(main())
-    except KeyboardInterrupt:
-        logger.info("Tweet Scraping Agent stopped by user")
-        log_to_database("info", "Tweet Scraping Agent stopped by user")
     except Exception as e:
-        logger.error(f"Fatal error: {str(e)}")
-        log_to_database("error", f"Fatal error: {str(e)}")
+        # Report error in status
+        asu.report_error(AGENT_NAME, f"Fatal error: {str(e)}")
+        
+        # Re-raise the exception
         raise
     finally:
-        logger.info("Tweet Scraping Agent stopped")
-        log_to_database("info", "Tweet Scraping Agent stopped")
+        # Mark agent as stopped
+        asu.mark_agent_stopped(AGENT_NAME)

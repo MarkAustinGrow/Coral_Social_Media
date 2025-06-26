@@ -532,7 +532,7 @@ async def main():
             ]
             
             # Get Coral tools using the new pattern
-            coral_tools = await client.get_tools()
+            coral_tools = client.get_tools()
             
             # Combine Coral tools with agent-specific tools
             tools = coral_tools + agent_tools

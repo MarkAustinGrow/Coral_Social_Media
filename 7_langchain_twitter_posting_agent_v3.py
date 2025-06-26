@@ -757,8 +757,8 @@ async def main():
         check_api_rate_limits
     ]
     
-    # Get Coral tools using the new pattern
-    coral_tools = await client.get_tools()
+            # Get Coral tools using the new pattern
+    coral_tools = client.get_tools()
     
     # Combine Coral tools with agent-specific tools
     tools = coral_tools + agent_tools
