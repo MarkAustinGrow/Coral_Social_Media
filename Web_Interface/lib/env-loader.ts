@@ -36,15 +36,9 @@ export function loadEnvFromRoot(): Record<string, string> {
     }
 
     // Path to the root .env file
-    // First try the absolute path (most reliable)
-    let rootEnvPath = 'E:/Plank pushers/Core-Social-Infrastructure/.env';
-    console.log('Trying to load .env from absolute path:', rootEnvPath);
-    
-    // If not found, try the current directory
-    if (!fs.existsSync(rootEnvPath)) {
-      rootEnvPath = path.resolve(process.cwd(), '.env');
-      console.log('Not found, trying current directory:', rootEnvPath);
-    }
+    // Start with the current directory (vanilla state friendly)
+    let rootEnvPath = path.resolve(process.cwd(), '.env');
+    console.log('Trying to load .env from current directory:', rootEnvPath);
     
     // If not found, try one level up (in case we're in the Web_Interface directory)
     if (!fs.existsSync(rootEnvPath)) {
