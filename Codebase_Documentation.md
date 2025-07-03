@@ -5,18 +5,19 @@ This document provides a comprehensive overview of the Coral Social Media Infras
 ## Table of Contents
 
 1. [System Overview](#system-overview)
-2. [Architecture](#architecture)
-3. [Core Components](#core-components)
-4. [LangChain Agents](#langchain-agents)
-5. [MCP Client Compatibility](#mcp-client-compatibility)
-6. [Web Interface](#web-interface)
-7. [State Management and Error Handling](#state-management-and-error-handling)
-8. [Coral Protocol Integration](#coral-protocol-integration)
-9. [Database Schema](#database-schema)
-10. [Setup and Configuration](#setup-and-configuration)
-11. [Development Workflow](#development-workflow)
-12. [Troubleshooting](#troubleshooting)
-13. [Future Enhancements](#future-enhancements)
+2. [Deployment Environment](#deployment-environment)
+3. [Architecture](#architecture)
+4. [Core Components](#core-components)
+5. [LangChain Agents](#langchain-agents)
+6. [MCP Client Compatibility](#mcp-client-compatibility)
+7. [Web Interface](#web-interface)
+8. [State Management and Error Handling](#state-management-and-error-handling)
+9. [Coral Protocol Integration](#coral-protocol-integration)
+10. [Database Schema](#database-schema)
+11. [Setup and Configuration](#setup-and-configuration)
+12. [Development Workflow](#development-workflow)
+13. [Troubleshooting](#troubleshooting)
+14. [Future Enhancements](#future-enhancements)
 
 ## System Overview
 
@@ -29,6 +30,105 @@ Key capabilities include:
 - Automated replies to mentions and comments
 - Scheduled posting of content
 - Comprehensive web dashboard for monitoring and control
+
+## Deployment Environment
+
+The Coral Social Media Infrastructure is currently deployed on a **Linode server** with a specialized development setup that provides direct access to the live codebase.
+
+### Server Infrastructure
+
+**Linode Server Details:**
+- **Server Location**: `/home/coraluser/Coral_Social_Media/`
+- **Access Method**: Network drive mapping to `Z:\` (CoralMedia share)
+- **Environment Type**: Live development environment
+- **Operating System**: Linux-based Linode server
+
+### Network Drive Mapping
+
+The system is accessible through a mapped network drive:
+- **Local Drive**: `Z:\` (mapped to `\\interns.com\CoralMedia`)
+- **Server Path**: `/home/coraluser/Coral_Social_Media/`
+- **Access Type**: Direct file system access through SMB/CIFS share
+
+This setup allows for:
+- **Real-time Development**: Changes made locally are immediately reflected on the server
+- **Direct File Access**: Full access to all system files and configurations
+- **Live Environment Testing**: Ability to test changes in the actual deployment environment
+
+### Development Environment Characteristics
+
+**Live Development Setup:**
+- **Immediate Impact**: All file changes affect the live running system
+- **No Staging Layer**: Changes are applied directly to the production environment
+- **Real-time Monitoring**: System status and agent activity can be monitored in real-time
+- **Direct Server Execution**: Agents and services run directly on the Linode server
+
+### Safety Considerations
+
+**Working with Live Environment:**
+- **Change Management**: All modifications should be carefully tested before implementation
+- **Backup Procedures**: Regular backups of configuration files and critical data
+- **Version Control**: Use Git for tracking changes and enabling rollbacks
+- **Monitoring**: Continuous monitoring of system health during changes
+- **Testing Protocol**: Test changes in isolated components before full deployment
+
+### File System Structure
+
+The complete system is available at the server root:
+```
+/home/coraluser/Coral_Social_Media/
+├── 0_langchain_interface.py              # Base LangChain integration
+├── 2_langchain_tweet_scraping_agent_simple.py
+├── 3_langchain_tweet_research_agent_simple.py
+├── 3.5_langchain_hot_topic_agent_simple.py
+├── 4_langchain_blog_writing_agent.py
+├── 4_langchain_blog_critique_agent.py
+├── 5_langchain_blog_to_tweet_agent.py
+├── 6_langchain_x_reply_agent_simple.py
+├── 7_langchain_twitter_posting_agent_v3.py
+├── coral-server-master/                  # Coral Protocol server
+├── Web_Interface/                        # Next.js web dashboard
+├── agent_status_*.py                     # Agent monitoring tools
+├── Codebase_Documentation.md             # This documentation
+├── supabase_schema.sql                   # Database schema
+├── requirements.txt                      # Python dependencies
+└── [Additional configuration and utility files]
+```
+
+### Advantages of Current Setup
+
+**Development Benefits:**
+- **Immediate Feedback**: Changes can be tested instantly on the live system
+- **Real Environment Testing**: No discrepancy between development and production
+- **Simplified Deployment**: No separate deployment process required
+- **Direct Debugging**: Can debug issues directly in the live environment
+- **Resource Access**: Full access to server resources and capabilities
+
+**Operational Benefits:**
+- **Persistent Operation**: Agents can run continuously on the server
+- **Better Resource Management**: Server-grade resources for AI processing
+- **Network Stability**: Stable server connection for external API calls
+- **Centralized Management**: All components running on a single, managed server
+
+### Best Practices for Server Development
+
+**File Management:**
+- Always work through the mapped Z:\ drive for consistency
+- Use version control (Git) for all changes
+- Keep regular backups of critical configuration files
+- Document all changes in commit messages
+
+**Testing Procedures:**
+- Test individual components before making system-wide changes
+- Monitor agent status during and after changes
+- Use the web interface debugging tools to verify system health
+- Keep the agent status monitoring tools running during development
+
+**Safety Protocols:**
+- Make incremental changes rather than large modifications
+- Test database connections before deploying database-related changes
+- Verify API credentials and external service connections
+- Monitor system logs for any errors or warnings after changes
 
 ## Architecture
 
@@ -654,24 +754,86 @@ The system requires several key configuration parameters:
 
 ## Development Workflow
 
-### Running the System
+### Server-Based Development Environment
 
-1. Start the Coral server:
-   ```
-   cd coral-server-master
+The system now operates in a **live server environment** on Linode with direct access through the mapped Z:\ drive. This changes the development workflow significantly:
+
+### Running the System on Server
+
+**Server Commands (executed on Linode server):**
+
+1. **Start the Coral server:**
+   ```bash
+   cd /home/coraluser/Coral_Social_Media/coral-server-master
    ./gradlew run
    ```
 
-2. Start the web interface:
-   ```
-   cd Web_Interface
+2. **Start the web interface:**
+   ```bash
+   cd /home/coraluser/Coral_Social_Media/Web_Interface
    npm run dev
    ```
 
-3. Run individual agents:
-   ```
+3. **Run individual agents:**
+   ```bash
+   cd /home/coraluser/Coral_Social_Media
    python 2_langchain_tweet_scraping_agent.py
    ```
+
+**Local Development (through Z:\ drive):**
+
+1. **Access files directly:** All files are accessible through `Z:\` mapped drive
+2. **Edit files locally:** Changes are immediately reflected on the server
+3. **Monitor through web interface:** Use the web dashboard to monitor system status
+4. **Test changes:** Changes take effect immediately in the live environment
+
+### Server Environment Considerations
+
+**Virtual Environment Management:**
+- All Python agents must run in the `coral_env` virtual environment on the server
+- Virtual environment location: `/home/coraluser/Coral_Social_Media/coral_env/`
+- Activation command on server: `source coral_env/bin/activate`
+
+**Process Management:**
+- Agents run as server processes, not local processes
+- Use server-side process monitoring tools
+- Background processes persist even when local connection is closed
+- Monitor agent status through the web interface dashboard
+
+**File System Access:**
+- **Local editing:** Edit files through Z:\ drive mapping
+- **Server execution:** All code executes on the Linode server
+- **Immediate deployment:** No separate deployment step required
+- **Live environment:** All changes affect the running system immediately
+
+### Development Best Practices for Server Environment
+
+**Change Management:**
+1. **Test incrementally:** Make small changes and test immediately
+2. **Monitor continuously:** Keep the web interface open to monitor system health
+3. **Use version control:** Commit changes frequently with descriptive messages
+4. **Backup critical files:** Keep backups of configuration files before major changes
+
+**Safety Protocols:**
+1. **Check agent status:** Always verify agent status before making changes
+2. **Stop agents safely:** Use the web interface to stop agents before major modifications
+3. **Test database connections:** Verify database connectivity after configuration changes
+4. **Monitor logs:** Watch system logs for errors after implementing changes
+
+**Server-Specific Commands:**
+```bash
+# Check running Python processes on server
+ps aux | grep python
+
+# Monitor system resources
+htop
+
+# Check disk space
+df -h
+
+# View system logs
+tail -f /var/log/syslog
+```
 
 ### Git Branches
 
@@ -776,13 +938,56 @@ python your_agent.py
 **Problem**: Agents fail to start due to missing dependencies
 
 **Solution**: 
-1. Always activate the `coral_env` virtual environment before running agents
+1. Always activate the `coral_env` virtual environment before running agents on the server
 2. Verify the environment has all required packages installed
 3. If packages are missing, install them in the activated environment:
+
+**On Server (Linux):**
+```bash
+cd /home/coraluser/Coral_Social_Media
+source coral_env/bin/activate
+pip install -r requirements.txt
+```
+
+**Local Development (Windows - for reference):**
 ```bash
 coral_env\Scripts\activate
 pip install -r requirements.txt
 ```
+
+### Server-Specific Issues
+
+**Problem**: Can't access files through Z:\ drive mapping
+
+**Solution**:
+1. Verify the network drive is properly mapped to `\\interns.com\CoralMedia`
+2. Check network connectivity to the server
+3. Ensure proper authentication credentials for the share
+4. Try remapping the drive: `net use Z: \\interns.com\CoralMedia`
+
+**Problem**: Changes made locally don't appear on the server
+
+**Solution**:
+1. Verify the file was saved locally
+2. Check if there are any file sync delays
+3. Refresh the file view in your editor
+4. Verify the mapped drive connection is active
+
+**Problem**: Server processes not responding to local changes
+
+**Solution**:
+1. Server processes may need to be restarted to pick up configuration changes
+2. Use the web interface to stop and restart agents
+3. Check if the process is reading from cached configuration
+4. Verify the process has proper file system permissions
+
+**Problem**: Can't execute commands on the server
+
+**Solution**:
+1. Commands must be executed on the server itself, not locally
+2. Use SSH or server console access for command execution
+3. Ensure proper permissions for the coraluser account
+4. Verify the virtual environment is activated on the server
 
 ### Agent Communication Issues
 
