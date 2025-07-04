@@ -1,0 +1,16 @@
+# ADD THESE LINES TO YOUR EXISTING .env FILE
+# (Keep all your existing variables - just add these new ones)
+
+# Authentication-specific Supabase variables (in addition to your existing ones)
+NEXT_PUBLIC_SUPABASE_URL=https://mmvxxgjfkzramonfnmox.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1tdnh4Z2pma3pyYW1vbmZubW94Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTE1NTIwNDMsImV4cCI6MjA2NzEyODA0M30.Ej6629210d-1132-4faa-a3ce-5f7bd455e1b
+SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1tdnh4Z2pma3pyYW1vbmZubW94Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1MTU1MjA0MywiZXhwIjoyMDY3MTI4MDQzfQ.ueoPFjHbFb1k2CPKrgY_CpCfKV-M0GmDO--slG9qLDw
+
+# App Configuration for Authentication
+NEXT_PUBLIC_APP_URL=https://8interns.com
+
+# Your NEXTAUTH_SECRET and ENCRYPTION_KEY are already perfect!
+
+# IMPORTANT: Keep your existing SUPABASE_URL and SUPABASE_KEY variables
+# They are needed for your existing features to continue working
+# The new NEXT_PUBLIC_* variables are specifically for the authentication system

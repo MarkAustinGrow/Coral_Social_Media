@@ -21,15 +21,20 @@ This document provides a comprehensive overview of the Coral Social Media Infras
 
 ## System Overview
 
-The Coral Social Media Infrastructure is a comprehensive system that combines the Coral Protocol for agent orchestration with LangChain for creating specialized AI agents that handle various aspects of social media management. The system automates content creation, research, and engagement across social media platforms.
+The Coral Social Media Infrastructure is a comprehensive **multiuser system** that combines the Coral Protocol for agent orchestration with LangChain for creating specialized AI agents that handle various aspects of social media management. The system has been enhanced with a robust authentication system and multiuser support, allowing multiple users to manage their own social media automation workflows.
 
 Key capabilities include:
+- **Multiuser Authentication**: Secure user registration, login, and session management
+- **Tenant-based Data Isolation**: Each user's data is securely isolated using Row Level Security (RLS)
+- **User Profile Management**: Comprehensive user profile system with customizable settings
 - Automated tweet collection and analysis
 - Content generation based on social media trends
 - Tweet thread creation from blog content
 - Automated replies to mentions and comments
 - Scheduled posting of content
 - Comprehensive web dashboard for monitoring and control
+- **Secure API Endpoints**: Protected API routes with user authentication
+- **Real-time Session Management**: Automatic session handling and refresh
 
 ## Deployment Environment
 
@@ -410,13 +415,20 @@ To verify MCP client compatibility:
 
 ## Web Interface
 
-The web interface is built with Next.js, React, and Tailwind CSS with shadcn/ui components. It's organized as follows:
+The web interface is built with Next.js 14, React, and Tailwind CSS with shadcn/ui components, featuring a **complete authentication system** and multiuser support. It's organized as follows:
 
 ### Directory Structure
 
 ```
 Web_Interface/
 ├── app/                  # Next.js app router pages
+│   ├── auth/             # Authentication pages
+│   │   ├── login/        # User login page
+│   │   ├── signup/       # User registration page
+│   │   └── callback/     # Auth callback handler
+│   ├── api/              # API routes
+│   │   ├── auth/         # Authentication API endpoints
+│   │   └── user/         # User management API endpoints
 │   ├── accounts/         # Account management
 │   ├── blogs/            # Blog content management
 │   ├── calendar/         # Content calendar
@@ -430,22 +442,39 @@ Web_Interface/
 │   ├── setup-steps/      # Setup wizard steps
 │   ├── ui/               # UI components (shadcn/ui)
 │   └── ...               # Other components
+├── contexts/             # React contexts
+│   └── AuthContext.tsx   # Authentication context provider
 ├── hooks/                # Custom React hooks
 ├── lib/                  # Utility functions
+│   ├── supabase.ts       # Supabase client configuration
+│   └── crypto.ts         # Cryptographic utilities
+├── types/                # TypeScript type definitions
+│   └── database.ts       # Database type definitions
+├── middleware.ts         # Next.js middleware for auth
 ├── public/               # Static assets
 └── styles/               # Global styles
 ```
 
 ### Key Pages
 
-- **Dashboard** (`app/page.tsx`): Main dashboard with system overview
-- **Setup Wizard** (`app/setup/page.tsx`): Multi-step configuration wizard
-- **Logs** (`app/logs/page.tsx`): System logs and activity monitoring
-- **Config** (`app/config/page.tsx`): System configuration management
-- **Persona** (`app/persona/page.tsx`): Persona management for content generation
-- **Calendar** (`app/calendar/page.tsx`): Content scheduling calendar
-- **Accounts** (`app/accounts/page.tsx`): Twitter account management
-- **Debug** (`app/debug/page.tsx`): System debugging tools
+#### Authentication Pages
+- **Login** (`app/auth/login/page.tsx`): User authentication with email/password
+- **Signup** (`app/auth/signup/page.tsx`): User registration with profile creation
+- **Auth Callback** (`app/auth/callback/page.tsx`): Handles authentication redirects
+
+#### Main Application Pages
+- **Dashboard** (`app/page.tsx`): Main dashboard with system overview (protected)
+- **Setup Wizard** (`app/setup/page.tsx`): Multi-step configuration wizard (protected)
+- **Logs** (`app/logs/page.tsx`): System logs and activity monitoring (protected)
+- **Config** (`app/config/page.tsx`): System configuration management (protected)
+- **Persona** (`app/persona/page.tsx`): Persona management for content generation (protected)
+- **Calendar** (`app/calendar/page.tsx`): Content scheduling calendar (protected)
+- **Accounts** (`app/accounts/page.tsx`): Twitter account management (protected)
+- **Debug** (`app/debug/page.tsx`): System debugging tools (protected)
+
+#### API Endpoints
+- **User Profile** (`app/api/user/profile/route.ts`): User profile management API
+- **Authentication APIs**: Various endpoints for user authentication and session management
 
 ### Setup Wizard
 
@@ -616,9 +645,44 @@ The issue was primarily about visibility and process management rather than the 
 
 These tools help maintain consistency between the actual running state of agents and their representation in the database and web interface.
 
+## Authentication System
+
+The system implements a comprehensive authentication system using Supabase Auth with the following components:
+
+### Authentication Flow
+
+1. **User Registration**: New users can create accounts through the signup page
+2. **Email/Password Login**: Secure authentication with email and password
+3. **Session Management**: Automatic session handling with refresh tokens
+4. **Protected Routes**: All application pages require authentication
+5. **Middleware Protection**: Next.js middleware ensures unauthenticated users are redirected
+
+### Authentication Components
+
+- **AuthContext** (`contexts/AuthContext.tsx`): React context providing authentication state and methods
+- **Supabase Client** (`lib/supabase.ts`): Configured Supabase client with authentication
+- **Middleware** (`middleware.ts`): Next.js middleware for route protection
+- **Login Page** (`app/auth/login/page.tsx`): User authentication interface
+- **Signup Page** (`app/auth/signup/page.tsx`): User registration interface
+- **Auth Callback** (`app/auth/callback/page.tsx`): Handles authentication redirects
+
+### Security Features
+
+- **Row Level Security (RLS)**: Database-level security ensuring users only access their own data
+- **Session Validation**: Automatic session validation and refresh
+- **Secure Redirects**: Proper handling of authentication redirects
+- **CSRF Protection**: Built-in CSRF protection through Supabase Auth
+- **Password Security**: Secure password handling through Supabase Auth
+
+### User Profile Management
+
+- **Extended Profiles**: Additional user data beyond basic authentication
+- **Profile API**: RESTful API for profile management (`app/api/user/profile/route.ts`)
+- **Customizable Settings**: User-specific configuration and preferences
+
 ## State Management and Error Handling
 
-The system implements robust state management and error handling to provide a better user experience, especially when dealing with database connections and external services.
+The system implements robust state management and error handling to provide a better user experience, especially when dealing with database connections, external services, and authentication.
 
 ### DataState Component
 
@@ -680,26 +744,49 @@ Key integration files:
 
 ## Database Schema
 
-The system uses Supabase for structured data storage. The schema is defined in `supabase_schema.sql` and includes:
+The system uses Supabase for structured data storage with a **multiuser architecture** implementing Row Level Security (RLS) for data isolation. The schema has been significantly enhanced through multiple migration phases and includes:
 
-### Main Tables
+### Authentication & User Management
 
-- **tweets**: Stores collected tweets with metadata
+- **auth.users**: Supabase authentication users (managed by Supabase Auth)
+- **public.users**: Extended user profiles with additional metadata
+- **user_profiles**: Comprehensive user profile information including preferences and settings
+
+### Core Data Tables (Tenant-Isolated)
+
+- **tweets**: Stores collected tweets with metadata (user-specific via RLS)
 - **tweets_cache**: Stores collected tweets for processing by the Hot Topic Agent
 - **engagement_metrics**: Stores topic engagement metrics tracked by the Hot Topic Agent
-- **blogs**: Stores generated blog content
-- **tweet_threads**: Stores generated tweet threads
-- **x_accounts**: Stores monitored Twitter accounts with priority and status information
-- **agent_logs**: Stores agent activity logs
-- **system_config**: Stores system configuration
-- **personas**: Stores content generation personas
+- **blogs**: Stores generated blog content (user-specific)
+- **tweet_threads**: Stores generated tweet threads (user-specific)
+- **x_accounts**: Stores monitored Twitter accounts with priority and status information (user-specific)
+- **agent_logs**: Stores agent activity logs (user-specific)
+- **system_config**: Stores system configuration (user-specific)
+- **personas**: Stores content generation personas (user-specific)
+
+### Security Implementation
+
+- **Row Level Security (RLS)**: All user data tables implement RLS policies to ensure data isolation
+- **User-based Filtering**: All queries automatically filter data based on the authenticated user
+- **Secure API Access**: All API endpoints require authentication and respect user boundaries
+- **Session Management**: Automatic session handling with refresh token rotation
+
+### Database Migrations
+
+The system has undergone multiple migration phases:
+
+1. **Phase 1**: Initial multiuser schema implementation with RLS
+2. **Phase 1 Corrected**: Bug fixes and schema refinements
+3. **Final Migration**: Complete multiuser implementation with all security policies
 
 ### Relationships
 
-- Tweets belong to accounts (x_accounts)
-- Blog posts are based on tweet research
-- Tweet threads are based on blog posts
-- Agent logs reference specific agents and actions
+- All user data is linked to `auth.users.id` for proper tenant isolation
+- Tweets belong to user-specific accounts (x_accounts)
+- Blog posts are based on user-specific tweet research
+- Tweet threads are based on user-specific blog posts
+- Agent logs reference specific agents and user actions
+- User profiles extend the base authentication user data
 
 ## Setup and Configuration
 
@@ -1087,21 +1174,42 @@ If you encounter issues not covered in this troubleshooting guide:
 3. Use the debug tools in the web interface to test individual components
 4. Verify all dependencies are installed and up to date
 
-## Future Enhancements
+## Current Implementation Status
+
+### ✅ Completed Features
+
+1. **✅ Multiuser Authentication**: Complete user authentication and multi-user support implemented
+2. **✅ Database Schema**: Comprehensive multiuser database schema with Row Level Security
+3. **✅ User Registration/Login**: Full authentication flow with signup and login pages
+4. **✅ Session Management**: Automatic session handling and refresh token rotation
+5. **✅ Protected Routes**: All application pages protected with authentication middleware
+6. **✅ User Profile System**: Extended user profiles with API endpoints
+7. **✅ Data Isolation**: Secure tenant-based data isolation using RLS policies
+8. **✅ Authentication Context**: React context for authentication state management
+
+### 🚧 Recent Deployments
+
+- **Middleware Fixes**: Recent fixes to authentication middleware for proper session handling
+- **Database Migrations**: Multiple phases of database migration completed
+- **Supabase Integration**: Full integration with Supabase Auth and database
+- **API Security**: All API endpoints secured with user authentication
+
+### 📋 Future Enhancements
 
 Planned enhancements for the system include:
 
-1. **Authentication**: User authentication and multi-user support
-2. **Advanced Analytics**: Enhanced metrics and performance tracking
-3. **Content Approval Workflow**: Human-in-the-loop approval for generated content
-4. **Additional Platforms**: Support for more social media platforms beyond Twitter
-5. **Enhanced Personalization**: More advanced persona configuration
-6. **API Endpoints**: REST API for external integration
-7. **Enhanced Account Management**: More sophisticated account prioritization and filtering
-8. **Offline Mode**: Support for working without database connectivity
-9. **Real-time Updates**: WebSocket integration for live data updates
-10. **Comprehensive Testing**: Automated tests for error states and edge cases
-11. **Advanced Debugging Tools**: More sophisticated debugging and troubleshooting capabilities
+1. **Advanced Analytics**: Enhanced metrics and performance tracking
+2. **Content Approval Workflow**: Human-in-the-loop approval for generated content
+3. **Additional Platforms**: Support for more social media platforms beyond Twitter
+4. **Enhanced Personalization**: More advanced persona configuration
+5. **Team Collaboration**: Multi-user team features and role-based access
+6. **Enhanced Account Management**: More sophisticated account prioritization and filtering
+7. **Offline Mode**: Support for working without database connectivity
+8. **Real-time Updates**: WebSocket integration for live data updates
+9. **Comprehensive Testing**: Automated tests for error states and edge cases
+10. **Advanced Debugging Tools**: More sophisticated debugging and troubleshooting capabilities
+11. **Mobile App**: Native mobile application for iOS and Android
+12. **Advanced Security**: Two-factor authentication and advanced security features
 
 ---
 

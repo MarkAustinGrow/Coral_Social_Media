@@ -1,158 +1,183 @@
 import { createClient } from '@supabase/supabase-js'
-import { getRootEnv } from './env-loader'
+import { Database } from '@/types/database'
 
-// This is a singleton pattern to ensure we only create one Supabase client
-let supabaseInstance: ReturnType<typeof createClient> | null = null
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
-// Cache for environment variables fetched from API
-let envCache: { SUPABASE_URL?: string; SUPABASE_KEY?: string } | null = null
+// Build-safe client creation
+let supabase: any
 
-/**
- * Clear all Supabase-related caches (for resetting to vanilla state)
- */
-export function clearSupabaseCaches(): void {
-  console.log('Clearing Supabase caches...')
-  supabaseInstance = null
-  envCache = null
-  console.log('Supabase caches cleared')
-}
-
-/**
- * Check if Supabase is configured (has cached credentials)
- */
-export function isSupabaseConfigured(): boolean {
-  return !!(envCache?.SUPABASE_URL && envCache?.SUPABASE_KEY) || 
-         !!(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)
-}
-
-export type SupabaseError = {
-  message: string
-  details?: string
-  hint?: string
-  code?: string
-}
-
-export type DataState<T> = {
-  data: T | null
-  isLoading: boolean
-  error: SupabaseError | null
-}
-
-/**
- * Fetch environment variables from the API
- */
-async function fetchEnvVars(): Promise<{ SUPABASE_URL?: string; SUPABASE_KEY?: string }> {
-  try {
-    // If we already have cached values, return them
-    if (envCache) {
-      return envCache
+if (supabaseUrl && supabaseAnonKey) {
+  supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
+    auth: {
+      autoRefreshToken: true,
+      persistSession: true,
+      detectSessionInUrl: true,
+      flowType: 'pkce'
     }
-
-    // Fetch environment variables from API
-    const response = await fetch('/api/env')
-    
-    if (!response.ok) {
-      throw new Error(`Failed to fetch environment variables: ${response.statusText}`)
-    }
-    
-    const data = await response.json()
-    
-    // Cache the result
-    envCache = {
-      SUPABASE_URL: data.SUPABASE_URL,
-      SUPABASE_KEY: data.SUPABASE_KEY
-    }
-    
-    return envCache
-  } catch (error) {
-    console.error('Error fetching environment variables:', error)
-    return {}
-  }
-}
-
-export async function getSupabaseClient() {
-  // Only run on client side
-  if (typeof window === 'undefined') {
-    console.log('Running on server side, using direct environment variables')
-    try {
-      // On server side, we can access process.env directly
-      const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL
-      const supabaseKey = process.env.SUPABASE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-      
-      console.log('Server-side Supabase URL available:', !!supabaseUrl)
-      console.log('Server-side Supabase Key available:', !!supabaseKey)
-      
-      if (!supabaseUrl || !supabaseKey) {
-        console.error('Server-side: Supabase URL or Key is missing')
-        return null
-      }
-      
-      // Create Supabase client for server-side
-      const serverSideClient = createClient(supabaseUrl, supabaseKey)
-      console.log('Server-side Supabase client created successfully')
-      return serverSideClient
-    } catch (error) {
-      console.error('Server-side: Failed to create Supabase client:', error)
-      return null
-    }
-  }
-
-  // Client-side execution
-  console.log('Running on client side')
-  if (supabaseInstance) {
-    console.log('Returning existing Supabase instance')
-    return supabaseInstance
-  }
-
-  try {
-    console.log('Creating new Supabase client')
-    // Try to get environment variables from different sources
-    // 1. First try Next.js environment variables (for local development)
-    let supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-    let supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-    
-    console.log('Client-side env vars available:', {
-      urlAvailable: !!supabaseUrl,
-      keyAvailable: !!supabaseKey
-    })
-
-    // 2. If not found, try to get from API (which reads from root .env file)
-    if (!supabaseUrl || !supabaseKey) {
-      console.log('Fetching env vars from API')
-      const envVars = await fetchEnvVars()
-      supabaseUrl = envVars.SUPABASE_URL
-      supabaseKey = envVars.SUPABASE_KEY
-      console.log('API env vars available:', {
-        urlAvailable: !!supabaseUrl,
-        keyAvailable: !!supabaseKey
+  })
+} else {
+  // Create a mock client for build time
+  console.warn('Supabase environment variables not found, using mock client for build')
+  supabase = {
+    auth: {
+      getUser: () => Promise.resolve({ data: { user: null }, error: null }),
+      getSession: () => Promise.resolve({ data: { session: null }, error: null }),
+      signInWithPassword: () => Promise.resolve({ data: null, error: new Error('Mock client') }),
+      signUp: () => Promise.resolve({ data: null, error: new Error('Mock client') }),
+      signOut: () => Promise.resolve({ error: null }),
+      onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } })
+    },
+    from: () => ({
+      select: () => ({
+        eq: () => ({
+          single: () => Promise.resolve({ data: null, error: new Error('Mock client') }),
+          limit: () => Promise.resolve({ data: [], error: new Error('Mock client') })
+        }),
+        order: () => ({
+          limit: () => Promise.resolve({ data: [], error: new Error('Mock client') })
+        })
+      }),
+      update: () => ({
+        eq: () => ({
+          select: () => ({
+            single: () => Promise.resolve({ data: null, error: new Error('Mock client') })
+          })
+        })
+      }),
+      insert: () => Promise.resolve({ data: null, error: new Error('Mock client') }),
+      delete: () => ({
+        eq: () => Promise.resolve({ data: null, error: new Error('Mock client') })
       })
-    }
+    })
+  }
+}
 
-    // Check if environment variables are set
-    if (!supabaseUrl || !supabaseKey) {
-      console.error('Supabase URL or Key is missing. Please check your environment variables.')
-      return null
-    }
+export { supabase }
 
-    // Create Supabase client
-    console.log('Creating Supabase client with URL:', supabaseUrl.substring(0, 15) + '...')
-    supabaseInstance = createClient(supabaseUrl, supabaseKey)
-    console.log('Supabase client created successfully')
-    return supabaseInstance
-  } catch (error) {
-    console.error('Failed to create Supabase client:', error)
+// Backward compatibility for existing code
+export const getSupabaseClient = () => supabase
+
+// Legacy exports for existing code
+export default supabase
+
+export const getCurrentUser = async () => {
+  if (!supabaseUrl || !supabaseAnonKey) {
     return null
   }
+  const { data: { user }, error } = await supabase.auth.getUser()
+  if (error) throw error
+  return user
 }
 
-// Helper function to handle Supabase errors
-export function handleSupabaseError(error: any): SupabaseError {
+export const signInWithEmail = async (email: string, password: string) => {
+  if (!supabaseUrl || !supabaseAnonKey) {
+    throw new Error('Supabase not configured')
+  }
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email,
+    password
+  })
+  if (error) throw error
+  return data
+}
+
+export const signUpWithEmail = async (email: string, password: string) => {
+  if (!supabaseUrl || !supabaseAnonKey) {
+    throw new Error('Supabase not configured')
+  }
+  const { data, error } = await supabase.auth.signUp({
+    email,
+    password,
+    options: {
+      emailRedirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback`
+    }
+  })
+  if (error) throw error
+  return data
+}
+
+export const signOut = async () => {
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return
+  }
+  const { error } = await supabase.auth.signOut()
+  if (error) throw error
+}
+
+export const handleSupabaseError = (error: any) => {
   console.error('Supabase error:', error)
   
-  return {
-    message: error.message || 'An unknown error occurred',
-    details: error.details || undefined,
-    hint: error.hint || undefined,
-    code: error.code || undefined
+  const errorMessages: { [key: string]: string } = {
+    'Invalid login credentials': 'Invalid email or password',
+    'Email not confirmed': 'Please check your email and click the confirmation link',
+    'User already registered': 'An account with this email already exists',
+    'Password should be at least 6 characters': 'Password must be at least 6 characters long',
+    'Signup requires a valid password': 'Password must be at least 6 characters long',
+    'Unable to validate email address: invalid format': 'Please enter a valid email address'
   }
+  
+  return errorMessages[error.message] || error.message || 'An unexpected error occurred'
+}
+
+// Helper functions for user data
+export const getUserProfile = async (userId: string) => {
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return null
+  }
+  const { data, error } = await supabase
+    .from('user_profiles')
+    .select('*')
+    .eq('user_id', userId)
+    .single()
+  
+  if (error) throw error
+  return data
+}
+
+export const getDashboardSummary = async (userId: string) => {
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return null
+  }
+  const { data, error } = await supabase
+    .from('user_dashboard_summary')
+    .select('*')
+    .eq('user_id', userId)
+    .single()
+  
+  if (error) throw error
+  return data
+}
+
+export const getApiUsageLogs = async (userId: string, limit: number = 10) => {
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return []
+  }
+  const { data, error } = await supabase
+    .from('api_usage_logs')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(limit)
+  
+  if (error) throw error
+  return data
+}
+
+export const updateUserProfile = async (userId: string, updates: Partial<Database['public']['Tables']['user_profiles']['Update']>) => {
+  if (!supabaseUrl || !supabaseAnonKey) {
+    throw new Error('Supabase not configured')
+  }
+  const { data, error } = await supabase
+    .from('user_profiles')
+    .update({
+      ...updates,
+      updated_at: new Date().toISOString()
+    })
+    .eq('user_id', userId)
+    .select()
+    .single()
+  
+  if (error) throw error
+  return data
 }
