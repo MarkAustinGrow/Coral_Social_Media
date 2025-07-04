@@ -2,11 +2,11 @@ module.exports = {
   apps: [{
     name: 'coral-web',
     script: 'npm',
-    args: 'run dev',
+    args: 'start',
     cwd: './Web_Interface',
     env_file: './.env',
     env: {
-      NODE_ENV: 'development',
+      NODE_ENV: 'production',
       PORT: 3000
     },
     watch: false,
