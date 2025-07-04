@@ -24,7 +24,7 @@ export async function middleware(req: NextRequest) {
     const { pathname } = req.nextUrl
 
     // Public routes that don't require authentication
-    const publicRoutes = ['/auth/login', '/auth/signup', '/auth/callback']
+    const publicRoutes = ['/auth/login', '/auth/signup', '/auth/callback', '/debug/env', '/debug/supabase']
     
     const isPublicRoute = publicRoutes.includes(pathname)
 
