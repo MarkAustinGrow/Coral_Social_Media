@@ -38,44 +38,48 @@ Key capabilities include:
 
 ## Deployment Environment
 
-The Coral Social Media Infrastructure is currently deployed on a **Linode server** with a specialized development setup that provides direct access to the live codebase.
+The Coral Social Media Infrastructure is deployed on a **Linode server** using a Git-based development workflow that separates local development from server deployment.
 
 ### Server Infrastructure
 
 **Linode Server Details:**
 - **Server Location**: `/home/coraluser/Coral_Social_Media/`
-- **Access Method**: Network drive mapping to `Z:\` (CoralMedia share)
-- **Environment Type**: Live development environment
+- **Access Method**: SSH access for server management and deployment
+- **Environment Type**: Production environment with Git-based deployment
 - **Operating System**: Linux-based Linode server
 
-### Network Drive Mapping
+### Git-Based Development Workflow
 
-The system is accessible through a mapped network drive:
-- **Local Drive**: `Z:\` (mapped to `\\interns.com\CoralMedia`)
-- **Server Path**: `/home/coraluser/Coral_Social_Media/`
-- **Access Type**: Direct file system access through SMB/CIFS share
+The system uses a standard Git-based development workflow:
+- **Local Development**: Code changes made on local development machines
+- **Version Control**: GitHub repository for code management and collaboration
+- **Server Deployment**: Changes pulled from GitHub to the Linode server
+- **Repository URL**: `https://github.com/MarkAustinGrow/Coral_Social_Media.git`
 
-This setup allows for:
-- **Real-time Development**: Changes made locally are immediately reflected on the server
-- **Direct File Access**: Full access to all system files and configurations
-- **Live Environment Testing**: Ability to test changes in the actual deployment environment
+This setup provides:
+- **Controlled Deployment**: Changes are reviewed and tested before deployment
+- **Version Control**: Full Git history and rollback capabilities
+- **Collaboration**: Multiple developers can work on the codebase safely
+- **Staging Capability**: Local testing before server deployment
+- **Change Tracking**: Complete audit trail of all modifications
 
 ### Development Environment Characteristics
 
-**Live Development Setup:**
-- **Immediate Impact**: All file changes affect the live running system
-- **No Staging Layer**: Changes are applied directly to the production environment
-- **Real-time Monitoring**: System status and agent activity can be monitored in real-time
-- **Direct Server Execution**: Agents and services run directly on the Linode server
+**Git-Based Development Setup:**
+- **Local Development**: All code changes made locally on development machines
+- **Version Control**: Git tracks all changes with proper commit history
+- **Deployment Process**: Controlled deployment through Git pull operations
+- **Server Execution**: Agents and services run on the Linode server after deployment
+- **Monitoring**: System status monitored through web interface and server logs
 
 ### Safety Considerations
 
-**Working with Live Environment:**
-- **Change Management**: All modifications should be carefully tested before implementation
-- **Backup Procedures**: Regular backups of configuration files and critical data
-- **Version Control**: Use Git for tracking changes and enabling rollbacks
-- **Monitoring**: Continuous monitoring of system health during changes
-- **Testing Protocol**: Test changes in isolated components before full deployment
+**Git-Based Development Safety:**
+- **Change Management**: All modifications go through Git workflow with proper commits
+- **Backup Procedures**: Git repository serves as primary backup with full history
+- **Version Control**: Complete version history with ability to rollback to any previous state
+- **Testing Protocol**: Local testing before pushing to repository
+- **Deployment Control**: Controlled deployment process with verification steps
 
 ### File System Structure
 
@@ -115,25 +119,21 @@ The complete system is available at the server root:
 - **Network Stability**: Stable server connection for external API calls
 - **Centralized Management**: All components running on a single, managed server
 
-### Best Practices for Server Development
+### Git Workflow Benefits
 
-**File Management:**
-- Always work through the mapped Z:\ drive for consistency
-- Use version control (Git) for all changes
-- Keep regular backups of critical configuration files
-- Document all changes in commit messages
+**Development Benefits:**
+- **Version Control**: Complete history of all changes with rollback capabilities
+- **Collaboration**: Multiple developers can work safely on the same codebase
+- **Branch Management**: Feature branches allow isolated development
+- **Code Review**: Pull request process ensures code quality
+- **Local Testing**: Full testing capability before deployment
 
-**Testing Procedures:**
-- Test individual components before making system-wide changes
-- Monitor agent status during and after changes
-- Use the web interface debugging tools to verify system health
-- Keep the agent status monitoring tools running during development
-
-**Safety Protocols:**
-- Make incremental changes rather than large modifications
-- Test database connections before deploying database-related changes
-- Verify API credentials and external service connections
-- Monitor system logs for any errors or warnings after changes
+**Operational Benefits:**
+- **Controlled Deployment**: Changes are deployed only after testing and approval
+- **Rollback Capability**: Easy rollback to previous versions if issues arise
+- **Change Tracking**: Complete audit trail of all modifications
+- **Backup Security**: Git repository serves as distributed backup system
+- **Environment Separation**: Clear separation between development and production
 
 ## Architecture
 
@@ -841,38 +841,92 @@ The system requires several key configuration parameters:
 
 ## Development Workflow
 
-### Server-Based Development Environment
+### Git-Based Development Environment
 
-The system now operates in a **live server environment** on Linode with direct access through the mapped Z:\ drive. This changes the development workflow significantly:
+The system uses a **Git-based development workflow** that separates local development from server deployment, providing better version control and safer development practices.
 
-### Running the System on Server
+### Development Workflow Steps
 
-**Server Commands (executed on Linode server):**
+**1. Local Development:**
+```bash
+# Clone the repository locally
+git clone https://github.com/MarkAustinGrow/Coral_Social_Media.git
+cd Coral_Social_Media
 
-1. **Start the Coral server:**
-   ```bash
-   cd /home/coraluser/Coral_Social_Media/coral-server-master
-   ./gradlew run
-   ```
+# Create a new branch for your changes
+git checkout -b feature/your-feature-name
 
-2. **Start the web interface:**
-   ```bash
-   cd /home/coraluser/Coral_Social_Media/Web_Interface
-   npm run dev
-   ```
+# Make your code changes locally
+# Edit files using your preferred IDE/editor
+```
 
-3. **Run individual agents:**
-   ```bash
-   cd /home/coraluser/Coral_Social_Media
-   python 2_langchain_tweet_scraping_agent.py
-   ```
+**2. Version Control:**
+```bash
+# Stage your changes
+git add .
 
-**Local Development (through Z:\ drive):**
+# Commit with descriptive message
+git commit -m "Add feature: description of changes"
 
-1. **Access files directly:** All files are accessible through `Z:\` mapped drive
-2. **Edit files locally:** Changes are immediately reflected on the server
-3. **Monitor through web interface:** Use the web dashboard to monitor system status
-4. **Test changes:** Changes take effect immediately in the live environment
+# Push to GitHub
+git push origin feature/your-feature-name
+```
+
+**3. Server Deployment:**
+```bash
+# SSH into the Linode server
+ssh coraluser@your-server-ip
+
+# Navigate to the project directory
+cd /home/coraluser/Coral_Social_Media
+
+# Pull the latest changes from GitHub
+git pull origin main
+
+# If using a feature branch, merge it first:
+# git checkout main
+# git merge feature/your-feature-name
+```
+
+**4. Server Execution:**
+```bash
+# Activate the virtual environment
+source coral_env/bin/activate
+
+# Restart affected services
+# For agents:
+python 2_langchain_tweet_scraping_agent.py
+
+# For web interface:
+cd Web_Interface
+npm run dev
+
+# For Coral server:
+cd ../coral-server-master
+./gradlew run
+```
+
+### Git Workflow Best Practices
+
+**Branch Management:**
+- **main**: Stable production-ready code
+- **feature/**: Feature development branches
+- **hotfix/**: Critical bug fixes
+- **Macro**: Specialized branch for Macro Economics persona
+
+**Commit Guidelines:**
+- Use descriptive commit messages
+- Make atomic commits (one logical change per commit)
+- Test changes locally before committing
+- Include relevant documentation updates
+
+**Pull Request Process:**
+1. Create feature branch from main
+2. Make changes and test locally
+3. Push branch to GitHub
+4. Create pull request for review
+5. Merge to main after approval
+6. Deploy to server
 
 ### Server Environment Considerations
 
@@ -882,32 +936,44 @@ The system now operates in a **live server environment** on Linode with direct a
 - Activation command on server: `source coral_env/bin/activate`
 
 **Process Management:**
-- Agents run as server processes, not local processes
+- Agents run as server processes after deployment
 - Use server-side process monitoring tools
-- Background processes persist even when local connection is closed
+- Background processes persist after SSH disconnection
 - Monitor agent status through the web interface dashboard
 
-**File System Access:**
-- **Local editing:** Edit files through Z:\ drive mapping
-- **Server execution:** All code executes on the Linode server
-- **Immediate deployment:** No separate deployment step required
-- **Live environment:** All changes affect the running system immediately
+**Deployment Verification:**
+- **Test locally:** Verify changes work in local development environment
+- **Deploy to server:** Pull changes and restart affected services
+- **Monitor system:** Use web interface to verify system health
+- **Check logs:** Review agent logs for any errors after deployment
 
-### Development Best Practices for Server Environment
+### Development Best Practices for Git Workflow
 
-**Change Management:**
-1. **Test incrementally:** Make small changes and test immediately
-2. **Monitor continuously:** Keep the web interface open to monitor system health
-3. **Use version control:** Commit changes frequently with descriptive messages
-4. **Backup critical files:** Keep backups of configuration files before major changes
+**Local Development:**
+1. **Set up local environment:** Install dependencies and configure local development setup
+2. **Test thoroughly:** Test all changes locally before pushing to repository
+3. **Use feature branches:** Create separate branches for each feature or bug fix
+4. **Keep commits focused:** Make small, focused commits with clear messages
+
+**Version Control:**
+1. **Commit frequently:** Make regular commits to track progress
+2. **Write clear messages:** Use descriptive commit messages explaining what and why
+3. **Review before pushing:** Double-check changes before pushing to remote repository
+4. **Keep history clean:** Use interactive rebase to clean up commit history if needed
+
+**Server Deployment:**
+1. **Plan deployments:** Schedule deployments during low-activity periods
+2. **Backup before changes:** Ensure recent backups exist before major deployments
+3. **Deploy incrementally:** Deploy and test small changes rather than large batches
+4. **Monitor after deployment:** Watch system health and logs after each deployment
 
 **Safety Protocols:**
-1. **Check agent status:** Always verify agent status before making changes
-2. **Stop agents safely:** Use the web interface to stop agents before major modifications
-3. **Test database connections:** Verify database connectivity after configuration changes
-4. **Monitor logs:** Watch system logs for errors after implementing changes
+1. **Stop agents safely:** Use the web interface to stop agents before major updates
+2. **Test database connections:** Verify database connectivity after configuration changes
+3. **Verify API credentials:** Ensure external service connections work after updates
+4. **Monitor system resources:** Check server resources during and after deployment
 
-**Server-Specific Commands:**
+**Server Management Commands:**
 ```bash
 # Check running Python processes on server
 ps aux | grep python
@@ -920,6 +986,13 @@ df -h
 
 # View system logs
 tail -f /var/log/syslog
+
+# Check Git status
+git status
+git log --oneline -10
+
+# View recent commits
+git log --graph --oneline --all -10
 ```
 
 ### Git Branches
@@ -1042,39 +1115,52 @@ coral_env\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### Server-Specific Issues
+### Git Workflow Issues
 
-**Problem**: Can't access files through Z:\ drive mapping
+**Problem**: Can't push changes to GitHub
 
 **Solution**:
-1. Verify the network drive is properly mapped to `\\interns.com\CoralMedia`
+1. Verify you have proper Git credentials configured
+2. Check if you have write access to the repository
+3. Ensure you're on the correct branch: `git branch`
+4. Try authenticating again: `git config --global user.name "Your Name"`
+5. Use personal access token if using HTTPS: `git config --global credential.helper store`
+
+**Problem**: Changes made locally don't appear on the server after deployment
+
+**Solution**:
+1. Verify changes were committed and pushed to GitHub: `git status`
+2. Check if the correct branch was pushed: `git log --oneline -5`
+3. SSH to server and pull the latest changes: `git pull origin main`
+4. Verify you're on the correct branch on the server: `git branch`
+5. Check if there are any merge conflicts: `git status`
+
+**Problem**: Server processes not responding to configuration changes
+
+**Solution**:
+1. Server processes need to be restarted after configuration changes
+2. Use the web interface to stop and restart affected agents
+3. SSH to server and restart services manually if needed
+4. Check if the process is reading from cached configuration
+5. Verify the `.env` file was updated correctly on the server
+
+**Problem**: Can't SSH into the server
+
+**Solution**:
+1. Verify server IP address and SSH credentials
 2. Check network connectivity to the server
-3. Ensure proper authentication credentials for the share
-4. Try remapping the drive: `net use Z: \\interns.com\CoralMedia`
+3. Ensure SSH service is running on the server
+4. Try using different SSH client or connection method
+5. Contact server administrator if access issues persist
 
-**Problem**: Changes made locally don't appear on the server
-
-**Solution**:
-1. Verify the file was saved locally
-2. Check if there are any file sync delays
-3. Refresh the file view in your editor
-4. Verify the mapped drive connection is active
-
-**Problem**: Server processes not responding to local changes
+**Problem**: Git merge conflicts during deployment
 
 **Solution**:
-1. Server processes may need to be restarted to pick up configuration changes
-2. Use the web interface to stop and restart agents
-3. Check if the process is reading from cached configuration
-4. Verify the process has proper file system permissions
-
-**Problem**: Can't execute commands on the server
-
-**Solution**:
-1. Commands must be executed on the server itself, not locally
-2. Use SSH or server console access for command execution
-3. Ensure proper permissions for the coraluser account
-4. Verify the virtual environment is activated on the server
+1. Check for conflicts: `git status`
+2. Resolve conflicts manually in affected files
+3. Stage resolved files: `git add <filename>`
+4. Complete the merge: `git commit`
+5. Consider using feature branches to avoid conflicts on main branch
 
 ### Agent Communication Issues
 
