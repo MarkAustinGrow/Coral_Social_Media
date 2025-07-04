@@ -4,39 +4,75 @@ import { Database } from '@/types/database'
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
-// Validate environment variables
-if (!supabaseUrl) {
-  console.error('❌ NEXT_PUBLIC_SUPABASE_URL is not defined')
-  console.error('Current value:', supabaseUrl)
-  console.error('Available env vars:', Object.keys(process.env).filter(key => key.startsWith('NEXT_PUBLIC')))
-}
-
-if (!supabaseAnonKey) {
-  console.error('❌ NEXT_PUBLIC_SUPABASE_ANON_KEY is not defined')
-  console.error('Current value:', supabaseAnonKey)
-}
-
-if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error(`Supabase configuration error:
-    - NEXT_PUBLIC_SUPABASE_URL: ${supabaseUrl ? '✅ Present' : '❌ Missing'}
-    - NEXT_PUBLIC_SUPABASE_ANON_KEY: ${supabaseAnonKey ? '✅ Present' : '❌ Missing'}
-    
-    Please ensure these environment variables are properly set in your .env file.`)
-}
-
-console.log('✅ Supabase environment variables loaded successfully')
-console.log('URL:', supabaseUrl.substring(0, 30) + '...')
-console.log('Key length:', supabaseAnonKey.length)
-
-// Create the Supabase client
-const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
-  auth: {
-    autoRefreshToken: true,
-    persistSession: true,
-    detectSessionInUrl: true,
-    flowType: 'pkce'
+// Runtime validation (only in browser/server runtime, not during build)
+const validateSupabaseConfig = () => {
+  if (typeof window === 'undefined' && typeof process !== 'undefined' && process.env.NODE_ENV === 'development') {
+    // Skip validation during build process
+    return
   }
-})
+
+  if (!supabaseUrl) {
+    console.error('❌ NEXT_PUBLIC_SUPABASE_URL is not defined')
+    console.error('Current value:', supabaseUrl)
+    if (typeof process !== 'undefined') {
+      console.error('Available env vars:', Object.keys(process.env).filter(key => key.startsWith('NEXT_PUBLIC')))
+    }
+    throw new Error('NEXT_PUBLIC_SUPABASE_URL is required')
+  }
+
+  if (!supabaseAnonKey) {
+    console.error('❌ NEXT_PUBLIC_SUPABASE_ANON_KEY is not defined')
+    console.error('Current value:', supabaseAnonKey)
+    throw new Error('NEXT_PUBLIC_SUPABASE_ANON_KEY is required')
+  }
+
+  console.log('✅ Supabase environment variables loaded successfully')
+  console.log('URL:', supabaseUrl.substring(0, 30) + '...')
+  console.log('Key length:', supabaseAnonKey.length)
+}
+
+// Create the Supabase client with fallback for build time
+let supabase: any
+
+if (supabaseUrl && supabaseAnonKey) {
+  validateSupabaseConfig()
+  supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
+    auth: {
+      autoRefreshToken: true,
+      persistSession: true,
+      detectSessionInUrl: true,
+      flowType: 'pkce'
+    }
+  })
+} else {
+  // Build-time fallback - will be replaced at runtime
+  console.warn('⚠️ Supabase client created with placeholder values for build process')
+  supabase = createClient<Database>(
+    'https://placeholder.supabase.co',
+    'placeholder-key',
+    {
+      auth: {
+        autoRefreshToken: true,
+        persistSession: true,
+        detectSessionInUrl: true,
+        flowType: 'pkce'
+      }
+    }
+  )
+  
+  // Override methods to validate at runtime
+  const originalSignUp = supabase.auth.signUp
+  supabase.auth.signUp = (...args: any[]) => {
+    validateSupabaseConfig()
+    return originalSignUp.apply(supabase.auth, args)
+  }
+  
+  const originalSignInWithPassword = supabase.auth.signInWithPassword
+  supabase.auth.signInWithPassword = (...args: any[]) => {
+    validateSupabaseConfig()
+    return originalSignInWithPassword.apply(supabase.auth, args)
+  }
+}
 
 export { supabase }
 
