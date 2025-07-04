@@ -127,18 +127,50 @@ export const signOut = async () => {
 }
 
 export const handleSupabaseError = (error: any) => {
-  console.error('Supabase error:', error)
+  console.error('Supabase error details:', {
+    message: error.message,
+    status: error.status,
+    statusCode: error.statusCode,
+    code: error.code,
+    details: error.details,
+    hint: error.hint,
+    fullError: error
+  })
   
   const errorMessages: { [key: string]: string } = {
-    'Invalid login credentials': 'Invalid email or password',
-    'Email not confirmed': 'Please check your email and click the confirmation link',
+    'Invalid login credentials': 'Invalid email or password. Please check your credentials and try again.',
+    'Email not confirmed': 'Please check your email and click the confirmation link before signing in.',
     'User already registered': 'An account with this email already exists',
     'Password should be at least 6 characters': 'Password must be at least 6 characters long',
     'Signup requires a valid password': 'Password must be at least 6 characters long',
-    'Unable to validate email address: invalid format': 'Please enter a valid email address'
+    'Unable to validate email address: invalid format': 'Please enter a valid email address',
+    'Email link is invalid or has expired': 'The confirmation link has expired. Please request a new one.',
+    'User not found': 'No account found with this email address',
+    'Too many requests': 'Too many login attempts. Please wait a moment and try again.',
+    'Signups not allowed for this instance': 'Account creation is currently disabled',
+    'Email rate limit exceeded': 'Too many emails sent. Please wait before requesting another.',
+    'Invalid email or password': 'Invalid email or password. Please check your credentials and try again.'
   }
   
-  return errorMessages[error.message] || error.message || 'An unexpected error occurred'
+  // Check for specific error patterns
+  const errorMessage = error.message || ''
+  
+  // Handle email confirmation errors
+  if (errorMessage.includes('email') && errorMessage.includes('confirm')) {
+    return 'Please check your email and click the confirmation link before signing in.'
+  }
+  
+  // Handle authentication errors
+  if (errorMessage.includes('Invalid') && (errorMessage.includes('login') || errorMessage.includes('credentials'))) {
+    return 'Invalid email or password. Please check your credentials and try again.'
+  }
+  
+  // Handle email not confirmed errors
+  if (errorMessage.includes('Email not confirmed') || errorMessage.includes('not confirmed')) {
+    return 'Please check your email and click the confirmation link before signing in.'
+  }
+  
+  return errorMessages[errorMessage] || errorMessage || 'An unexpected error occurred. Please try again.'
 }
 
 // Helper functions for user data
