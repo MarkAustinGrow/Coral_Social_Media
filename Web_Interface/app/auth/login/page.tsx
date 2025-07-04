@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useAuth } from '@/contexts/AuthContext'
@@ -14,8 +14,16 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   
-  const { signIn } = useAuth()
+  const { signIn, user } = useAuth()
   const router = useRouter()
+
+  // Redirect when user becomes authenticated
+  useEffect(() => {
+    if (user) {
+      console.log('User authenticated, redirecting to dashboard')
+      router.push('/')
+    }
+  }, [user, router])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -24,10 +32,9 @@ export default function LoginPage() {
 
     try {
       await signIn(email, password)
-      router.push('/')
+      // Don't redirect here - let the useEffect handle it when user state updates
     } catch (error: any) {
       setError(error.message)
-    } finally {
       setLoading(false)
     }
   }

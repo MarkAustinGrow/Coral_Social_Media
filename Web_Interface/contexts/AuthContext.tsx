@@ -60,6 +60,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setLoading(true)
       const { error } = await supabase.auth.signInWithPassword({ email, password })
       if (error) throw error
+      // Don't set loading to false here - let the auth state change handler do it
     } catch (error: any) {
       setLoading(false)
       throw new Error(handleSupabaseError(error))
