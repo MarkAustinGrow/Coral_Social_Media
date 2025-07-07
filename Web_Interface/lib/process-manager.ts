@@ -129,24 +129,40 @@ export async function startAgent(agentName: string, userId?: string): Promise<bo
       return false;
     }
 
-    // Determine the Python executable
-    const pythonExecutable = os.platform() === 'win32' ? 'python' : 'python3';
+    // Use the virtual environment wrapper script for production
+    const wrapperScript = path.join(rootDir, 'run_agent_with_venv.sh');
+    const useVirtualEnv = fs.existsSync(wrapperScript) && fs.existsSync(path.join(rootDir, 'agent_venv'));
+    
+    let agentProcess: ChildProcess;
+    
+    if (useVirtualEnv && userId) {
+      // Use virtual environment wrapper with user context
+      console.log(`Using virtual environment wrapper for ${agentName} with user ${userId}`);
+      agentProcess = spawn('bash', [wrapperScript, userId, agentFilePath], {
+        cwd: rootDir,
+        stdio: 'ignore',
+        detached: true,
+        shell: false
+      });
+    } else {
+      // Fallback to direct Python execution
+      const pythonExecutable = os.platform() === 'win32' ? 'python' : 'python3';
+      
+      // Prepare environment variables with user context
+      const env = { ...process.env };
+      if (userId) {
+        env.AGENT_USER_ID = userId;
+        console.log(`Starting agent ${agentName} for user ${userId} (direct Python)`);
+      }
 
-    // Prepare environment variables with user context
-    const env = { ...process.env };
-    if (userId) {
-      env.AGENT_USER_ID = userId;
-      console.log(`Starting agent ${agentName} for user ${userId}`);
+      agentProcess = spawn(pythonExecutable, [agentFilePath], {
+        cwd: rootDir,
+        stdio: 'ignore',
+        detached: true,
+        shell: true,
+        env: env
+      });
     }
-
-    // Start the agent process with user context
-    const agentProcess = spawn(pythonExecutable, [agentFilePath], {
-      cwd: rootDir,
-      stdio: 'ignore', // Ignore stdin, stdout, and stderr
-      detached: true, // Run the process in the background
-      shell: true, // Use shell to run the command
-      env: env // Pass environment variables including user context
-    });
 
     // Store the process
     runningProcesses[agentName] = agentProcess;
