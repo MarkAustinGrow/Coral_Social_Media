@@ -1,6 +1,5 @@
-// This file now only exports utility functions
-// All Supabase client instances should use createClientComponentClient or createMiddlewareClient
-// to ensure proper session synchronization
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
+import { Database } from '@/types/database'
 
 // Environment validation for debugging
 const validateSupabaseConfig = () => {
@@ -26,6 +25,18 @@ const validateSupabaseConfig = () => {
 if (typeof window !== 'undefined') {
   validateSupabaseConfig()
 }
+
+// Create a single client instance using the middleware-compatible approach
+const getSupabaseClient = () => createClientComponentClient<Database>()
+
+// Export the client getter for backward compatibility
+export { getSupabaseClient }
+
+// Export a default client instance for backward compatibility
+export const supabase = getSupabaseClient()
+
+// Default export for existing imports
+export default supabase
 
 export const handleSupabaseError = (error: any) => {
   console.error('Supabase error details:', {
