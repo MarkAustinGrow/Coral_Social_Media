@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from "react"
 import { useToast } from "@/hooks/use-toast"
-import { getSupabaseClient, DataState } from "@/lib/supabase"
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
+import { Database } from '@/types/database'
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
@@ -50,26 +51,41 @@ export function AccountList() {
   const [isImporting, setIsImporting] = useState(false)
   const { toast } = useToast()
   
-  // Fetch accounts from Supabase
+  // Fetch accounts from Supabase with authentication
   const fetchAccounts = async () => {
     setIsLoading(true)
     setError(null)
     
     try {
-      const supabase = await getSupabaseClient()
+      console.log('🔧 AccountList: Fetching user accounts...')
       
-      if (!supabase) {
-        throw new Error("Failed to initialize Supabase client")
+      // Create authenticated Supabase client
+      const supabase = createClientComponentClient<Database>()
+      
+      // Get current session
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+      
+      if (sessionError) {
+        throw new Error(`Authentication error: ${sessionError.message}`)
       }
       
+      if (!session?.user) {
+        throw new Error('Not authenticated')
+      }
+      
+      console.log('✅ AccountList: User authenticated:', session.user.id)
+      
+      // Fetch accounts for the current user (RLS will automatically filter)
       const { data, error } = await supabase
-        .from("x_accounts")
-        .select("*")
-        .order("priority", { ascending: false })
+        .from('x_accounts')
+        .select('*')
+        .order('priority', { ascending: false })
       
       if (error) {
         throw new Error(`Failed to fetch accounts: ${error.message}`)
       }
+      
+      console.log('✅ AccountList: Fetched accounts:', data?.length || 0)
       
       if (data && data.length > 0) {
         const mappedAccounts = data.map(mapDatabaseAccountToUIAccount)
@@ -79,9 +95,8 @@ export function AccountList() {
         setAccounts([])
       }
     } catch (err: any) {
-      console.error("Error fetching accounts:", err)
+      console.error('❌ AccountList: Error fetching accounts:', err)
       setError(err.message)
-      // Don't fall back to mock data
       setAccounts([])
     } finally {
       setIsLoading(false)
@@ -156,26 +171,26 @@ export function AccountList() {
     
     // Update in database
     try {
-      const supabase = await getSupabaseClient()
+      console.log('🔧 AccountList: Updating priority for account:', id, 'to:', value[0])
       
-      if (!supabase) {
-        throw new Error("Failed to initialize Supabase client")
-      }
+      const supabase = createClientComponentClient<Database>()
       
       const { error } = await supabase
-        .from("x_accounts")
+        .from('x_accounts')
         .update({ priority: value[0] })
-        .eq("id", id)
+        .eq('id', id)
       
       if (error) {
         throw new Error(`Failed to update priority: ${error.message}`)
       }
+      
+      console.log('✅ AccountList: Priority updated successfully')
     } catch (err: any) {
-      console.error("Error updating priority:", err)
+      console.error('❌ AccountList: Error updating priority:', err)
       toast({
-        title: "Error",
+        title: 'Error',
         description: err.message,
-        variant: "destructive",
+        variant: 'destructive',
       })
       // Revert on error
       fetchAccounts()
@@ -192,16 +207,14 @@ export function AccountList() {
   // Function to remove an account
   const handleRemoveAccount = async (id: number) => {
     try {
-      const supabase = await getSupabaseClient()
+      console.log('🔧 AccountList: Removing account:', id)
       
-      if (!supabase) {
-        throw new Error("Failed to initialize Supabase client")
-      }
+      const supabase = createClientComponentClient<Database>()
       
       const { error } = await supabase
-        .from("x_accounts")
+        .from('x_accounts')
         .delete()
-        .eq("id", id)
+        .eq('id', id)
       
       if (error) {
         throw new Error(`Failed to remove account: ${error.message}`)
@@ -210,16 +223,18 @@ export function AccountList() {
       // Update local state
       setAccounts(accounts.filter(account => account.id !== id))
       
+      console.log('✅ AccountList: Account removed successfully')
+      
       toast({
-        title: "Success",
-        description: "Account removed successfully",
+        title: 'Success',
+        description: 'Account removed successfully',
       })
     } catch (err: any) {
-      console.error("Error removing account:", err)
+      console.error('❌ AccountList: Error removing account:', err)
       toast({
-        title: "Error",
+        title: 'Error',
         description: err.message,
-        variant: "destructive",
+        variant: 'destructive',
       })
     }
   }

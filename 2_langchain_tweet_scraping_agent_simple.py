@@ -295,23 +295,39 @@ def store_tweets(tweets: list):
 @tool
 def get_accounts_to_monitor():
     """
-    Get list of Twitter accounts to monitor from Supabase.
+    Get list of Twitter accounts to monitor from Supabase for the current user.
     
     Returns:
         Dictionary containing list of accounts and their priorities
     """
     try:
-        # Fetch accounts from Supabase
+        # Get user context from environment
+        user_id = amu.get_user_context()
+        
+        if not user_id:
+            logger.warning("No user context available for account monitoring")
+            log_to_database("warning", "No user context available for account monitoring")
+            return {
+                "result": [],
+                "count": 0,
+                "message": "No user context available"
+            }
+        
+        logger.info(f"Fetching accounts for user: {user_id}")
+        log_to_database("info", f"Fetching accounts for user: {user_id}")
+        
+        # Fetch accounts from Supabase filtered by user_id
         result = supabase_client.table("x_accounts").select(
             "username, priority, last_fetched_at"
-        ).order("priority", desc=True).execute()
+        ).eq("user_id", user_id).order("priority", desc=True).execute()
         
         accounts = result.data if result.data else []
         
-        log_to_database("info", f"Retrieved {len(accounts)} accounts to monitor")
+        log_to_database("info", f"Retrieved {len(accounts)} accounts to monitor for user {user_id}")
         return {
             "result": accounts,
-            "count": len(accounts)
+            "count": len(accounts),
+            "user_id": user_id
         }
         
     except Exception as e:
