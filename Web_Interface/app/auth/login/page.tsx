@@ -13,20 +13,23 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [loginAttempted, setLoginAttempted] = useState(false)
   
   const { signIn, user } = useAuth()
   const router = useRouter()
 
-  // Redirect when user becomes authenticated
+  // Only redirect after a successful login attempt, not on initial page load
   useEffect(() => {
     console.log('🔄 Login Page: User state changed:', {
       hasUser: !!user,
       userEmail: user?.email,
+      loginAttempted,
       timestamp: new Date().toISOString()
     })
     
-    if (user) {
-      console.log('✅ Login Page: User authenticated, redirecting to dashboard')
+    // Only redirect if user is authenticated AND we just attempted a login
+    if (user && loginAttempted) {
+      console.log('✅ Login Page: User authenticated after login attempt, redirecting to dashboard')
       console.log('🔄 Login Page: Attempting redirect with window.location...')
       
       // Use window.location for more reliable redirect that forces a full page load
@@ -35,13 +38,16 @@ export default function LoginPage() {
         console.log('🔄 Login Page: Executing window.location.href = "/" after delay')
         window.location.href = '/'
       }, 200)
+    } else if (user && !loginAttempted) {
+      console.log('🔄 Login Page: User already authenticated but no login attempt - staying on login page')
     }
-  }, [user, router])
+  }, [user, loginAttempted, router])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
     setLoading(true)
+    setLoginAttempted(true)
 
     try {
       await signIn(email, password)
@@ -49,6 +55,7 @@ export default function LoginPage() {
     } catch (error: any) {
       setError(error.message)
       setLoading(false)
+      setLoginAttempted(false) // Reset on error
     }
   }
 
