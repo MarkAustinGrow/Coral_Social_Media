@@ -32,15 +32,25 @@ AGENT_NAME = "Tweet Scraping Agent"
 # Load environment variables
 load_dotenv()
 
-# Use the same waitForAgents=2 as the World News Agent
-base_url = "http://localhost:5555/devmode/exampleApplication/privkey/session1/sse"
+# Get user context for user-specific MCP server
+user_id = amu.get_user_context()
+
+# Generate user-specific port (same logic as start_user_coral_server.sh)
+import hashlib
+user_hash = hashlib.md5(user_id.encode()).hexdigest()[:8]
+user_port = 5555 + (int(user_hash, 16) % 1000)
+
+# Use user-specific MCP server URL
+base_url = f"http://localhost:{user_port}/devmode/exampleApplication/privkey/session1/sse"
 params = {
-    "waitForAgents": 2,  # Same as World News Agent
-    "agentId": "tweet_scraping_agent",
-    "agentDescription": "You are tweet_scraping_agent, responsible for monitoring Twitter accounts and collecting tweets based on priorities"
+    "waitForAgents": 2,
+    "agentId": f"tweet_scraping_agent_{user_id}",
+    "agentDescription": f"You are tweet_scraping_agent for user {user_id}, responsible for monitoring Twitter accounts and collecting tweets based on priorities"
 }
 query_string = urllib.parse.urlencode(params)
 MCP_SERVER_URL = f"{base_url}?{query_string}"
+
+print(f"🔗 Using user-specific MCP server: {MCP_SERVER_URL}")
 
 # Initialize API clients
 try:
