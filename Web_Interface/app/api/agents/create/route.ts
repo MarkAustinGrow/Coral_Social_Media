@@ -89,16 +89,24 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to check existing agents' }, { status: 500 })
     }
     
-    if (existingAgents && existingAgents.length > 0) {
-      console.log('⚠️ Create Agents API: User already has agents:', existingAgents.length)
+    // Check if user already has all the standard agents
+    const existingAgentNames = existingAgents?.map(a => a.agent_name) || []
+    const missingAgents = STANDARD_AGENTS.filter(agent => 
+      !existingAgentNames.includes(agent.agent_name)
+    )
+    
+    if (missingAgents.length === 0) {
+      console.log('⚠️ Create Agents API: User already has all agents:', existingAgents?.length)
       return NextResponse.json({ 
-        error: 'Agents already exist for this user',
-        existingAgents: existingAgents.map(a => a.agent_name)
+        error: 'All agents already exist for this user',
+        existingAgents: existingAgentNames
       }, { status: 400 })
     }
     
-    // Create agents for the user
-    const agentsToCreate = STANDARD_AGENTS.map(agent => ({
+    console.log(`🔧 Create Agents API: Creating ${missingAgents.length} missing agents for user`)
+    
+    // Create only the missing agents for the user
+    const agentsToCreate = missingAgents.map(agent => ({
       ...agent,
       user_id: userId,
       updated_at: new Date().toISOString()
