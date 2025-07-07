@@ -19,9 +19,18 @@ export async function middleware(req: NextRequest) {
 
     const {
       data: { session },
+      error: sessionError
     } = await supabase.auth.getSession()
 
     const { pathname } = req.nextUrl
+
+    console.log('🔧 Middleware check:', {
+      pathname,
+      hasSession: !!session,
+      userEmail: session?.user?.email,
+      sessionError: sessionError?.message,
+      timestamp: new Date().toISOString()
+    })
 
     // Public routes that don't require authentication
     const publicRoutes = ['/auth/login', '/auth/signup', '/auth/callback', '/debug/env', '/debug/supabase']
@@ -30,18 +39,21 @@ export async function middleware(req: NextRequest) {
 
     // If it's a public route, allow access
     if (isPublicRoute) {
+      console.log('✅ Middleware: Public route, allowing access to', pathname)
       return res
     }
 
     // For all other routes, check authentication
     if (!session) {
+      console.log('❌ Middleware: No session found, redirecting to login from', pathname)
       const redirectUrl = new URL('/auth/login', req.url)
       return NextResponse.redirect(redirectUrl)
     }
 
+    console.log('✅ Middleware: Session found, allowing access to', pathname)
     return res
   } catch (error) {
-    console.error('Middleware error:', error)
+    console.error('❌ Middleware error:', error)
     // On error, allow request to proceed (don't break the app)
     return res
   }

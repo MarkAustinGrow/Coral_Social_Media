@@ -27,7 +27,13 @@ export default function LoginPage() {
     
     if (user) {
       console.log('✅ Login Page: User authenticated, redirecting to dashboard')
-      router.push('/')
+      console.log('🔄 Login Page: Attempting router.push("/") now...')
+      
+      // Add a small delay to ensure session is fully established
+      setTimeout(() => {
+        console.log('🔄 Login Page: Executing router.push("/") after delay')
+        router.push('/')
+      }, 100)
     }
   }, [user, router])
 
