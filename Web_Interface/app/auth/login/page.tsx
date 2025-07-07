@@ -19,8 +19,14 @@ export default function LoginPage() {
 
   // Redirect when user becomes authenticated
   useEffect(() => {
+    console.log('🔄 Login Page: User state changed:', {
+      hasUser: !!user,
+      userEmail: user?.email,
+      timestamp: new Date().toISOString()
+    })
+    
     if (user) {
-      console.log('User authenticated, redirecting to dashboard')
+      console.log('✅ Login Page: User authenticated, redirecting to dashboard')
       router.push('/')
     }
   }, [user, router])
