@@ -27,13 +27,14 @@ export default function LoginPage() {
     
     if (user) {
       console.log('✅ Login Page: User authenticated, redirecting to dashboard')
-      console.log('🔄 Login Page: Attempting router.push("/") now...')
+      console.log('🔄 Login Page: Attempting redirect with window.location...')
       
-      // Add a small delay to ensure session is fully established
+      // Use window.location for more reliable redirect that forces a full page load
+      // This ensures the middleware gets a fresh request with the session
       setTimeout(() => {
-        console.log('🔄 Login Page: Executing router.push("/") after delay')
-        router.push('/')
-      }, 100)
+        console.log('🔄 Login Page: Executing window.location.href = "/" after delay')
+        window.location.href = '/'
+      }, 200)
     }
   }, [user, router])
 

@@ -17,10 +17,20 @@ export async function middleware(req: NextRequest) {
   try {
     const supabase = createMiddlewareClient({ req, res })
 
-    const {
-      data: { session },
-      error: sessionError
-    } = await supabase.auth.getSession()
+    // Try to get session, with refresh if needed
+    let { data: { session }, error: sessionError } = await supabase.auth.getSession()
+    
+    // If no session found, try refreshing the session
+    if (!session && !sessionError) {
+      console.log('🔄 Middleware: No session found, attempting refresh...')
+      const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession()
+      if (refreshData.session) {
+        session = refreshData.session
+        console.log('✅ Middleware: Session refreshed successfully')
+      } else if (refreshError) {
+        console.log('❌ Middleware: Session refresh failed:', refreshError.message)
+      }
+    }
 
     const { pathname } = req.nextUrl
 
@@ -45,7 +55,7 @@ export async function middleware(req: NextRequest) {
 
     // For all other routes, check authentication
     if (!session) {
-      console.log('❌ Middleware: No session found, redirecting to login from', pathname)
+      console.log('❌ Middleware: No session found after refresh, redirecting to login from', pathname)
       const redirectUrl = new URL('/auth/login', req.url)
       return NextResponse.redirect(redirectUrl)
     }
