@@ -2,7 +2,8 @@
 
 import React, { createContext, useContext, useEffect, useState } from 'react'
 import { User, Session } from '@supabase/supabase-js'
-import { supabase, handleSupabaseError } from '@/lib/supabase'
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
+import { handleSupabaseError } from '@/lib/supabase'
 
 interface AuthContextType {
   user: User | null
@@ -27,6 +28,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [session, setSession] = useState<Session | null>(null)
   const [loading, setLoading] = useState(true)
+  
+  // Use the middleware-compatible client
+  const supabase = createClientComponentClient()
 
   useEffect(() => {
     console.log('🔧 AuthContext: Setting up auth listeners...')
@@ -79,7 +83,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.log('🔧 AuthContext: Cleaning up auth listener')
       subscription.unsubscribe()
     }
-  }, [])
+  }, [supabase])
 
   const signIn = async (email: string, password: string) => {
     try {
