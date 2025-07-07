@@ -239,7 +239,7 @@ def get_api_usage():
 @tool
 def store_tweets(tweets: list):
     """
-    Store tweets in Supabase.
+    Store tweets in Supabase with proper user context.
     
     Args:
         tweets: List of tweet objects to store
@@ -248,12 +248,26 @@ def store_tweets(tweets: list):
         Dictionary containing operation result
     """
     try:
-        # Prepare tweets for insertion
+        # Get user context - CRITICAL for multiuser support
+        user_id = amu.get_user_context()
+        
+        if not user_id:
+            logger.error("No user context available for tweet storage")
+            log_to_database("error", "No user context available for tweet storage")
+            return {
+                "error": "No user context available for tweet storage",
+                "count": 0
+            }
+        
+        logger.info(f"Storing tweets for user: {user_id}")
+        log_to_database("info", f"Storing tweets for user: {user_id}")
+        
+        # Prepare tweets for insertion with user_id
         tweets_to_insert = []
         for tweet in tweets:
-            # Convert tweet to format matching your Supabase schema
+            # Convert tweet to format matching the exact Supabase schema
             tweet_record = {
-                "tweet_id": tweet["id"],
+                "tweet_id": str(tweet["id"]),  # Ensure string format
                 "text": tweet["text"],
                 "created_at": tweet["created_at"],
                 "author": tweet["author"],
@@ -262,26 +276,35 @@ def store_tweets(tweets: list):
                 "replies": tweet.get("metrics", {}).get("reply_count", 0),
                 "conversation_id": tweet.get("conversation_id"),
                 "analyzed": False,  # Mark as not analyzed yet
-                "inserted_at": "now()"
+                "engagement_processed": False,  # Mark as not processed
+                "user_id": user_id,  # CRITICAL: Associate with user
+                # Note: inserted_at has default now() in database
             }
             tweets_to_insert.append(tweet_record)
         
-        # Insert tweets into Supabase
+        # Insert tweets into Supabase with user context
         if tweets_to_insert:
+            logger.info(f"Inserting {len(tweets_to_insert)} tweets for user {user_id}")
+            
             result = supabase_client.table("tweets_cache").upsert(
                 tweets_to_insert, 
                 on_conflict="tweet_id"  # Upsert based on tweet_id
             ).execute()
             
-            log_to_database("info", f"Successfully stored {len(tweets_to_insert)} tweets", {"count": len(tweets_to_insert)})
+            log_to_database("info", f"Successfully stored {len(tweets_to_insert)} tweets for user {user_id}", {
+                "count": len(tweets_to_insert),
+                "user_id": user_id
+            })
             return {
-                "result": f"Successfully stored {len(tweets_to_insert)} tweets",
-                "count": len(tweets_to_insert)
+                "result": f"Successfully stored {len(tweets_to_insert)} tweets for user {user_id}",
+                "count": len(tweets_to_insert),
+                "user_id": user_id
             }
         else:
             return {
                 "result": "No tweets to store",
-                "count": 0
+                "count": 0,
+                "user_id": user_id
             }
             
     except Exception as e:
