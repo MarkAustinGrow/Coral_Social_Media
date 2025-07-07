@@ -17,6 +17,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { getSupabaseClient } from "@/lib/supabase"
 import { toast } from "sonner"
 import { formatDistanceToNow } from "date-fns"
+import { CreateAgentsButton } from "@/components/create-agents-button"
 
 // Types for agent status
 interface AgentStatus {
@@ -293,11 +294,14 @@ export function SystemStatusPanel() {
           <ServerCrash className="h-10 w-10 mx-auto mb-2 text-muted-foreground" />
           <h3 className="font-medium mb-1">No Agents Configured</h3>
           <p className="text-sm text-muted-foreground mb-3">
-            No agent status information is available. You may need to configure your agents first.
+            No agents have been created for your account yet. Create your agents to start managing your social media automation.
           </p>
-          <Button size="sm" variant="outline" onClick={handleRefresh}>
-            Check Again
-          </Button>
+          <div className="flex gap-2 justify-center">
+            <CreateAgentsButton onSuccess={handleRefresh} />
+            <Button size="sm" variant="outline" onClick={handleRefresh}>
+              Check Again
+            </Button>
+          </div>
         </div>
       }
     >
