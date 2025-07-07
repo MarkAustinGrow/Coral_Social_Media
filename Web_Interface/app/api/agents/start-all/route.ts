@@ -47,8 +47,8 @@ export async function POST(request: NextRequest) {
     
     console.log(`🔧 Start All Agents API: Found ${userAgents.length} agents for user`)
     
-    // Start all agent processes
-    const success = await startAllAgents()
+    // Start all agent processes with user context
+    const success = await startAllAgents(userId)
     
     if (!success) {
       console.error('❌ Start All Agents API: Failed to start agent processes')

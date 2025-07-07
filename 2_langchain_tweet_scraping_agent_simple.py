@@ -20,6 +20,7 @@ import signal
 import sys
 import atexit
 import agent_status_updater as asu
+import agent_multiuser_utils as amu
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -80,8 +81,9 @@ def signal_handler(sig, frame):
 signal.signal(signal.SIGINT, signal_handler)  # Ctrl+C
 signal.signal(signal.SIGTERM, signal_handler)  # Termination signal
 
-# Register function to mark agent as stopped when the script exits
+# Register function to mark agent as stopped when the script exits (use both old and new for compatibility)
 atexit.register(lambda: asu.mark_agent_stopped(AGENT_NAME))
+atexit.register(lambda: amu.mark_agent_stopped_with_user(AGENT_NAME))
 
 # Rate limiting variables
 last_execution_time = 0
@@ -89,24 +91,15 @@ current_interval = 1800  # 30 minutes default
 
 def log_to_database(level, message, metadata=None):
     """
-    Log agent activity to the agent_logs table in Supabase.
+    Log agent activity to the agent_logs table in Supabase with user context.
     
     Args:
         level: Log level ('info', 'warning', 'error')
         message: Log message
         metadata: Optional JSON metadata
     """
-    try:
-        # Insert log into agent_logs table
-        supabase_client.table("agent_logs").insert({
-            "timestamp": datetime.datetime.now().isoformat(),
-            "level": level,
-            "agent_name": AGENT_NAME,
-            "message": message,
-            "metadata": metadata
-        }).execute()
-    except Exception as e:
-        logger.error(f"Failed to log to database: {str(e)}")
+    # Use the new multiuser-aware logging function
+    amu.log_to_database(AGENT_NAME, level, message, metadata)
 
 def get_tools_description(tools):
     return "\n".join(
@@ -529,18 +522,21 @@ async def main():
             await asyncio.sleep(5)
 
 if __name__ == "__main__":
-    # Mark agent as started
+    # Mark agent as started (use both old and new for compatibility)
     asu.mark_agent_started(AGENT_NAME)
+    amu.mark_agent_started_with_user(AGENT_NAME)
     log_to_database("info", "Tweet Scraping Agent started")
     
     try:
         asyncio.run(main())
     except Exception as e:
-        # Report error in status
+        # Report error in status (use both old and new for compatibility)
         asu.report_error(AGENT_NAME, f"Fatal error: {str(e)}")
+        amu.report_error_with_user(AGENT_NAME, f"Fatal error: {str(e)}")
         
         # Re-raise the exception
         raise
     finally:
-        # Mark agent as stopped
+        # Mark agent as stopped (use both old and new for compatibility)
         asu.mark_agent_stopped(AGENT_NAME)
+        amu.mark_agent_stopped_with_user(AGENT_NAME)

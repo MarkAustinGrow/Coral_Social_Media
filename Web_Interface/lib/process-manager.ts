@@ -102,9 +102,9 @@ const agentFilePaths: Record<string, string> = {
 };
 
 /**
- * Start an agent process
+ * Start an agent process with user context
  */
-export async function startAgent(agentName: string): Promise<boolean> {
+export async function startAgent(agentName: string, userId?: string): Promise<boolean> {
   try {
     // Check if the agent is already running
     if (runningProcesses[agentName]) {
@@ -132,12 +132,20 @@ export async function startAgent(agentName: string): Promise<boolean> {
     // Determine the Python executable
     const pythonExecutable = os.platform() === 'win32' ? 'python' : 'python3';
 
-    // Start the agent process
+    // Prepare environment variables with user context
+    const env = { ...process.env };
+    if (userId) {
+      env.AGENT_USER_ID = userId;
+      console.log(`Starting agent ${agentName} for user ${userId}`);
+    }
+
+    // Start the agent process with user context
     const agentProcess = spawn(pythonExecutable, [agentFilePath], {
       cwd: rootDir,
       stdio: 'ignore', // Ignore stdin, stdout, and stderr
       detached: true, // Run the process in the background
-      shell: true // Use shell to run the command
+      shell: true, // Use shell to run the command
+      env: env // Pass environment variables including user context
     });
 
     // Store the process
@@ -260,7 +268,7 @@ function delay(ms: number): Promise<void> {
 /**
  * Start all agents with a delay between each startup
  */
-export async function startAllAgents(): Promise<boolean> {
+export async function startAllAgents(userId?: string): Promise<boolean> {
   try {
     // Define the order in which agents should be started
     const agentOrder = [
@@ -278,8 +286,8 @@ export async function startAllAgents(): Promise<boolean> {
     const results: boolean[] = [];
     
     for (const agentName of agentOrder) {
-      console.log(`Starting agent: ${agentName}`);
-      const success = await startAgent(agentName);
+      console.log(`Starting agent: ${agentName}${userId ? ` for user ${userId}` : ''}`);
+      const success = await startAgent(agentName, userId);
       results.push(success);
       
       // Log the result

@@ -53,8 +53,8 @@ export async function POST(request: NextRequest) {
     
     console.log('🔧 Start Agent API: Found agent:', agent.agent_name, 'Current status:', agent.status)
     
-    // Start the agent process
-    const success = await startAgent(agentName)
+    // Start the agent process with user context
+    const success = await startAgent(agentName, userId)
     
     if (!success) {
       console.error('❌ Start Agent API: Failed to start agent process')
