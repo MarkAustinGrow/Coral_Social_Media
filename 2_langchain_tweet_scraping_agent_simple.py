@@ -20,7 +20,7 @@ import signal
 import sys
 import atexit
 import agent_status_updater as asu
-import agent_multiuser_utils as amu
+import agent_multiuser_utils_simple as amu
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
