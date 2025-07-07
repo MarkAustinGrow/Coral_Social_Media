@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getSupabaseClient } from '@/lib/supabase'
+import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
+import { cookies } from 'next/headers'
+import { Database } from '@/types/database'
 
 // Define the agent names we want to ensure exist in the database
 const agentNames = [
@@ -15,23 +17,35 @@ const agentNames = [
 
 export async function POST(request: NextRequest) {
   try {
-    // Get Supabase client
-    const supabase = await getSupabaseClient()
+    console.log('🔧 Update Names API: Starting agent names update...')
     
-    if (!supabase) {
-      return NextResponse.json(
-        { error: 'Supabase client not available' },
-        { status: 500 }
-      )
+    // Create Supabase client with authentication
+    const supabase = createRouteHandlerClient<Database>({ cookies })
+    
+    // Get the current user
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+    
+    if (sessionError) {
+      console.error('❌ Update Names API: Session error:', sessionError)
+      return NextResponse.json({ error: 'Authentication error' }, { status: 401 })
     }
     
-    // First, get existing agent names
+    if (!session?.user) {
+      console.error('❌ Update Names API: No authenticated user')
+      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+    }
+    
+    const userId = session.user.id
+    console.log('✅ Update Names API: User authenticated:', userId)
+    
+    // First, get existing agent names for this user
     const { data: existingAgents, error: fetchError } = await supabase
       .from('agent_status')
       .select('agent_name')
+      .eq('user_id', userId)
     
     if (fetchError) {
-      console.error('Error fetching existing agents:', fetchError)
+      console.error('❌ Update Names API: Error fetching existing agents:', fetchError)
       return NextResponse.json(
         { error: fetchError.message || 'Failed to fetch existing agents' },
         { status: 500 }
@@ -48,10 +62,12 @@ export async function POST(request: NextRequest) {
       errors: 0
     }
     
-    // Ensure each agent exists in the database
+    console.log(`🔧 Update Names API: Found ${existingAgentNames.size} existing agents for user`)
+    
+    // Ensure each agent exists in the database for this user
     for (const agentName of agentNames) {
       if (!existingAgentNames.has(agentName)) {
-        // Agent doesn't exist, add it
+        // Agent doesn't exist for this user, add it
         const { error: insertError } = await supabase
           .from('agent_status')
           .insert({
@@ -59,19 +75,23 @@ export async function POST(request: NextRequest) {
             status: 'stopped',
             health: 0,
             last_activity: 'Agent added via API',
-            updated_at: new Date().toISOString()
+            updated_at: new Date().toISOString(),
+            user_id: userId
           })
         
         if (insertError) {
-          console.error(`Error adding agent ${agentName}:`, insertError)
+          console.error(`❌ Update Names API: Error adding agent ${agentName}:`, insertError)
           results.errors++
         } else {
+          console.log(`✅ Update Names API: Added agent ${agentName}`)
           results.added++
         }
       } else {
         results.alreadyExisted++
       }
     }
+    
+    console.log('✅ Update Names API: Agent names update completed:', results)
     
     // Return results
     return NextResponse.json({
@@ -80,7 +100,7 @@ export async function POST(request: NextRequest) {
       message: `Added ${results.added} agents, ${results.alreadyExisted} already existed, ${results.errors} errors`
     })
   } catch (error: any) {
-    console.error('Error updating agent names:', error)
+    console.error('❌ Update Names API: Unexpected error:', error)
     return NextResponse.json(
       { error: error.message || 'An unknown error occurred' },
       { status: 500 }

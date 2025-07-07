@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getSupabaseClient } from '@/lib/supabase'
+import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
+import { cookies } from 'next/headers'
+import { Database } from '@/types/database'
 
 /**
  * Force update an agent's status in the database
@@ -8,6 +10,8 @@ import { getSupabaseClient } from '@/lib/supabase'
  */
 export async function POST(request: NextRequest) {
   try {
+    console.log('🔧 Force Status API: Starting force status update...')
+    
     const { agentName, status, health, lastActivity } = await request.json()
     
     // Validate inputs
@@ -32,47 +36,70 @@ export async function POST(request: NextRequest) {
       )
     }
     
-    // Update the agent status in the database
-    try {
-      const supabase = await getSupabaseClient()
-      if (!supabase) {
-        return NextResponse.json(
-          { error: 'Supabase client not available' },
-          { status: 500 }
-        )
-      }
-      
-      // Update agent status
-      const { error } = await supabase
-        .from('agent_status')
-        .update({
-          status,
-          health,
-          last_activity: lastActivity || `Status force-updated to ${status}`,
-          updated_at: new Date().toISOString()
-        })
-        .eq('agent_name', agentName)
-      
-      if (error) {
-        return NextResponse.json(
-          { error: error.message },
-          { status: 500 }
-        )
-      }
-      
+    // Create Supabase client with authentication
+    const supabase = createRouteHandlerClient<Database>({ cookies })
+    
+    // Get the current user
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+    
+    if (sessionError) {
+      console.error('❌ Force Status API: Session error:', sessionError)
+      return NextResponse.json({ error: 'Authentication error' }, { status: 401 })
+    }
+    
+    if (!session?.user) {
+      console.error('❌ Force Status API: No authenticated user')
+      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+    }
+    
+    const userId = session.user.id
+    console.log('✅ Force Status API: User authenticated:', userId, 'Agent:', agentName)
+    
+    // Verify the user owns this agent
+    const { data: agent, error: agentError } = await supabase
+      .from('agent_status')
+      .select('id, agent_name, status')
+      .eq('agent_name', agentName)
+      .eq('user_id', userId)
+      .single()
+    
+    if (agentError || !agent) {
+      console.error('❌ Force Status API: Agent not found for user:', agentError)
       return NextResponse.json({ 
-        success: true,
-        message: `Agent ${agentName} status force-updated to ${status}`
+        error: 'Agent not found or you do not have permission to control this agent' 
+      }, { status: 404 })
+    }
+    
+    console.log('🔧 Force Status API: Found agent:', agent.agent_name, 'Current status:', agent.status)
+    
+    // Update agent status (only for this user's agent)
+    const { error: updateError } = await supabase
+      .from('agent_status')
+      .update({
+        status,
+        health,
+        last_activity: lastActivity || `Status force-updated to ${status}`,
+        updated_at: new Date().toISOString()
       })
-    } catch (dbError: any) {
-      console.error('Error updating agent status in database:', dbError);
+      .eq('agent_name', agentName)
+      .eq('user_id', userId)
+    
+    if (updateError) {
+      console.error('❌ Force Status API: Error updating agent status:', updateError)
       return NextResponse.json(
-        { error: dbError.message || 'Database error occurred' },
+        { error: updateError.message },
         { status: 500 }
       )
     }
+    
+    console.log('✅ Force Status API: Agent status updated successfully')
+    
+    return NextResponse.json({ 
+      success: true,
+      message: `Agent ${agentName} status force-updated to ${status}`
+    })
   } catch (error: any) {
-    console.error('Error in force-status API:', error);
+    console.error('❌ Force Status API: Unexpected error:', error)
     return NextResponse.json(
       { error: error.message || 'An unknown error occurred' },
       { status: 500 }
