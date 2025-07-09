@@ -21,12 +21,15 @@ This document provides a comprehensive overview of the Coral Social Media Infras
 
 ## System Overview
 
-The Coral Social Media Infrastructure is a comprehensive **multiuser system** that combines the Coral Protocol for agent orchestration with LangChain for creating specialized AI agents that handle various aspects of social media management. The system has been enhanced with a robust authentication system and multiuser support, allowing multiple users to manage their own social media automation workflows.
+The Coral Social Media Infrastructure is a comprehensive **multiuser system** that combines the Coral Protocol for agent orchestration with LangChain for creating specialized AI agents that handle various aspects of social media management. The system has been enhanced with a robust authentication system, multiuser support, and **Coral Protocol inspection capabilities**, allowing multiple users to manage their own social media automation workflows with full visibility into agent communications.
 
 Key capabilities include:
 - **Multiuser Authentication**: Secure user registration, login, and session management
 - **Tenant-based Data Isolation**: Each user's data is securely isolated using Row Level Security (RLS)
 - **User Profile Management**: Comprehensive user profile system with customizable settings
+- **Coral Protocol Inspector**: Real-time monitoring and inspection of agent communications
+- **Centralized Agent Architecture**: All agents connect to a centralized Coral server for improved scalability
+- **User-Scoped Agent Monitoring**: Users can only see and control their own agents
 - Automated tweet collection and analysis
 - Content generation based on social media trends
 - Tweet thread creation from blog content
@@ -509,6 +512,79 @@ The debug tools (`app/debug/page.tsx` and related components) provide functional
 - **Supabase Debug** (`components/supabase-debug.tsx`): Tests connection to Supabase and displays account data
 - **API Endpoint** (`app/api/debug/supabase/route.ts`): Backend support for Supabase connection testing
 - **Error Visualization**: Clear display of connection errors and troubleshooting information
+
+### Coral Protocol Inspector
+
+The Coral Protocol Inspector (`app/coral-inspector/page.tsx` and related components) provides a comprehensive, user-scoped interface for monitoring and inspecting agent communications on the Coral Protocol. This feature was inspired by the Coral Studio project and adapted for the multi-user architecture.
+
+#### Key Features
+
+- **User-Scoped Agent Dashboard** (`components/coral-inspector-dashboard.tsx`): Real-time monitoring of user's 8 agents with the following capabilities:
+  - **Complete User Isolation**: Users only see their own agents (agent_name_{user_id} pattern)
+  - **Real-time Status Monitoring**: Live updates every 30 seconds showing agent connection status
+  - **Individual Agent Cards**: Color-coded cards for each of the 8 agent types with unique visual identifiers
+  - **Status Indicators**: Online/Offline/Error/Connecting states with appropriate icons and badges
+  - **Activity Metrics**: Message counts, last seen timestamps, and session tracking
+  - **Coral Server Connection**: Centralized server status monitoring at coral.8interns.com
+  - **Quick Actions**: Buttons for session management, message viewing, and debugging tools
+
+#### Agent Types Monitored
+
+The inspector displays all 8 user agents with unique color coding:
+1. **World News Agent** (Blue) - Fetches and generates news topics
+2. **Tweet Scraping Agent** (Green) - Scrapes and analyzes tweets  
+3. **Tweet Research Agent** (Purple) - Researches tweet content and context
+4. **Hot Topic Agent** (Orange) - Identifies trending topics and engagement
+5. **Blog Critique Agent** (Red) - Reviews and fact-checks blog content
+6. **Blog Writing Agent** (Indigo) - Creates blog content from research
+7. **Blog to Tweet Agent** (Pink) - Converts blogs to tweet threads
+8. **Twitter Posting Agent** (Cyan) - Posts tweets and manages scheduling
+
+#### API Integration
+
+- **Agent Status API** (`app/api/coral/agent-status/route.ts`): User-scoped endpoint for checking agent status
+  - **User Authentication**: Requires valid user session for all operations
+  - **Agent ID Filtering**: Extracts user ID from agent ID format (agent_name_user_id)
+  - **Database Integration**: Checks recent agent logs in Supabase for activity detection
+  - **Connection Status**: Determines online/offline status based on recent activity (5-minute window)
+  - **Session Tracking**: Simulates Coral server session management for active agents
+  - **Error Handling**: Graceful fallbacks for connection issues and invalid requests
+
+#### Security and User Isolation
+
+- **Complete User Isolation**: All data filtered by authenticated user ID
+- **Agent ID Validation**: Ensures users can only access their own agents
+- **Database Security**: All queries respect Row Level Security (RLS) policies
+- **API Protection**: All endpoints require authentication and validate user ownership
+- **Session Scoping**: Users only see sessions involving their own agents
+
+#### User Interface Design
+
+- **Professional Layout**: Clean, responsive design with Tailwind CSS and shadcn/ui components
+- **Real-time Updates**: Automatic refresh every 30 seconds with manual refresh capability
+- **Status Visualization**: Color-coded status badges and icons for instant recognition
+- **Responsive Grid**: Adaptive layout for different screen sizes (2-4 columns)
+- **Loading States**: Proper loading indicators and error handling
+- **Interactive Elements**: Hover effects and smooth transitions
+
+#### Integration with Coral Studio Features
+
+The inspector incorporates key concepts from the Coral Studio project:
+- **Session Management**: Similar approach to managing agent sessions
+- **Real-time Monitoring**: Live status updates like Coral Studio's interface
+- **Agent Registry**: Centralized view of all available agents
+- **Server Connection**: Monitoring connection to centralized Coral server
+- **User Interface**: Professional inspection tools with modern design
+
+#### Future Enhancements (Phase 2)
+
+Planned enhancements for the Coral Inspector include:
+- **Thread Visualization**: Real-time conversation display between agents
+- **Message Filtering**: Search and filter agent communications
+- **Interactive Debugging**: Tools for sending custom messages to agents
+- **Performance Metrics**: Agent response times and efficiency tracking
+- **Session Management**: Advanced session creation and management tools
+- **Export Functionality**: Export agent logs and communication data
 
 ### Memory Dashboard
 
@@ -1035,6 +1111,225 @@ The system integrates with the Coral Protocol through:
 Key integration files:
 - `0_langchain_interface.py`: Base integration with Coral Protocol
 - `coral-server-master/src/main/kotlin/org/coralprotocol/coralserver/server/CoralServer.kt`: Server implementation
+
+## Multi-User Architecture and User Separation
+
+The Coral Social Media Infrastructure implements a **comprehensive multi-user architecture** with complete user separation and data isolation. This ensures that each user's data, agents, and activities are completely isolated from other users.
+
+### User Separation Overview
+
+The system achieves user separation through multiple layers:
+
+1. **Authentication-Based Isolation**: Every user must authenticate to access the system
+2. **Database-Level Separation**: Row Level Security (RLS) policies ensure data isolation
+3. **Agent-Level Isolation**: Each user gets their own set of 8 agents with unique IDs
+4. **API-Level Security**: All endpoints validate user ownership before data access
+5. **UI-Level Filtering**: Interface components only show user-specific data
+
+### Agent User Separation
+
+#### Agent ID Pattern
+Each user gets their own set of 8 agents with unique identifiers:
+```
+Format: {agent_name}_{user_id}
+
+Examples:
+- world_news_agent_99d3ff50-dcb5-4389-8e76-2ecd626902bc
+- tweet_scraping_agent_99d3ff50-dcb5-4389-8e76-2ecd626902bc
+- blog_writing_agent_99d3ff50-dcb5-4389-8e76-2ecd626902bc
+```
+
+#### Centralized Server with User Context
+- **Single Coral Server**: All users connect to `coral.8interns.com`
+- **X-User-ID Headers**: Every agent request includes user identification
+- **User Context Validation**: Server validates user context for all operations
+- **Session Isolation**: User sessions are completely separate
+
+#### Agent Communication Isolation
+- **User-Scoped Threads**: Agents only communicate within user boundaries
+- **Message Filtering**: All inter-agent messages filtered by user ID
+- **Tool Access Control**: Agents can only access user-specific tools and data
+- **Status Monitoring**: Agent status tracking is user-specific
+
+### Database User Separation
+
+#### Row Level Security (RLS)
+All user data tables implement RLS policies:
+```sql
+-- Example RLS policy for tweets table
+CREATE POLICY "Users can only access their own tweets" 
+ON tweets FOR ALL 
+USING (user_id = auth.uid());
+
+-- Example RLS policy for agent_logs table
+CREATE POLICY "Users can only access their own agent logs" 
+ON agent_logs FOR ALL 
+USING (user_id = auth.uid());
+```
+
+#### User-Specific Data Tables
+Every data table includes user isolation:
+- **tweets**: User-specific tweet collections
+- **blogs**: User-specific blog content
+- **tweet_threads**: User-specific tweet threads
+- **x_accounts**: User-specific Twitter accounts
+- **agent_logs**: User-specific agent activity logs
+- **system_config**: User-specific configuration
+- **personas**: User-specific content personas
+- **engagement_metrics**: User-specific topic engagement data
+
+#### Database Query Filtering
+All database operations automatically filter by user:
+```python
+# Example: User-specific tweet retrieval
+tweets = supabase.table('tweets').select('*').eq('user_id', user_id).execute()
+
+# Example: User-specific agent logs
+logs = supabase.table('agent_logs').select('*').eq('user_id', user_id).execute()
+```
+
+### API User Separation
+
+#### Authentication Requirements
+- **All Endpoints Protected**: Every API endpoint requires valid user authentication
+- **Session Validation**: User sessions validated on every request
+- **User Context Extraction**: User ID extracted from authenticated session
+- **Ownership Validation**: Data ownership verified before access
+
+#### User-Scoped API Endpoints
+Examples of user-separated API endpoints:
+```typescript
+// Agent status - only user's agents
+GET /api/coral/agent-status?agentId={agent_name}_{user_id}
+
+// User logs - only user's logs  
+GET /api/logs/export?user_id={current_user_id}
+
+// User accounts - only user's accounts
+GET /api/accounts/add?user_id={current_user_id}
+```
+
+#### API Security Implementation
+```typescript
+// Example: User validation in API endpoint
+export async function GET(request: NextRequest) {
+  const { user } = await getUser(request) // Extract authenticated user
+  
+  // Extract user ID from agent ID
+  const agentId = searchParams.get('agentId')
+  const userId = agentId.split('_').pop()
+  
+  // Validate user owns this agent
+  if (userId !== user.id) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+  }
+  
+  // Proceed with user-specific data access
+}
+```
+
+### UI User Separation
+
+#### Component-Level Filtering
+All UI components respect user boundaries:
+```typescript
+// Example: User-scoped agent dashboard
+const getUserAgentId = (agentKey: string) => {
+  return user ? `${agentKey}_${user.id}` : agentKey
+}
+
+// Only show user's agents
+const userAgents = USER_AGENTS.map(agent => ({
+  ...agent,
+  id: getUserAgentId(agent.key)
+}))
+```
+
+#### Navigation and Access Control
+- **Protected Routes**: All pages require authentication
+- **User-Specific Data**: Components only display user's data
+- **Action Restrictions**: Users can only perform actions on their own data
+- **Error Boundaries**: Graceful handling of unauthorized access attempts
+
+### Coral Protocol Inspector User Separation
+
+#### Complete User Isolation
+The Coral Inspector ensures complete user separation:
+- **Agent Filtering**: Only shows user's 8 agents
+- **Status Monitoring**: Only monitors user's agent status
+- **Session Tracking**: Only tracks user's agent sessions
+- **Message Viewing**: Only displays user's agent communications
+
+#### Security Features
+- **Agent ID Validation**: Validates user owns requested agents
+- **Database Filtering**: All queries filtered by user ID
+- **Real-time Updates**: Only receives updates for user's agents
+- **Action Restrictions**: Can only control user's own agents
+
+### Multi-User Security Features
+
+#### Authentication Security
+- **Session Management**: Secure session handling with automatic refresh
+- **Password Security**: Secure password hashing and validation
+- **Email Verification**: Required email confirmation for new accounts
+- **CSRF Protection**: Built-in protection through Supabase Auth
+
+#### Data Security
+- **Encryption**: All data encrypted in transit and at rest
+- **Access Logging**: Comprehensive audit trail of data access
+- **Rate Limiting**: Protection against abuse and brute force attacks
+- **Input Validation**: All user inputs validated and sanitized
+
+#### System Security
+- **Environment Isolation**: User-specific environment variables where applicable
+- **Process Isolation**: User agents run with proper isolation
+- **Network Security**: Secure communication between all components
+- **Backup Security**: User data backed up with proper access controls
+
+### User Onboarding and Management
+
+#### User Registration Process
+1. **Email/Password Registration**: Secure account creation
+2. **Email Verification**: Required email confirmation
+3. **Profile Creation**: Extended user profile setup
+4. **Agent Initialization**: Automatic creation of user-specific agents
+5. **Configuration Setup**: User-specific system configuration
+
+#### User Profile Management
+- **Extended Profiles**: Additional user metadata beyond authentication
+- **Preference Management**: User-specific settings and preferences
+- **API Key Management**: User-specific API keys for external services
+- **Persona Configuration**: User-specific content generation personas
+
+### Monitoring and Compliance
+
+#### User Activity Monitoring
+- **Agent Activity**: Track user-specific agent activities
+- **API Usage**: Monitor user-specific API usage patterns
+- **Error Tracking**: User-specific error logging and resolution
+- **Performance Metrics**: User-specific performance tracking
+
+#### Compliance Features
+- **Data Privacy**: Complete user data isolation
+- **GDPR Compliance**: User data export and deletion capabilities
+- **Audit Trail**: Comprehensive logging of user actions
+- **Data Retention**: Configurable data retention policies
+
+### Testing User Separation
+
+#### Validation Methods
+- **Multi-User Testing**: Test with multiple user accounts simultaneously
+- **Data Isolation Testing**: Verify users cannot access other users' data
+- **Agent Isolation Testing**: Confirm agents only communicate within user boundaries
+- **API Security Testing**: Validate all endpoints respect user boundaries
+
+#### Security Verification
+- **Authentication Testing**: Verify all routes require authentication
+- **Authorization Testing**: Confirm users can only access their own data
+- **Session Testing**: Validate session management and security
+- **Database Testing**: Verify RLS policies prevent cross-user access
+
+This comprehensive multi-user architecture ensures that the Coral Social Media Infrastructure can safely serve multiple users while maintaining complete data isolation and security.
 
 ## Database Schema
 
@@ -1566,10 +1861,18 @@ If you encounter issues not covered in this troubleshooting guide:
 6. **✅ User Profile System**: Extended user profiles with API endpoints
 7. **✅ Data Isolation**: Secure tenant-based data isolation using RLS policies
 8. **✅ Authentication Context**: React context for authentication state management
+9. **✅ Coral Protocol Inspector**: User-scoped real-time agent monitoring and inspection
+10. **✅ Centralized Agent Architecture**: All 8 agents migrated to centralized Coral server
+11. **✅ Multi-User Agent System**: Complete user isolation with agent_name_{user_id} pattern
+12. **✅ Professional UI Enhancement**: Updated branding to "8 Interns - Agentic Intelligence Powered by Coral Protocol"
 
 ### 🚧 Recent Deployments
 
-- **Middleware Fixes**: Recent fixes to authentication middleware for proper session handling
+- **Coral Protocol Inspector**: Complete user-scoped agent monitoring system deployed
+- **Centralized Server Migration**: All agents migrated from localhost to coral.8interns.com
+- **User Context System**: Fixed critical user context environment variable support
+- **Multi-User Branch**: Dedicated multi-user branch created with all enhancements
+- **UI Improvements**: Professional branding and navigation enhancements
 - **Database Migrations**: Multiple phases of database migration completed
 - **Supabase Integration**: Full integration with Supabase Auth and database
 - **API Security**: All API endpoints secured with user authentication
