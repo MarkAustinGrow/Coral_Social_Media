@@ -15,6 +15,14 @@ from supabase import create_client, Client
 from dotenv import load_dotenv
 from pathlib import Path
 from datetime import datetime
+from anyio import ClosedResourceError
+import urllib.parse
+
+import signal
+import sys
+import atexit
+import agent_status_updater as asu
+import agent_multiuser_utils_simple as amu
 
 # Load environment variables early
 dotenv_path = Path(__file__).parent / ".env"
@@ -24,8 +32,50 @@ load_dotenv(dotenv_path=dotenv_path)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
-from anyio import ClosedResourceError
-import urllib.parse
+# Agent name for database logging
+AGENT_NAME = "Twitter Posting Agent"
+
+# Get user context for user-specific MCP server
+user_id = amu.get_user_context()
+
+# Use centralized multi-user Coral server
+base_url = "http://coral.8interns.com/devmode/exampleApplication/privkey/session1/sse"
+params = {
+    "waitForAgents": 7,  # Total number of agents in the system
+    "agentId": f"twitter_posting_agent_{user_id}",
+    "agentDescription": f"You are twitter_posting_agent for user {user_id}, responsible for posting scheduled tweets to Twitter"
+}
+query_string = urllib.parse.urlencode(params)
+MCP_SERVER_URL = f"{base_url}?{query_string}"
+
+print(f"🔗 Using centralized MCP server: {MCP_SERVER_URL}")
+
+# Register signal handlers for graceful shutdown
+def signal_handler(sig, frame):
+    """Handle Ctrl+C and other signals to gracefully shut down"""
+    print("Shutting down gracefully...")
+    asu.mark_agent_stopped(AGENT_NAME)
+    sys.exit(0)
+
+# Register signal handlers
+signal.signal(signal.SIGINT, signal_handler)  # Ctrl+C
+signal.signal(signal.SIGTERM, signal_handler)  # Termination signal
+
+# Register function to mark agent as stopped when the script exits (use both old and new for compatibility)
+atexit.register(lambda: asu.mark_agent_stopped(AGENT_NAME))
+atexit.register(lambda: amu.mark_agent_stopped_with_user(AGENT_NAME))
+
+def log_to_database(level, message, metadata=None):
+    """
+    Log agent activity to the agent_logs table in Supabase with user context.
+    
+    Args:
+        level: Log level ('info', 'warning', 'error')
+        message: Log message
+        metadata: Optional JSON metadata
+    """
+    # Use the new multiuser-aware logging function
+    amu.log_to_database(AGENT_NAME, level, message, metadata)
 
 # Simple rate limiter for Twitter API
 class SimpleRateLimiter:
@@ -336,16 +386,6 @@ else:
 if not twitter_client:
     raise ValueError("Failed to initialize Twitter API client. Check your credentials.")
 
-# Use the same waitForAgents=2 as the World News Agent
-base_url = "http://localhost:5555/devmode/exampleApplication/privkey/session1/sse"
-params = {
-    "waitForAgents": 2,  # Same as World News Agent
-    "agentId": "twitter_posting_agent",
-    "agentDescription": "You are twitter_posting_agent, responsible for posting scheduled tweets to Twitter"
-}
-query_string = urllib.parse.urlencode(params)
-MCP_SERVER_URL = f"{base_url}?{query_string}"
-
 # Initialize Supabase client
 try:
     # Supabase client
@@ -374,41 +414,16 @@ if not os.getenv("OPENAI_API_KEY"):
 if not os.getenv("SUPABASE_URL") or not os.getenv("SUPABASE_KEY"):
     raise ValueError("SUPABASE_URL or SUPABASE_KEY is not set in environment variables.")
 
-# Agent name for database logging
-AGENT_NAME = "Twitter Posting Agent"
-
-def log_to_database(level, message, metadata=None):
-    """
-    Log agent activity to the agent_logs table in Supabase.
-    
-    Args:
-        level: Log level ('info', 'warning', 'error')
-        message: Log message
-        metadata: Optional JSON metadata
-    """
-    try:
-        # Insert log into agent_logs table
-        supabase_client.table("agent_logs").insert({
-            "timestamp": datetime.now().isoformat(),
-            "level": level,
-            "agent_name": AGENT_NAME,
-            "message": message,
-            "metadata": metadata
-        }).execute()
-    except Exception as e:
-        logger.error(f"Failed to log to database: {str(e)}")
-
 def get_tools_description(tools):
     return "\n".join(
         f"Tool: {tool.name}, Schema: {json.dumps(tool.args).replace('{', '{{').replace('}', '}}')}"
         for tool in tools
     )
 
-
 @tool
 def get_scheduled_tweets(limit: int = 10):
     """
-    Get tweets scheduled for posting.
+    Get tweets scheduled for posting for the current user.
     
     Args:
         limit: Maximum number of tweets to return (default: 10)
@@ -417,12 +432,24 @@ def get_scheduled_tweets(limit: int = 10):
         Dictionary containing scheduled tweets
     """
     try:
-        log_to_database("info", f"Fetching scheduled tweets (limit: {limit})")
+        # Get user context - CRITICAL for multiuser support
+        user_id = amu.get_user_context()
+        
+        if not user_id:
+            logger.error("No user context available for scheduled tweets")
+            log_to_database("error", "No user context available for scheduled tweets")
+            return {
+                "error": "No user context available for scheduled tweets",
+                "count": 0,
+                "result": {"tweets": [], "threads": {}}
+            }
+        
+        log_to_database("info", f"Fetching scheduled tweets (limit: {limit}) for user {user_id}")
         # Get current time
         now = datetime.now()
         
-        # Query the potential_tweets table in Supabase
-        result = supabase_client.table("potential_tweets").select("*").eq("status", "scheduled").lte("scheduled_for", now.isoformat()).order("scheduled_for", desc=False).order("position", desc=False).limit(limit).execute()
+        # Query the potential_tweets table in Supabase with user_id filtering
+        result = supabase_client.table("potential_tweets").select("*").eq("status", "scheduled").eq("user_id", user_id).lte("scheduled_for", now.isoformat()).order("scheduled_for", desc=False).order("position", desc=False).limit(limit).execute()
         
         tweets = result.data if result.data else []
         
@@ -438,13 +465,14 @@ def get_scheduled_tweets(limit: int = 10):
         for blog_post_id in threads:
             threads[blog_post_id].sort(key=lambda x: x.get("position", 0))
         
-        log_to_database("info", f"Retrieved {len(tweets)} scheduled tweets", {"thread_count": len(threads)})
+        log_to_database("info", f"Retrieved {len(tweets)} scheduled tweets for user {user_id}", {"thread_count": len(threads)})
         return {
             "result": {
                 "tweets": tweets,
                 "threads": threads
             },
-            "count": len(tweets)
+            "count": len(tweets),
+            "user_id": user_id
         }
         
     except Exception as e:
@@ -452,7 +480,8 @@ def get_scheduled_tweets(limit: int = 10):
         log_to_database("error", f"Error getting scheduled tweets: {str(e)}")
         return {
             "error": f"Failed to get scheduled tweets: {str(e)}",
-            "count": 0
+            "count": 0,
+            "result": {"tweets": [], "threads": {}}
         }
 
 @tool
@@ -555,7 +584,19 @@ def post_tweet_thread(tweets: list):
         Dictionary containing result or error
     """
     try:
-        log_to_database("info", f"Posting tweet thread with {len(tweets)} tweets")
+        # Get user context - CRITICAL for multiuser support
+        user_id = amu.get_user_context()
+        
+        if not user_id:
+            logger.error("No user context available for posting tweet thread")
+            log_to_database("error", "No user context available for posting tweet thread")
+            return {
+                "success": False,
+                "error": "No user context available for posting tweet thread",
+                "posted_tweets": []
+            }
+        
+        log_to_database("info", f"Posting tweet thread with {len(tweets)} tweets for user {user_id}")
         if not tweets:
             return {"error": "No tweets provided", "posted_tweets": []}
 
@@ -571,11 +612,12 @@ def post_tweet_thread(tweets: list):
 
             if not response.get("success", False) or "error" in response:
                 logger.error(f"Failed to post tweet ID {tweet.get('id')}: {response.get('error') or response.get('message')}")
-                log_to_database("error", f"Failed to post tweet ID {tweet.get('id')} in thread", {"error": response.get('error')})
+                log_to_database("error", f"Failed to post tweet ID {tweet.get('id')} in thread for user {user_id}", {"error": response.get('error')})
                 try:
+                    # Update with user_id filtering
                     supabase_client.table("potential_tweets").update({
                         "status": "failed"
-                    }).eq("id", tweet.get("id")).execute()
+                    }).eq("id", tweet.get("id")).eq("user_id", user_id).execute()
                 except Exception as db_error:
                     logger.error(f"Failed to update Supabase on failure: {str(db_error)}")
 
@@ -586,12 +628,13 @@ def post_tweet_thread(tweets: list):
                 }
 
             try:
+                # Update with user_id filtering
                 supabase_client.table("potential_tweets").update({
                     "status": "posted",
                     "posted_at": datetime.now().isoformat()
-                }).eq("id", tweet.get("id")).execute()
+                }).eq("id", tweet.get("id")).eq("user_id", user_id).execute()
                 logger.info(f"Successfully updated Supabase for tweet {tweet.get('id')}")
-                log_to_database("info", f"Successfully updated tweet {tweet.get('id')} status to 'posted'")
+                log_to_database("info", f"Successfully updated tweet {tweet.get('id')} status to 'posted' for user {user_id}")
             except Exception as db_error:
                 logger.error(f"Failed to update tweet {tweet.get('id')} in Supabase: {str(db_error)}")
 
@@ -605,13 +648,14 @@ def post_tweet_thread(tweets: list):
             # Avoid rate limit issues
             time.sleep(3)
 
-        log_to_database("info", f"Successfully posted thread of {len(posted_tweets)} tweets")
+        log_to_database("info", f"Successfully posted thread of {len(posted_tweets)} tweets for user {user_id}")
         return {
             "success": True,
             "result": "Tweet thread posted successfully",
             "posted_tweets": posted_tweets,
             "count": len(posted_tweets),
-            "message": f"Successfully posted thread of {len(posted_tweets)} tweets"
+            "message": f"Successfully posted thread of {len(posted_tweets)} tweets",
+            "user_id": user_id
         }
 
     except Exception as e:
@@ -685,7 +729,6 @@ async def create_twitter_posting_agent(client, tools, agent_tools):
     tools_description = get_tools_description(tools)
     agent_tools_description = get_tools_description(agent_tools)
     
-    # Use a simpler prompt similar to the World News Agent
     prompt = ChatPromptTemplate.from_messages([
         (
             "system",
@@ -705,7 +748,7 @@ async def create_twitter_posting_agent(client, tools, agent_tools):
             
             If no mentions are received (timeout), you should:
             1. Check API rate limits using check_api_rate_limits
-            2. If rate limits allow, get scheduled tweets using get_scheduled_tweets
+            2. If rate limits allow, get scheduled tweets using get_scheduled_tweets for the current user
             3. For each thread:
                a. Post the thread using post_tweet_thread
                b. Wait a few seconds between threads to avoid rate limiting
@@ -714,7 +757,8 @@ async def create_twitter_posting_agent(client, tools, agent_tools):
             - Respecting Twitter API rate limits
             - Posting threads in the correct order
             - Handling errors gracefully
-            - Updating the status of tweets in Supabase
+            - Updating the status of tweets in Supabase with user context
+            - Ensuring all operations are user-specific and isolated
             
             These are the list of all tools (Coral + your tools): {tools_description}
             These are the list of your tools: {agent_tools_description}"""
@@ -740,8 +784,9 @@ async def main():
             "coral": {
                 "transport": "sse",
                 "url": MCP_SERVER_URL,
-                "timeout": 300,  # Same as World News Agent
-                "sse_read_timeout": 300,  # Same as World News Agent
+                "headers": {"X-User-ID": user_id},  # CRITICAL: User isolation header
+                "timeout": 300,
+                "sse_read_timeout": 300,
             }
         }
     )
@@ -757,7 +802,7 @@ async def main():
         check_api_rate_limits
     ]
     
-            # Get Coral tools using the new pattern
+    # Get Coral tools using the new pattern
     coral_tools = client.get_tools()
     
     # Combine Coral tools with agent-specific tools
@@ -766,7 +811,7 @@ async def main():
     # Create and run the agent
     agent_executor = await create_twitter_posting_agent(client, tools, agent_tools)
     
-    # Use the same main loop as the World News Agent
+    # Use the same main loop as other agents
     while True:
         try:
             logger.info("Starting new agent invocation")
@@ -794,12 +839,20 @@ async def post_tweet_direct(tweet_id, is_thread=False):
     log_to_database("info", f"Direct tweet posting mode initiated", {"tweet_id": tweet_id, "is_thread": is_thread})
     
     try:
-        # Fetch the tweet from Supabase
-        result = supabase_client.table("potential_tweets").select("*").eq("id", tweet_id).execute()
+        # Get user context - CRITICAL for multiuser support
+        user_id = amu.get_user_context()
+        
+        if not user_id:
+            logger.error("No user context available for direct tweet posting")
+            log_to_database("error", "No user context available for direct tweet posting")
+            return 1
+        
+        # Fetch the tweet from Supabase with user_id filtering
+        result = supabase_client.table("potential_tweets").select("*").eq("id", tweet_id).eq("user_id", user_id).execute()
         
         if not result.data or len(result.data) == 0:
-            logger.error(f"Tweet with ID {tweet_id} not found")
-            log_to_database("error", f"Tweet with ID {tweet_id} not found")
+            logger.error(f"Tweet with ID {tweet_id} not found for user {user_id}")
+            log_to_database("error", f"Tweet with ID {tweet_id} not found for user {user_id}")
             return 1
         
         tweet = result.data[0]
@@ -810,13 +863,13 @@ async def post_tweet_direct(tweet_id, is_thread=False):
             thread_tweets = []
             
             if tweet.get("blog_post_id") is not None:
-                # Get all tweets in the thread with the same blog_post_id
-                thread_result = supabase_client.table("potential_tweets").select("*").eq("blog_post_id", tweet["blog_post_id"]).eq("status", "posting").order("position", desc=False).execute()
+                # Get all tweets in the thread with the same blog_post_id and user_id
+                thread_result = supabase_client.table("potential_tweets").select("*").eq("blog_post_id", tweet["blog_post_id"]).eq("status", "posting").eq("user_id", user_id).order("position", desc=False).execute()
                 
                 if thread_result.data and len(thread_result.data) > 0:
                     thread_tweets = thread_result.data
-                    logger.info(f"Found {len(thread_tweets)} tweets in thread")
-                    log_to_database("info", f"Found {len(thread_tweets)} tweets in thread", {"blog_post_id": tweet["blog_post_id"]})
+                    logger.info(f"Found {len(thread_tweets)} tweets in thread for user {user_id}")
+                    log_to_database("info", f"Found {len(thread_tweets)} tweets in thread for user {user_id}", {"blog_post_id": tweet["blog_post_id"]})
             
             if not thread_tweets:
                 # If no thread tweets found, just post the single tweet
@@ -842,11 +895,11 @@ async def post_tweet_direct(tweet_id, is_thread=False):
                 log_to_database("error", f"Error posting tweet: {response['error']}")
                 return 1
             
-            # Update the tweet status in Supabase
+            # Update the tweet status in Supabase with user_id filtering
             supabase_client.table("potential_tweets").update({
                 "status": "posted",
                 "posted_at": datetime.now().isoformat()
-            }).eq("id", tweet_id).execute()
+            }).eq("id", tweet_id).eq("user_id", user_id).execute()
             
             logger.info(f"Tweet posted successfully: {response}")
             log_to_database("info", "Tweet posted successfully", {"tweet_id": response.get("tweet_id")})
@@ -858,18 +911,35 @@ async def post_tweet_direct(tweet_id, is_thread=False):
         return 1
 
 if __name__ == "__main__":
+    # Mark agent as started (use both old and new for compatibility)
+    asu.mark_agent_started(AGENT_NAME)
+    amu.mark_agent_started_with_user(AGENT_NAME)
+    log_to_database("info", "Twitter Posting Agent started")
+    
     # Parse command line arguments
     parser = argparse.ArgumentParser(description="Twitter Posting Agent")
     parser.add_argument("--tweet_id", type=int, help="ID of the tweet to post")
     parser.add_argument("--thread", type=str, choices=["true", "false"], help="Whether this is a thread")
     args = parser.parse_args()
     
-    # If tweet_id is provided, post the tweet directly
-    if args.tweet_id:
-        is_thread = args.thread == "true"
-        asyncio.run(post_tweet_direct(args.tweet_id, is_thread))
-    else:
-        # Otherwise, run the agent
-        logger.info("Twitter Posting Agent (v3) started")
-        log_to_database("info", "Twitter Posting Agent started")
-        asyncio.run(main())
+    try:
+        # If tweet_id is provided, post the tweet directly
+        if args.tweet_id:
+            is_thread = args.thread == "true"
+            asyncio.run(post_tweet_direct(args.tweet_id, is_thread))
+        else:
+            # Otherwise, run the agent
+            logger.info("Twitter Posting Agent (v3) started")
+            log_to_database("info", "Twitter Posting Agent started")
+            asyncio.run(main())
+    except Exception as e:
+        # Report error in status (use both old and new for compatibility)
+        asu.report_error(AGENT_NAME, f"Fatal error: {str(e)}")
+        amu.report_error_with_user(AGENT_NAME, f"Fatal error: {str(e)}")
+        
+        # Re-raise the exception
+        raise
+    finally:
+        # Mark agent as stopped (use both old and new for compatibility)
+        asu.mark_agent_stopped(AGENT_NAME)
+        amu.mark_agent_stopped_with_user(AGENT_NAME)
