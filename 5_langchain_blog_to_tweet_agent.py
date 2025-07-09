@@ -18,25 +18,32 @@ import signal
 import sys
 import atexit
 import agent_status_updater as asu
-
+import agent_multiuser_utils_simple as amu
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
+# Agent name for database logging
+AGENT_NAME = "Blog to Tweet Agent"
+
 # Load environment variables
 load_dotenv()
 
-base_url = "http://localhost:5555/devmode/exampleApplication/privkey/session1/sse"
+# Get user context for user-specific MCP server
+user_id = amu.get_user_context()
+
+# Use centralized multi-user Coral server
+base_url = "http://coral.8interns.com/devmode/exampleApplication/privkey/session1/sse"
 params = {
     "waitForAgents": 7,  # Total number of agents in the system
-    "agentId": "blog_to_tweet_agent",
-    "agentDescription": "You are blog_to_tweet_agent, responsible for converting blog posts into tweet threads"
+    "agentId": f"blog_to_tweet_agent_{user_id}",
+    "agentDescription": f"You are blog_to_tweet_agent for user {user_id}, responsible for converting blog posts into tweet threads"
 }
 query_string = urllib.parse.urlencode(params)
 MCP_SERVER_URL = f"{base_url}?{query_string}"
 
-AGENT_NAME = "blog_to_tweet_agent"
+print(f"🔗 Using centralized MCP server: {MCP_SERVER_URL}")
 
 # Initialize API clients
 try:
@@ -68,30 +75,6 @@ if not os.getenv("OPENAI_API_KEY"):
 if not os.getenv("SUPABASE_URL") or not os.getenv("SUPABASE_KEY"):
     raise ValueError("SUPABASE_URL or SUPABASE_KEY is not set in environment variables.")
 
-# Agent name for status updates - must match exactly what's in the database
-AGENT_NAME = "Blog to Tweet Agent"
-
-def log_to_database(level, message, metadata=None):
-    """
-    Log agent activity to the agent_logs table in Supabase.
-    
-    Args:
-        level: Log level ('info', 'warning', 'error')
-        message: Log message
-        metadata: Optional JSON metadata
-    """
-    try:
-        # Insert log into agent_logs table
-        supabase_client.table("agent_logs").insert({
-            "timestamp": datetime.now().isoformat(),
-            "level": level,
-            "agent_name": AGENT_NAME,
-            "message": message,
-            "metadata": metadata
-        }).execute()
-    except Exception as e:
-        logger.error(f"Failed to log to database: {str(e)}")
-
 # Register signal handlers for graceful shutdown
 def signal_handler(sig, frame):
     """Handle Ctrl+C and other signals to gracefully shut down"""
@@ -103,8 +86,21 @@ def signal_handler(sig, frame):
 signal.signal(signal.SIGINT, signal_handler)  # Ctrl+C
 signal.signal(signal.SIGTERM, signal_handler)  # Termination signal
 
-# Register function to mark agent as stopped when the script exits
+# Register function to mark agent as stopped when the script exits (use both old and new for compatibility)
 atexit.register(lambda: asu.mark_agent_stopped(AGENT_NAME))
+atexit.register(lambda: amu.mark_agent_stopped_with_user(AGENT_NAME))
+
+def log_to_database(level, message, metadata=None):
+    """
+    Log agent activity to the agent_logs table in Supabase with user context.
+    
+    Args:
+        level: Log level ('info', 'warning', 'error')
+        message: Log message
+        metadata: Optional JSON metadata
+    """
+    # Use the new multiuser-aware logging function
+    amu.log_to_database(AGENT_NAME, level, message, metadata)
 
 def get_tools_description(tools):
     return "\n".join(
@@ -115,38 +111,57 @@ def get_tools_description(tools):
 @tool
 def fetch_persona():
     """
-    Fetch the current persona from Supabase.
+    Fetch the current persona from Supabase for the current user.
     
     Returns:
         Dictionary containing persona details or default values if not found
     """
-    logger.info("Fetching persona from Supabase")
-    log_to_database("info", "Fetching persona from Supabase")
-    
     try:
-        # Fetch persona from Supabase
-        query = supabase_client.table("personas").select("*").limit(1)
+        # Get user context - CRITICAL for multiuser support
+        user_id = amu.get_user_context()
+        
+        if not user_id:
+            logger.warning("No user context available for persona fetching, using default")
+            log_to_database("warning", "No user context available for persona fetching, using default")
+            # Return default persona if no user context
+            default_persona = {
+                "name": "Content Creator",
+                "description": "A creative and engaging content creator who produces high-quality social media content with a focus on engagement and community building.",
+                "tone": 60,  # Balanced
+                "humor": 50,  # Balanced
+                "enthusiasm": 75,  # Enthusiastic
+                "assertiveness": 65  # Confident but approachable
+            }
+            return {
+                "result": default_persona
+            }
+        
+        logger.info(f"Fetching persona from Supabase for user {user_id}")
+        log_to_database("info", f"Fetching persona from Supabase for user {user_id}")
+        
+        # Fetch persona from Supabase with user_id filtering
+        query = supabase_client.table("personas").select("*").eq("user_id", user_id).limit(1)
         
         result = query.execute()
         
         if result.data and len(result.data) > 0:
             persona = result.data[0]
-            logger.info(f"Found persona: {persona.get('name')}")
-            log_to_database("info", f"Found persona: {persona.get('name')}")
+            logger.info(f"Found persona: {persona.get('name')} for user {user_id}")
+            log_to_database("info", f"Found persona: {persona.get('name')} for user {user_id}")
             return {
                 "result": persona
             }
         else:
             # Return default persona values
-            logger.info("No persona found, using default values")
-            log_to_database("info", "No persona found, using default values")
+            logger.info(f"No persona found for user {user_id}, using default values")
+            log_to_database("info", f"No persona found for user {user_id}, using default values")
             default_persona = {
-                "name": "Content Reviewer",
-                "description": "A meticulous and objective reviewer who prioritizes factual accuracy, logical consistency, and narrative flow in all content.",
-                "tone": 70,  # More formal
-                "humor": 30,  # More serious
-                "enthusiasm": 60,  # Moderately enthusiastic
-                "assertiveness": 80  # Quite confident
+                "name": "Content Creator",
+                "description": "A creative and engaging content creator who produces high-quality social media content with a focus on engagement and community building.",
+                "tone": 60,  # Balanced
+                "humor": 50,  # Balanced
+                "enthusiasm": 75,  # Enthusiastic
+                "assertiveness": 65  # Confident but approachable
             }
             return {
                 "result": default_persona
@@ -157,12 +172,12 @@ def fetch_persona():
         log_to_database("error", f"Error fetching persona from Supabase: {str(e)}")
         # Return default persona values on error
         default_persona = {
-            "name": "Content Reviewer",
-            "description": "A meticulous and objective reviewer who prioritizes factual accuracy, logical consistency, and narrative flow in all content.",
-            "tone": 70,  # More formal
-            "humor": 30,  # More serious
-            "enthusiasm": 60,  # Moderately enthusiastic
-            "assertiveness": 80  # Quite confident
+            "name": "Content Creator",
+            "description": "A creative and engaging content creator who produces high-quality social media content with a focus on engagement and community building.",
+            "tone": 60,  # Balanced
+            "humor": 50,  # Balanced
+            "enthusiasm": 75,  # Enthusiastic
+            "assertiveness": 65  # Confident but approachable
         }
         return {
             "error": f"Failed to fetch persona: {str(e)}",
@@ -172,7 +187,7 @@ def fetch_persona():
 @tool
 def get_unconverted_blog_posts(limit: int = 1):
     """
-    Get blog posts that haven't been converted to tweets yet.
+    Get blog posts that haven't been converted to tweets yet for the current user.
     
     Args:
         limit: Maximum number of blog posts to return (default: 1)
@@ -181,46 +196,42 @@ def get_unconverted_blog_posts(limit: int = 1):
         Dictionary containing unconverted blog posts
     """
     try:
-        log_to_database("info", f"Fetching up to {limit} unconverted blog posts")
-        # Query the blog_posts table in Supabase
-        # Join with potential_tweets to find blog posts that don't have associated tweets
-        query = """
-        SELECT b.id, b.title, b.content, b.word_count, b.status, b.created_at
-        FROM blog_posts b
-        LEFT JOIN potential_tweets t ON b.id = t.blog_post_id
-        WHERE t.id IS NULL
-        AND b.review_status = 'approved'
-        ORDER BY b.created_at DESC
-        LIMIT $1
-        """
+        # Get user context - CRITICAL for multiuser support
+        user_id = amu.get_user_context()
         
-        result = supabase_client.rpc('execute_sql', {'query': query, 'params': [limit]}).execute()
+        if not user_id:
+            logger.error("No user context available for blog posts")
+            log_to_database("error", "No user context available for blog posts")
+            return {
+                "error": "No user context available for blog posts",
+                "count": 0,
+                "result": []
+            }
         
-        # If the RPC method doesn't work, fall back to a simpler query
-        if not result.data or 'error' in result.data:
-            logger.warning("RPC query failed, falling back to simpler query")
+        log_to_database("info", f"Fetching up to {limit} unconverted blog posts for user {user_id}")
+        
+        # Get all blog_post_ids that already have tweets for this user
+        try:
+            existing_tweets = supabase_client.table("potential_tweets").select("blog_post_id").eq("user_id", user_id).execute()
+            existing_blog_ids = [tweet.get("blog_post_id") for tweet in existing_tweets.data] if existing_tweets.data else []
             
-            # First, get all blog_post_ids that already have tweets
-            try:
-                existing_tweets = supabase_client.table("potential_tweets").select("blog_post_id").execute()
-                existing_blog_ids = [tweet.get("blog_post_id") for tweet in existing_tweets.data] if existing_tweets.data else []
-                
-                # Then exclude those blog posts from our query
-                if existing_blog_ids:
-                    result = supabase_client.table("blog_posts").select("*").eq("review_status", "approved").not_.in_("id", existing_blog_ids).order("created_at", desc=True).limit(limit).execute()
-                else:
-                    result = supabase_client.table("blog_posts").select("*").eq("review_status", "approved").order("created_at", desc=True).limit(limit).execute()
-            except Exception as e:
-                logger.error(f"Error in fallback query: {str(e)}")
-                # If the above fails, use the original fallback query
-                result = supabase_client.table("blog_posts").select("*").eq("review_status", "approved").order("created_at", desc=True).limit(limit).execute()
+            # Then exclude those blog posts from our query and filter by user_id
+            if existing_blog_ids:
+                result = supabase_client.table("blog_posts").select("*").eq("review_status", "approved").eq("user_id", user_id).not_.in_("id", existing_blog_ids).order("created_at", desc=True).limit(limit).execute()
+            else:
+                result = supabase_client.table("blog_posts").select("*").eq("review_status", "approved").eq("user_id", user_id).order("created_at", desc=True).limit(limit).execute()
+        except Exception as e:
+            logger.error(f"Error in blog posts query: {str(e)}")
+            # Fallback query with just user_id filtering
+            result = supabase_client.table("blog_posts").select("*").eq("review_status", "approved").eq("user_id", user_id).order("created_at", desc=True).limit(limit).execute()
         
         posts = result.data if result.data else []
         
-        log_to_database("info", f"Retrieved {len(posts)} unconverted blog posts")
+        log_to_database("info", f"Retrieved {len(posts)} unconverted blog posts for user {user_id}")
         return {
             "result": posts,
-            "count": len(posts)
+            "count": len(posts),
+            "user_id": user_id
         }
         
     except Exception as e:
@@ -228,13 +239,14 @@ def get_unconverted_blog_posts(limit: int = 1):
         log_to_database("error", f"Error fetching unconverted blog posts: {str(e)}")
         return {
             "error": f"Failed to fetch unconverted blog posts: {str(e)}",
-            "count": 0
+            "count": 0,
+            "result": []
         }
 
 @tool
 def get_blog_post_by_id(blog_post_id: int):
     """
-    Get a specific blog post by ID.
+    Get a specific blog post by ID for the current user.
     
     Args:
         blog_post_id: ID of the blog post to retrieve
@@ -243,20 +255,32 @@ def get_blog_post_by_id(blog_post_id: int):
         Dictionary containing the blog post
     """
     try:
-        log_to_database("info", f"Fetching blog post with ID: {blog_post_id}")
-        # Query the blog_posts table in Supabase
-        result = supabase_client.table("blog_posts").select("*").eq("id", blog_post_id).execute()
+        # Get user context - CRITICAL for multiuser support
+        user_id = amu.get_user_context()
+        
+        if not user_id:
+            logger.error("No user context available for blog post retrieval")
+            log_to_database("error", "No user context available for blog post retrieval")
+            return {
+                "error": "No user context available for blog post retrieval",
+                "result": None
+            }
+        
+        log_to_database("info", f"Fetching blog post with ID: {blog_post_id} for user {user_id}")
+        
+        # Query the blog_posts table in Supabase with user_id filtering
+        result = supabase_client.table("blog_posts").select("*").eq("id", blog_post_id).eq("user_id", user_id).execute()
         
         post = result.data[0] if result.data else None
         
         if not post:
-            log_to_database("warning", f"Blog post with ID {blog_post_id} not found")
+            log_to_database("warning", f"Blog post with ID {blog_post_id} not found for user {user_id}")
             return {
-                "error": f"Blog post with ID {blog_post_id} not found",
+                "error": f"Blog post with ID {blog_post_id} not found for user {user_id}",
                 "result": None
             }
         
-        log_to_database("info", f"Retrieved blog post: {post.get('title')}")
+        log_to_database("info", f"Retrieved blog post: {post.get('title')} for user {user_id}")
         return {
             "result": post
         }
@@ -284,21 +308,25 @@ def convert_blog_to_tweets(blog_post: dict, max_tweets: int = 10, persona: dict 
     """
     try:
         log_to_database("info", f"Converting blog post to tweets: {blog_post.get('title')}")
+        
         # Use default persona if none provided
         if not persona:
             persona_response = fetch_persona.invoke({})
             persona = persona_response.get("result", {})
             
-        # If blog_post_id is not provided, try to find it by title
+        # Get blog_post_id
         blog_post_id = blog_post.get("id")
         if not blog_post_id:
             title = blog_post.get("title")
             if title:
                 try:
-                    result = supabase_client.table("blog_posts").select("id").eq("title", title).limit(1).execute()
-                    if result.data and len(result.data) > 0:
-                        blog_post_id = result.data[0].get("id")
-                        logger.info(f"Found blog post ID {blog_post_id} for title: {title}")
+                    # Get user context for filtering
+                    user_id = amu.get_user_context()
+                    if user_id:
+                        result = supabase_client.table("blog_posts").select("id").eq("title", title).eq("user_id", user_id).limit(1).execute()
+                        if result.data and len(result.data) > 0:
+                            blog_post_id = result.data[0].get("id")
+                            logger.info(f"Found blog post ID {blog_post_id} for title: {title}")
                 except Exception as e:
                     logger.error(f"Error finding blog post by title: {str(e)}")
         
@@ -407,7 +435,7 @@ def convert_blog_to_tweets(blog_post: dict, max_tweets: int = 10, persona: dict 
 @tool
 def save_tweet_thread(tweets: list, blog_post_id: int, scheduled_for: str = None):
     """
-    Save a tweet thread to Supabase.
+    Save a tweet thread to Supabase with user context.
     
     Args:
         tweets: List of tweet objects
@@ -418,13 +446,24 @@ def save_tweet_thread(tweets: list, blog_post_id: int, scheduled_for: str = None
         Dictionary containing operation result
     """
     try:
-        log_to_database("info", f"Saving tweet thread for blog post ID: {blog_post_id}", {"tweet_count": len(tweets)})
+        # Get user context - CRITICAL for multiuser support
+        user_id = amu.get_user_context()
+        
+        if not user_id:
+            logger.error("No user context available for saving tweet thread")
+            log_to_database("error", "No user context available for saving tweet thread")
+            return {
+                "error": "No user context available for saving tweet thread"
+            }
+        
+        log_to_database("info", f"Saving tweet thread for blog post ID: {blog_post_id} for user {user_id}", {"tweet_count": len(tweets)})
+        
         # Set default scheduled time if not provided
         if not scheduled_for:
             scheduled_time = datetime.now() + timedelta(hours=24)
             scheduled_for = scheduled_time.isoformat()
         
-        # Prepare tweet thread data
+        # Prepare tweet thread data with user_id
         thread_data = []
         for tweet in tweets:
             tweet_data = {
@@ -433,6 +472,7 @@ def save_tweet_thread(tweets: list, blog_post_id: int, scheduled_for: str = None
                 "position": tweet.get("position", 0),
                 "status": "scheduled",
                 "scheduled_for": scheduled_for,
+                "user_id": user_id,  # CRITICAL: Associate with user
                 "created_at": datetime.now().isoformat()
             }
             thread_data.append(tweet_data)
@@ -441,11 +481,12 @@ def save_tweet_thread(tweets: list, blog_post_id: int, scheduled_for: str = None
         result = supabase_client.table("potential_tweets").insert(thread_data).execute()
         
         tweet_ids = [tweet.get("id") for tweet in result.data] if result.data else []
-        log_to_database("info", f"Successfully saved {len(thread_data)} tweets", {"tweet_ids": tweet_ids})
+        log_to_database("info", f"Successfully saved {len(thread_data)} tweets for user {user_id}", {"tweet_ids": tweet_ids})
         return {
-            "result": "Tweet thread saved successfully",
+            "result": f"Tweet thread saved successfully for user {user_id}",
             "count": len(thread_data),
-            "tweet_ids": tweet_ids
+            "tweet_ids": tweet_ids,
+            "user_id": user_id
         }
         
     except Exception as e:
@@ -462,29 +503,35 @@ async def create_blog_to_tweet_agent(client, tools, agent_tools):
     prompt = ChatPromptTemplate.from_messages([
         (
             "system",
-            f"""You are blog_to_tweet_agent, responsible for converting blog posts into tweet threads.
+            f"""You are an agent interacting with the tools from Coral Server and having your own tools. Your task is to perform any instructions coming from any agent.
             
             Follow these steps in order:
-            1. Call wait_for_mentions from coral tools (timeoutMs: 8000) to receive instructions from other agents
-            2. If you receive a mention:
-               a. Process the instruction (e.g., convert a specific blog post to tweets)
-               b. Execute the requested operation using your tools
-               c. Send a response back to the sender with the results
-            3. If no mentions are received (timeout):
-               a. Check for unconverted blog posts using get_unconverted_blog_posts
-               b. For each unconverted blog post:
-                  i. Get the full blog post using get_blog_post_by_id if needed
-                  ii. Convert the blog post to tweets using convert_blog_to_tweets
-                  iii. Save the tweet thread using save_tweet_thread
-                  iv. Notify twitter_posting_agent about the new tweet thread
-            4. Wait for 2 seconds and repeat the process
+            1. Call wait_for_mentions from coral tools (timeoutMs: 8000) to receive mentions from other agents.
+            2. When you receive a mention, keep the thread ID and the sender ID.
+            3. Take 2 seconds to think about the content (instruction) of the message and check only from the list of your tools available for you to action.
+            4. Check the tool schema and make a plan in steps for the task you want to perform.
+            5. Only call the tools you need to perform for each step of the plan to complete the instruction in the content.
+            6. Take 3 seconds and think about the content and see if you have executed the instruction to the best of your ability and the tools. Make this your response as "answer".
+            7. Use `send_message` from coral tools to send a message in the same thread ID to the sender Id you received the mention from, with content: "answer".
+            8. If any error occurs, use `send_message` to send a message in the same thread ID to the sender Id you received the mention from, with content: "error".
+            9. Always respond back to the sender agent even if you have no answer or error.
+            10. Wait for 2 seconds and repeat the process from step 1.
+            
+            If no mentions are received (timeout), you should:
+            1. Check for unconverted blog posts using get_unconverted_blog_posts for the current user
+            2. For each unconverted blog post:
+               a. Get the full blog post using get_blog_post_by_id if needed
+               b. Convert the blog post to tweets using convert_blog_to_tweets
+               c. Save the tweet thread using save_tweet_thread
+            3. Wait for 15 minutes before processing the next batch
             
             When converting blog posts to tweets, focus on:
             - Capturing the key points of the blog post
-            - Creating engaging, shareable content
+            - Creating engaging, shareable content for the current user
             - Maintaining a consistent voice and tone
             - Including relevant hashtags
-            - Ending with a call to action
+            - Ending with engagement-focused content rather than promotion
+            - Ensuring all content is user-specific and isolated
             
             These are the list of all tools (Coral + your tools): {tools_description}
             These are the list of your tools: {agent_tools_description}"""
@@ -504,89 +551,70 @@ async def create_blog_to_tweet_agent(client, tools, agent_tools):
     return AgentExecutor(agent=agent, tools=tools, verbose=True)
 
 async def main():
-    max_retries = 3
-    for attempt in range(max_retries):
+    # Use the new MCP client pattern (langchain-mcp-adapters 0.1.0+)
+    client = MultiServerMCPClient(
+        connections={
+            "coral": {
+                "transport": "sse",
+                "url": MCP_SERVER_URL,
+                "headers": {"X-User-ID": user_id},  # CRITICAL: User isolation header
+                "timeout": 300,
+                "sse_read_timeout": 300,
+            }
+        }
+    )
+    
+    logger.info(f"Connected to MCP server at {MCP_SERVER_URL}")
+    log_to_database("info", f"Blog to Tweet Agent started and connected to MCP server")
+    
+    # Define agent-specific tools
+    agent_tools = [
+        fetch_persona,
+        get_unconverted_blog_posts,
+        get_blog_post_by_id,
+        convert_blog_to_tweets,
+        save_tweet_thread
+    ]
+    
+    # Get Coral tools using the new pattern
+    coral_tools = client.get_tools()
+    
+    # Combine Coral tools with agent-specific tools
+    tools = coral_tools + agent_tools
+    
+    # Create and run the agent
+    agent_executor = await create_blog_to_tweet_agent(client, tools, agent_tools)
+    
+    # Use the same main loop as other agents
+    while True:
         try:
-            # Use the new MCP client pattern (langchain-mcp-adapters 0.1.0+)
-            client = MultiServerMCPClient(
-                connections={
-                    "coral": {
-                        "transport": "sse",
-                        "url": MCP_SERVER_URL,
-                        "timeout": 300,
-                        "sse_read_timeout": 300,
-                    }
-                }
-            )
-            
-            logger.info(f"Connected to MCP server at {MCP_SERVER_URL}")
-            log_to_database("info", "Blog to Tweet Agent connected to MCP server")
-            
-            # Define agent-specific tools
-            agent_tools = [
-                fetch_persona,
-                get_unconverted_blog_posts,
-                get_blog_post_by_id,
-                convert_blog_to_tweets,
-                save_tweet_thread
-            ]
-            
-            # Get Coral tools using the new pattern
-            coral_tools = client.get_tools()
-            
-            # Combine Coral tools with agent-specific tools
-            tools = coral_tools + agent_tools
-            
-            # Create and run the agent
-            agent_executor = await create_blog_to_tweet_agent(client, tools, agent_tools)
-            
-            while True:
-                try:
-                    logger.info("Starting new agent invocation")
-                    log_to_database("info", "Starting new agent invocation cycle")
-                    await agent_executor.ainvoke({"agent_scratchpad": []})
-                    logger.info("Completed agent invocation, restarting loop")
-                    log_to_database("info", "Completed agent invocation cycle")
-                    await asyncio.sleep(1)
-                except Exception as e:
-                    logger.error(f"Error in agent loop: {str(e)}")
-                    log_to_database("error", f"Error in agent loop: {str(e)}")
-                    await asyncio.sleep(5)
-                    
-        except ClosedResourceError as e:
-            logger.error(f"ClosedResourceError on attempt {attempt + 1}: {e}")
-            log_to_database("error", f"ClosedResourceError on attempt {attempt + 1}: {e}")
-            if attempt < max_retries - 1:
-                logger.info("Retrying in 5 seconds...")
-                await asyncio.sleep(5)
-                continue
-            else:
-                logger.error("Max retries reached. Exiting.")
-                raise
+            logger.info("Starting new agent invocation")
+            log_to_database("info", "Starting new agent invocation cycle")
+            await agent_executor.ainvoke({"agent_scratchpad": []})
+            logger.info("Completed agent invocation, restarting loop")
+            log_to_database("info", "Completed agent invocation cycle")
+            await asyncio.sleep(1)
         except Exception as e:
-            logger.error(f"Unexpected error on attempt {attempt + 1}: {e}")
-            log_to_database("error", f"Unexpected error on attempt {attempt + 1}: {e}")
-            if attempt < max_retries - 1:
-                logger.info("Retrying in 5 seconds...")
-                await asyncio.sleep(5)
-                continue
-            else:
-                logger.error("Max retries reached. Exiting.")
-                raise
+            logger.error(f"Error in agent loop: {str(e)}")
+            log_to_database("error", f"Error in agent loop: {str(e)}")
+            await asyncio.sleep(5)
 
 if __name__ == "__main__":
-    # Mark agent as started
+    # Mark agent as started (use both old and new for compatibility)
     asu.mark_agent_started(AGENT_NAME)
+    amu.mark_agent_started_with_user(AGENT_NAME)
     log_to_database("info", "Blog to Tweet Agent started")
     
     try:
         asyncio.run(main())
     except Exception as e:
-        # Report error in status
+        # Report error in status (use both old and new for compatibility)
         asu.report_error(AGENT_NAME, f"Fatal error: {str(e)}")
+        amu.report_error_with_user(AGENT_NAME, f"Fatal error: {str(e)}")
         
         # Re-raise the exception
         raise
     finally:
-        # Mark agent as stopped
+        # Mark agent as stopped (use both old and new for compatibility)
         asu.mark_agent_stopped(AGENT_NAME)
+        amu.mark_agent_stopped_with_user(AGENT_NAME)
