@@ -22,7 +22,8 @@ def get_user_context():
     Returns:
         str: The user ID if available, None otherwise
     """
-    return os.getenv("AGENT_USER_ID")
+    # Try multiple environment variable names for flexibility
+    return os.getenv("AGENT_USER_ID") or os.getenv("USER_ID") or os.getenv("CURRENT_USER_ID")
 
 def log_to_database(agent_name: str, level: str, message: str, metadata: Optional[Dict[str, Any]] = None) -> bool:
     """
