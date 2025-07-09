@@ -16,6 +16,7 @@ import {
   Zap,
   Bug,
   Database,
+  Network,
 } from "lucide-react"
 
 const items = [
@@ -53,6 +54,11 @@ const items = [
     title: "Agent Status & Logs",
     href: "/logs",
     icon: Zap,
+  },
+  {
+    title: "Coral Inspector",
+    href: "/coral-inspector",
+    icon: Network,
   },
   {
     title: "Research Memory",
