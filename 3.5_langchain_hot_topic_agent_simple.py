@@ -15,6 +15,12 @@ import urllib.parse
 import requests
 from datetime import datetime, timedelta
 
+import signal
+import sys
+import atexit
+import agent_status_updater as asu
+import agent_multiuser_utils_simple as amu
+
 # Setup logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -25,15 +31,20 @@ AGENT_NAME = "Hot Topic Agent"
 # Load environment variables
 load_dotenv()
 
-# Use the same waitForAgents=2 as the World News Agent
-base_url = "http://localhost:5555/devmode/exampleApplication/privkey/session1/sse"
+# Get user context for user-specific MCP server
+user_id = amu.get_user_context()
+
+# Use centralized multi-user Coral server
+base_url = "http://coral.8interns.com/devmode/exampleApplication/privkey/session1/sse"
 params = {
-    "waitForAgents": 2,  # Same as World News Agent
-    "agentId": "hot_topic_agent",
-    "agentDescription": "You are hot_topic_agent, responsible for analyzing tweets for engagement and identifying trending topics"
+    "waitForAgents": 2,
+    "agentId": f"hot_topic_agent_{user_id}",
+    "agentDescription": f"You are hot_topic_agent for user {user_id}, responsible for analyzing tweets for engagement and identifying trending topics"
 }
 query_string = urllib.parse.urlencode(params)
 MCP_SERVER_URL = f"{base_url}?{query_string}"
+
+print(f"🔗 Using centralized MCP server: {MCP_SERVER_URL}")
 
 # Initialize API clients
 try:
@@ -64,26 +75,32 @@ if not os.getenv("ANTHROPIC_API_KEY"):
 if not os.getenv("SUPABASE_URL") or not os.getenv("SUPABASE_KEY"):
     raise ValueError("SUPABASE_URL or SUPABASE_KEY is not set in environment variables.")
 
+# Register signal handlers for graceful shutdown
+def signal_handler(sig, frame):
+    """Handle Ctrl+C and other signals to gracefully shut down"""
+    print("Shutting down gracefully...")
+    asu.mark_agent_stopped(AGENT_NAME)
+    sys.exit(0)
+
+# Register signal handlers
+signal.signal(signal.SIGINT, signal_handler)  # Ctrl+C
+signal.signal(signal.SIGTERM, signal_handler)  # Termination signal
+
+# Register function to mark agent as stopped when the script exits (use both old and new for compatibility)
+atexit.register(lambda: asu.mark_agent_stopped(AGENT_NAME))
+atexit.register(lambda: amu.mark_agent_stopped_with_user(AGENT_NAME))
+
 def log_to_database(level, message, metadata=None):
     """
-    Log agent activity to the agent_logs table in Supabase.
+    Log agent activity to the agent_logs table in Supabase with user context.
     
     Args:
         level: Log level ('info', 'warning', 'error')
         message: Log message
         metadata: Optional JSON metadata
     """
-    try:
-        # Insert log into agent_logs table
-        supabase_client.table("agent_logs").insert({
-            "timestamp": datetime.now().isoformat(),
-            "level": level,
-            "agent_name": AGENT_NAME,
-            "message": message,
-            "metadata": metadata
-        }).execute()
-    except Exception as e:
-        logger.error(f"Failed to log to database: {str(e)}")
+    # Use the new multiuser-aware logging function
+    amu.log_to_database(AGENT_NAME, level, message, metadata)
 
 def get_tools_description(tools):
     return "\n".join(
@@ -94,7 +111,7 @@ def get_tools_description(tools):
 @tool
 def get_unprocessed_tweets(limit: int = 5):
     """
-    Get unprocessed tweets from the tweets_cache table.
+    Get unprocessed tweets from the tweets_cache table for the current user.
     
     Args:
         limit: Maximum number of tweets to retrieve (default: 5)
@@ -103,8 +120,19 @@ def get_unprocessed_tweets(limit: int = 5):
         Dictionary containing unprocessed tweets
     """
     try:
-        # Query for unprocessed tweets, ordered by likes (simpler approach)
-        query = supabase_client.table("tweets_cache").select("*").eq("engagement_processed", False)
+        # Get user context - CRITICAL for multiuser support
+        user_id = amu.get_user_context()
+        
+        if not user_id:
+            logger.error("No user context available for tweet processing")
+            log_to_database("error", "No user context available for tweet processing")
+            return {
+                "error": "No user context available for tweet processing",
+                "count": 0
+            }
+        
+        # Query for unprocessed tweets with user_id filtering
+        query = supabase_client.table("tweets_cache").select("*").eq("engagement_processed", False).eq("user_id", user_id)
         
         # Order by likes (we'll calculate the full engagement score after fetching)
         query = query.order("likes", desc=True).limit(limit)
@@ -112,10 +140,11 @@ def get_unprocessed_tweets(limit: int = 5):
         result = query.execute()
         tweets = result.data if result.data else []
         
-        log_to_database("info", f"Retrieved {len(tweets)} unprocessed tweets")
+        log_to_database("info", f"Retrieved {len(tweets)} unprocessed tweets for user {user_id}")
         return {
             "result": tweets,
-            "count": len(tweets)
+            "count": len(tweets),
+            "user_id": user_id
         }
         
     except Exception as e:
@@ -224,7 +253,7 @@ def analyze_tweet_for_topics(tweet_text: str):
 @tool
 def update_engagement_metrics(topic_data, engagement_score):
     """
-    Update or insert topic in the engagement_metrics table.
+    Update or insert topic in the engagement_metrics table with user context.
     
     Args:
         topic_data: Dictionary containing topic information
@@ -234,17 +263,28 @@ def update_engagement_metrics(topic_data, engagement_score):
         Dictionary containing operation result
     """
     try:
+        # Get user context - CRITICAL for multiuser support
+        user_id = amu.get_user_context()
+        
+        if not user_id:
+            logger.error("No user context available for engagement metrics")
+            log_to_database("error", "No user context available for engagement metrics")
+            return {
+                "error": "No user context available for engagement metrics"
+            }
+        
         main_topic = topic_data.get("main_topic", "").lower()
         
         if not main_topic or main_topic in ["unknown", "error", "api_error"]:
             log_to_database("warning", f"Skipped updating engagement metrics due to invalid topic: {main_topic}")
             return {
                 "result": "Skipped updating engagement metrics due to invalid topic",
-                "topic": main_topic
+                "topic": main_topic,
+                "user_id": user_id
             }
         
-        # Check if topic already exists
-        existing = supabase_client.table("engagement_metrics").select("*").eq("topic", main_topic).execute()
+        # Check if topic already exists for this user
+        existing = supabase_client.table("engagement_metrics").select("*").eq("topic", main_topic).eq("user_id", user_id).execute()
         
         if existing.data and len(existing.data) > 0:
             # Update existing topic
@@ -264,30 +304,33 @@ def update_engagement_metrics(topic_data, engagement_score):
                 "subtopics": all_subtopics,
                 "category": topic_data.get("category"),
                 "last_updated": "now()"
-            }).eq("topic", main_topic).execute()
+            }).eq("topic", main_topic).eq("user_id", user_id).execute()
             
-            log_to_database("info", f"Updated existing topic '{main_topic}' with new engagement score {new_score}")
+            log_to_database("info", f"Updated existing topic '{main_topic}' with new engagement score {new_score} for user {user_id}")
             return {
                 "result": f"Updated existing topic '{main_topic}' with new engagement score {new_score}",
                 "topic": main_topic,
-                "engagement_score": new_score
+                "engagement_score": new_score,
+                "user_id": user_id
             }
         else:
-            # Insert new topic
+            # Insert new topic with user_id
             supabase_client.table("engagement_metrics").insert({
                 "topic": main_topic,
                 "topic_description": topic_data.get("topic_description"),
                 "subtopics": topic_data.get("subtopics", []),
                 "category": topic_data.get("category"),
                 "engagement_score": engagement_score,
+                "user_id": user_id,  # CRITICAL: Associate with user
                 "last_updated": "now()"
             }).execute()
             
-            log_to_database("info", f"Inserted new topic '{main_topic}' with engagement score {engagement_score}")
+            log_to_database("info", f"Inserted new topic '{main_topic}' with engagement score {engagement_score} for user {user_id}")
             return {
                 "result": f"Inserted new topic '{main_topic}' with engagement score {engagement_score}",
                 "topic": main_topic,
-                "engagement_score": engagement_score
+                "engagement_score": engagement_score,
+                "user_id": user_id
             }
         
     except Exception as e:
@@ -295,6 +338,60 @@ def update_engagement_metrics(topic_data, engagement_score):
         log_to_database("error", f"Error updating engagement metrics: {str(e)}")
         return {
             "error": f"Failed to update engagement metrics: {str(e)}"
+        }
+
+@tool
+def mark_tweets_as_processed(tweet_ids: list):
+    """
+    Mark tweets as engagement processed in Supabase with user context.
+    
+    Args:
+        tweet_ids: List of tweet IDs to mark as processed
+        
+    Returns:
+        Dictionary containing operation result
+    """
+    try:
+        # Get user context - CRITICAL for multiuser support
+        user_id = amu.get_user_context()
+        
+        if not user_id:
+            logger.error("No user context available for marking tweets as processed")
+            log_to_database("error", "No user context available for marking tweets as processed")
+            return {
+                "error": "No user context available for marking tweets as processed",
+                "count": 0
+            }
+        
+        # Update tweets in Supabase with user_id filtering
+        for tweet_id in tweet_ids:
+            # Check if the ID is numeric (database ID) or a string (tweet_id)
+            if isinstance(tweet_id, int) or (isinstance(tweet_id, str) and tweet_id.isdigit()):
+                # It's a database ID, use the 'id' column
+                supabase_client.table("tweets_cache").update(
+                    {"engagement_processed": True}
+                ).eq("id", tweet_id).eq("user_id", user_id).execute()
+                logger.info(f"Marked tweet with database ID {tweet_id} as processed for user {user_id}")
+            else:
+                # It's a tweet_id, use the 'tweet_id' column
+                supabase_client.table("tweets_cache").update(
+                    {"engagement_processed": True}
+                ).eq("tweet_id", tweet_id).eq("user_id", user_id).execute()
+                logger.info(f"Marked tweet with tweet_id {tweet_id} as processed for user {user_id}")
+        
+        log_to_database("info", f"Marked {len(tweet_ids)} tweets as processed for user {user_id}", {"tweet_ids": tweet_ids})
+        return {
+            "result": f"Marked {len(tweet_ids)} tweets as processed for user {user_id}",
+            "count": len(tweet_ids),
+            "user_id": user_id
+        }
+        
+    except Exception as e:
+        logger.error(f"Error marking tweets as processed: {str(e)}")
+        log_to_database("error", f"Error marking tweets as processed: {str(e)}")
+        return {
+            "error": f"Failed to mark tweets as processed: {str(e)}",
+            "count": 0
         }
 
 async def create_hot_topic_agent(client, tools, agent_tools):
@@ -318,6 +415,17 @@ async def create_hot_topic_agent(client, tools, agent_tools):
             8. If any error occurs, use `send_message` to send a message in the same thread ID to the sender Id you received the mention from, with content: "error".
             9. Always respond back to the sender agent even if you have no answer or error.
             10. Wait for 2 seconds and repeat the process from step 1.
+            
+            If no mentions are received (timeout), you should:
+            1. Get unprocessed tweets using get_unprocessed_tweets (limit=5)
+            2. For each tweet:
+               a. Calculate engagement score (likes + retweets*2 + replies)
+               b. Analyze the tweet for topics using analyze_tweet_for_topics
+               c. Update engagement metrics using update_engagement_metrics
+               d. Mark the tweet as processed using mark_tweets_as_processed
+            3. Wait for 10 minutes before processing the next batch
+            
+            Your goal is to identify trending topics and track engagement metrics for the current user's tweets.
             
             These are the list of all tools (Coral + your tools): {tools_description}
             These are the list of your tools: {agent_tools_description}"""
@@ -343,8 +451,9 @@ async def main():
             "coral": {
                 "transport": "sse",
                 "url": MCP_SERVER_URL,
-                "timeout": 300,  # Same as World News Agent
-                "sse_read_timeout": 300,  # Same as World News Agent
+                "headers": {"X-User-ID": user_id},  # CRITICAL: User isolation header
+                "timeout": 300,
+                "sse_read_timeout": 300,
             }
         }
     )
@@ -352,11 +461,12 @@ async def main():
     logger.info(f"Connected to MCP server at {MCP_SERVER_URL}")
     log_to_database("info", f"Hot Topic Agent started and connected to MCP server")
     
-    # Define agent-specific tools (simplified)
+    # Define agent-specific tools
     agent_tools = [
         get_unprocessed_tweets,
         analyze_tweet_for_topics,
-        update_engagement_metrics
+        update_engagement_metrics,
+        mark_tweets_as_processed
     ]
     
     # Get Coral tools using the new pattern
@@ -368,7 +478,7 @@ async def main():
     # Create and run the agent
     agent_executor = await create_hot_topic_agent(client, tools, agent_tools)
     
-    # Use the same main loop as the World News Agent
+    # Use the same main loop as other agents
     while True:
         try:
             logger.info("Starting new agent invocation")
@@ -383,17 +493,21 @@ async def main():
             await asyncio.sleep(5)
 
 if __name__ == "__main__":
-    logger.info("Hot Topic Agent (Simple) started")
-    log_to_database("info", "Hot Topic Agent (Simple) started")
+    # Mark agent as started (use both old and new for compatibility)
+    asu.mark_agent_started(AGENT_NAME)
+    amu.mark_agent_started_with_user(AGENT_NAME)
+    log_to_database("info", "Hot Topic Agent started")
+    
     try:
         asyncio.run(main())
-    except KeyboardInterrupt:
-        logger.info("Hot Topic Agent stopped by user")
-        log_to_database("info", "Hot Topic Agent stopped by user")
     except Exception as e:
-        logger.error(f"Fatal error: {str(e)}")
-        log_to_database("error", f"Fatal error: {str(e)}")
+        # Report error in status (use both old and new for compatibility)
+        asu.report_error(AGENT_NAME, f"Fatal error: {str(e)}")
+        amu.report_error_with_user(AGENT_NAME, f"Fatal error: {str(e)}")
+        
+        # Re-raise the exception
         raise
     finally:
-        logger.info("Hot Topic Agent stopped")
-        log_to_database("info", "Hot Topic Agent stopped")
+        # Mark agent as stopped (use both old and new for compatibility)
+        asu.mark_agent_stopped(AGENT_NAME)
+        amu.mark_agent_stopped_with_user(AGENT_NAME)

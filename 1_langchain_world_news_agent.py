@@ -12,12 +12,36 @@ from langchain_core.tools import tool
 import worldnewsapi
 from worldnewsapi.rest import ApiException
 
+import signal
+import sys
+import atexit
+import agent_status_updater as asu
+import agent_multiuser_utils_simple as amu
+
 # Setup logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
+# Agent name for database logging
+AGENT_NAME = "World News Agent"
+
 # Load environment variables
 load_dotenv()
+
+# Get user context for user-specific MCP server
+user_id = amu.get_user_context()
+
+# Use centralized multi-user Coral server
+base_url = "http://coral.8interns.com/devmode/exampleApplication/privkey/session1/sse"
+params = {
+    "waitForAgents": 2,
+    "agentId": f"world_news_agent_{user_id}",
+    "agentDescription": f"You are world_news_agent for user {user_id}, responsible for fetching and generating news topics based on mentions from other agents"
+}
+query_string = urllib.parse.urlencode(params)
+MCP_SERVER_URL = f"{base_url}?{query_string}"
+
+print(f"🔗 Using centralized MCP server: {MCP_SERVER_URL}")
 
 # Validate API keys
 if not os.getenv("OPENAI_API_KEY"):
@@ -29,15 +53,32 @@ if not os.getenv("WORLD_NEWS_API_KEY"):
 news_configuration = worldnewsapi.Configuration(host="https://api.worldnewsapi.com")
 news_configuration.api_key["apiKey"] = os.getenv("WORLD_NEWS_API_KEY")
 
-# Agent config
-base_url = "http://localhost:5555/devmode/exampleApplication/privkey/session1/sse"
-params = {
-    "waitForAgents": 2,
-    "agentId": "world_news_agent",
-    "agentDescription": "You are world_news_agent, responsible for fetching and generating news topics based on mentions from other agents"
-}
-MCP_SERVER_URL = f"{base_url}?{urllib.parse.urlencode(params)}"
-AGENT_NAME = "world_news_agent"
+# Register signal handlers for graceful shutdown
+def signal_handler(sig, frame):
+    """Handle Ctrl+C and other signals to gracefully shut down"""
+    print("Shutting down gracefully...")
+    asu.mark_agent_stopped(AGENT_NAME)
+    sys.exit(0)
+
+# Register signal handlers
+signal.signal(signal.SIGINT, signal_handler)  # Ctrl+C
+signal.signal(signal.SIGTERM, signal_handler)  # Termination signal
+
+# Register function to mark agent as stopped when the script exits (use both old and new for compatibility)
+atexit.register(lambda: asu.mark_agent_stopped(AGENT_NAME))
+atexit.register(lambda: amu.mark_agent_stopped_with_user(AGENT_NAME))
+
+def log_to_database(level, message, metadata=None):
+    """
+    Log agent activity to the agent_logs table in Supabase with user context.
+    
+    Args:
+        level: Log level ('info', 'warning', 'error')
+        message: Log message
+        metadata: Optional JSON metadata
+    """
+    # Use the new multiuser-aware logging function
+    amu.log_to_database(AGENT_NAME, level, message, metadata)
 
 def get_tools_description(tools):
     return "\n".join(
@@ -60,6 +101,8 @@ def WorldNewsTool(
     Search articles from WorldNewsAPI.
     """
     logger.info(f"Calling WorldNewsTool with text: {text}")
+    log_to_database("info", f"Searching world news for: {text}", {"query": text, "number": number})
+    
     try:
         with worldnewsapi.ApiClient(news_configuration) as api_client:
             api_instance = worldnewsapi.NewsApi(api_client)
@@ -75,7 +118,10 @@ def WorldNewsTool(
             )
             articles = api_response.news
             if not articles:
+                log_to_database("info", f"No news articles found for query: {text}")
                 return {"result": "No news articles found for the query."}
+            
+            log_to_database("info", f"Found {len(articles)} news articles for query: {text}")
             return {
                 "result": "\n".join(
                     f"### Title: {article.title or 'N/A'}\n"
@@ -88,9 +134,11 @@ def WorldNewsTool(
             }
     except ApiException as e:
         logger.error(f"News API error: {e}")
+        log_to_database("error", f"WorldNewsAPI error: {str(e)}")
         return {"result": f"Failed to fetch news: {e}"}
     except Exception as e:
         logger.error(f"Unexpected error in WorldNewsTool: {e}")
+        log_to_database("error", f"Unexpected error in WorldNewsTool: {str(e)}")
         return {"result": f"Unexpected error: {e}"}
 
 async def create_world_news_agent(client, tools, agent_tool):
@@ -98,25 +146,26 @@ async def create_world_news_agent(client, tools, agent_tool):
     agent_tools_description = get_tools_description(agent_tool)
 
     prompt = ChatPromptTemplate.from_messages([
-        ("system", f"""
-You are an agent with tools provided by the Coral Server and your own specialized tools.
-
-Process flow:
-1. Call wait_for_mentions (timeoutMs: 8000).
-2. When mentioned, keep the thread ID and sender ID.
-3. Think for 2 seconds and analyze the instruction content.
-4. Based on the instruction, choose the right tool from your own tools only.
-5. Create a plan in steps.
-6. Use the right tools to complete the task.
-7. Think for 3 seconds and generate an "answer".
-8. Use send_message to reply in the same thread to the sender with the "answer".
-9. If any error occurs, reply using send_message with content "error".
-10. Always respond.
-11. Wait 2 seconds and repeat.
-
-All available tools: {tools_description}
-Your tools: {agent_tools_description}
-        """),
+        ("system", f"""You are an agent interacting with the tools from Coral Server and having your own tools. Your task is to perform any instructions coming from any agent.
+        
+        Follow these steps in order:
+        1. Call wait_for_mentions from coral tools (timeoutMs: 8000) to receive mentions from other agents.
+        2. When you receive a mention, keep the thread ID and the sender ID.
+        3. Take 2 seconds to think about the content (instruction) of the message and check only from the list of your tools available for you to action.
+        4. Check the tool schema and make a plan in steps for the task you want to perform.
+        5. Only call the tools you need to perform for each step of the plan to complete the instruction in the content.
+        6. Take 3 seconds and think about the content and see if you have executed the instruction to the best of your ability and the tools. Make this your response as "answer".
+        7. Use `send_message` from coral tools to send a message in the same thread ID to the sender Id you received the mention from, with content: "answer".
+        8. If any error occurs, use `send_message` to send a message in the same thread ID to the sender Id you received the mention from, with content: "error".
+        9. Always respond back to the sender agent even if you have no answer or error.
+        10. Wait for 2 seconds and repeat the process from step 1.
+        
+        Your primary function is to search for world news articles using WorldNewsTool when requested by other agents.
+        You can search for news by topic, keyword, or specific events.
+        Always provide comprehensive and relevant news information.
+        
+        These are the list of all tools (Coral + your tools): {tools_description}
+        These are the list of your tools: {agent_tools_description}"""),
         ("placeholder", "{agent_scratchpad}")
     ])
 
@@ -132,33 +181,64 @@ Your tools: {agent_tools_description}
     return AgentExecutor(agent=agent, tools=tools, verbose=True)
 
 async def main():
+    # Use the new MCP client pattern (langchain-mcp-adapters 0.1.0+)
     client = MultiServerMCPClient(
         connections={
             "coral": {
                 "transport": "sse",
                 "url": MCP_SERVER_URL,
+                "headers": {"X-User-ID": user_id},  # CRITICAL: User isolation header
                 "timeout": 300,
                 "sse_read_timeout": 300,
             }
         }
     )
-
-    async with client.session("coral") as session:
-        tools = await session.get_tools()
-        tools += [WorldNewsTool]
-        agent_tool = [WorldNewsTool]
-
-        agent_executor = await create_world_news_agent(session, tools, agent_tool)
-
-        while True:
-            try:
-                logger.info("Starting new agent invocation")
-                await agent_executor.ainvoke({"agent_scratchpad": []})
-                logger.info("Completed agent invocation, restarting loop")
-                await asyncio.sleep(1)
-            except Exception as e:
-                logger.error(f"Error in agent loop: {e}")
-                await asyncio.sleep(5)
+    
+    logger.info(f"Connected to MCP server at {MCP_SERVER_URL}")
+    log_to_database("info", f"World News Agent started and connected to MCP server")
+    
+    # Define agent-specific tools
+    agent_tools = [WorldNewsTool]
+    
+    # Get Coral tools using the new pattern
+    coral_tools = client.get_tools()
+    
+    # Combine Coral tools with agent-specific tools
+    tools = coral_tools + agent_tools
+    
+    # Create and run the agent
+    agent_executor = await create_world_news_agent(client, tools, agent_tools)
+    
+    # Use the same main loop as other agents
+    while True:
+        try:
+            logger.info("Starting new agent invocation")
+            log_to_database("info", "Starting new agent invocation cycle")
+            await agent_executor.ainvoke({"agent_scratchpad": []})
+            logger.info("Completed agent invocation, restarting loop")
+            log_to_database("info", "Completed agent invocation cycle")
+            await asyncio.sleep(1)
+        except Exception as e:
+            logger.error(f"Error in agent loop: {str(e)}")
+            log_to_database("error", f"Error in agent loop: {str(e)}")
+            await asyncio.sleep(5)
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    # Mark agent as started (use both old and new for compatibility)
+    asu.mark_agent_started(AGENT_NAME)
+    amu.mark_agent_started_with_user(AGENT_NAME)
+    log_to_database("info", "World News Agent started")
+    
+    try:
+        asyncio.run(main())
+    except Exception as e:
+        # Report error in status (use both old and new for compatibility)
+        asu.report_error(AGENT_NAME, f"Fatal error: {str(e)}")
+        amu.report_error_with_user(AGENT_NAME, f"Fatal error: {str(e)}")
+        
+        # Re-raise the exception
+        raise
+    finally:
+        # Mark agent as stopped (use both old and new for compatibility)
+        asu.mark_agent_stopped(AGENT_NAME)
+        amu.mark_agent_stopped_with_user(AGENT_NAME)

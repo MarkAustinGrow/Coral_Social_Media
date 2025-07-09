@@ -22,25 +22,32 @@ import signal
 import sys
 import atexit
 import agent_status_updater as asu
-
+import agent_multiuser_utils_simple as amu
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
+# Agent name for database logging
+AGENT_NAME = "Blog Writing Agent"
+
 # Load environment variables
 load_dotenv()
 
-base_url = "http://localhost:5555/devmode/exampleApplication/privkey/session1/sse"
+# Get user context for user-specific MCP server
+user_id = amu.get_user_context()
+
+# Use centralized multi-user Coral server
+base_url = "http://coral.8interns.com/devmode/exampleApplication/privkey/session1/sse"
 params = {
     "waitForAgents": 7,  # Total number of agents in the system
-    "agentId": "blog_writing_agent",
-    "agentDescription": "You are blog_writing_agent, responsible for creating blog content based on research and insights from tweets"
+    "agentId": f"blog_writing_agent_{user_id}",
+    "agentDescription": f"You are blog_writing_agent for user {user_id}, responsible for creating blog content based on research and insights from tweets"
 }
 query_string = urllib.parse.urlencode(params)
 MCP_SERVER_URL = f"{base_url}?{query_string}"
 
-AGENT_NAME = "blog_writing_agent"
+print(f"🔗 Using centralized MCP server: {MCP_SERVER_URL}")
 
 # Initialize API clients
 try:
@@ -53,7 +60,8 @@ try:
     # Qdrant client
     qdrant_client = QdrantClient(
         url=os.getenv("QDRANT_URL", "http://localhost:6333"),
-        api_key=os.getenv("QDRANT_API_KEY", "")
+        api_key=os.getenv("QDRANT_API_KEY", ""),
+        https=False  # Set to True in production with proper certificates
     )
     
     # Initialize OpenAI embeddings
@@ -82,30 +90,6 @@ if not os.getenv("ANTHROPIC_API_KEY"):
 if not os.getenv("SUPABASE_URL") or not os.getenv("SUPABASE_KEY"):
     raise ValueError("SUPABASE_URL or SUPABASE_KEY is not set in environment variables.")
 
-# Agent name for status updates - must match exactly what's in the database
-AGENT_NAME = "Blog Writing Agent"
-
-def log_to_database(level, message, metadata=None):
-    """
-    Log agent activity to the agent_logs table in Supabase.
-    
-    Args:
-        level: Log level ('info', 'warning', 'error')
-        message: Log message
-        metadata: Optional JSON metadata
-    """
-    try:
-        # Insert log into agent_logs table
-        supabase_client.table("agent_logs").insert({
-            "timestamp": datetime.now().isoformat(),
-            "level": level,
-            "agent_name": AGENT_NAME,
-            "message": message,
-            "metadata": metadata
-        }).execute()
-    except Exception as e:
-        logger.error(f"Failed to log to database: {str(e)}")
-
 # Register signal handlers for graceful shutdown
 def signal_handler(sig, frame):
     """Handle Ctrl+C and other signals to gracefully shut down"""
@@ -117,8 +101,21 @@ def signal_handler(sig, frame):
 signal.signal(signal.SIGINT, signal_handler)  # Ctrl+C
 signal.signal(signal.SIGTERM, signal_handler)  # Termination signal
 
-# Register function to mark agent as stopped when the script exits
+# Register function to mark agent as stopped when the script exits (use both old and new for compatibility)
 atexit.register(lambda: asu.mark_agent_stopped(AGENT_NAME))
+atexit.register(lambda: amu.mark_agent_stopped_with_user(AGENT_NAME))
+
+def log_to_database(level, message, metadata=None):
+    """
+    Log agent activity to the agent_logs table in Supabase with user context.
+    
+    Args:
+        level: Log level ('info', 'warning', 'error')
+        message: Log message
+        metadata: Optional JSON metadata
+    """
+    # Use the new multiuser-aware logging function
+    amu.log_to_database(AGENT_NAME, level, message, metadata)
 
 def get_tools_description(tools):
     return "\n".join(
@@ -129,38 +126,57 @@ def get_tools_description(tools):
 @tool
 def fetch_persona():
     """
-    Fetch the current persona from Supabase.
+    Fetch the current persona from Supabase for the current user.
     
     Returns:
         Dictionary containing persona details or default values if not found
     """
-    logger.info("Fetching persona from Supabase")
-    log_to_database("info", "Fetching persona from Supabase")
-    
     try:
-        # Fetch persona from Supabase
-        query = supabase_client.table("personas").select("*").limit(1)
+        # Get user context - CRITICAL for multiuser support
+        user_id = amu.get_user_context()
+        
+        if not user_id:
+            logger.warning("No user context available for persona fetching, using default")
+            log_to_database("warning", "No user context available for persona fetching, using default")
+            # Return default persona if no user context
+            default_persona = {
+                "name": "Content Creator",
+                "description": "A creative and engaging content creator who produces high-quality blog posts with a focus on clarity and reader engagement.",
+                "tone": 60,  # Balanced
+                "humor": 40,  # Slightly serious
+                "enthusiasm": 70,  # Enthusiastic
+                "assertiveness": 70  # Confident
+            }
+            return {
+                "result": default_persona
+            }
+        
+        logger.info(f"Fetching persona from Supabase for user {user_id}")
+        log_to_database("info", f"Fetching persona from Supabase for user {user_id}")
+        
+        # Fetch persona from Supabase with user_id filtering
+        query = supabase_client.table("personas").select("*").eq("user_id", user_id).limit(1)
         
         result = query.execute()
         
         if result.data and len(result.data) > 0:
             persona = result.data[0]
-            logger.info(f"Found persona: {persona.get('name')}")
-            log_to_database("info", f"Found persona: {persona.get('name')}")
+            logger.info(f"Found persona: {persona.get('name')} for user {user_id}")
+            log_to_database("info", f"Found persona: {persona.get('name')} for user {user_id}")
             return {
                 "result": persona
             }
         else:
             # Return default persona values
-            logger.info("No persona found, using default values")
-            log_to_database("info", "No persona found, using default values")
+            logger.info(f"No persona found for user {user_id}, using default values")
+            log_to_database("info", f"No persona found for user {user_id}, using default values")
             default_persona = {
-                "name": "Content Reviewer",
-                "description": "A meticulous and objective reviewer who prioritizes factual accuracy, logical consistency, and narrative flow in all content.",
-                "tone": 70,  # More formal
-                "humor": 30,  # More serious
-                "enthusiasm": 60,  # Moderately enthusiastic
-                "assertiveness": 80  # Quite confident
+                "name": "Content Creator",
+                "description": "A creative and engaging content creator who produces high-quality blog posts with a focus on clarity and reader engagement.",
+                "tone": 60,  # Balanced
+                "humor": 40,  # Slightly serious
+                "enthusiasm": 70,  # Enthusiastic
+                "assertiveness": 70  # Confident
             }
             return {
                 "result": default_persona
@@ -171,12 +187,12 @@ def fetch_persona():
         log_to_database("error", f"Error fetching persona from Supabase: {str(e)}")
         # Return default persona values on error
         default_persona = {
-            "name": "Content Reviewer",
-            "description": "A meticulous and objective reviewer who prioritizes factual accuracy, logical consistency, and narrative flow in all content.",
-            "tone": 70,  # More formal
-            "humor": 30,  # More serious
-            "enthusiasm": 60,  # Moderately enthusiastic
-            "assertiveness": 80  # Quite confident
+            "name": "Content Creator",
+            "description": "A creative and engaging content creator who produces high-quality blog posts with a focus on clarity and reader engagement.",
+            "tone": 60,  # Balanced
+            "humor": 40,  # Slightly serious
+            "enthusiasm": 70,  # Enthusiastic
+            "assertiveness": 70  # Confident
         }
         return {
             "error": f"Failed to fetch persona: {str(e)}",
@@ -186,7 +202,7 @@ def fetch_persona():
 @tool
 def get_engagement_metrics(limit: int = 20):
     """
-    Get engagement metrics from Supabase to determine popular topics.
+    Get engagement metrics from Supabase to determine popular topics for the current user.
     
     Args:
         limit: Maximum number of topics to return (default: 20)
@@ -195,17 +211,30 @@ def get_engagement_metrics(limit: int = 20):
         Dictionary containing engagement metrics for different topics
     """
     try:
-        log_to_database("info", f"Fetching top {limit} engagement metrics")
-        # Query the engagement_metrics table in Supabase
-        # Get the top N topics by engagement score
-        result = supabase_client.table("engagement_metrics").select("*").order("engagement_score", desc=True).limit(limit).execute()
+        # Get user context - CRITICAL for multiuser support
+        user_id = amu.get_user_context()
+        
+        if not user_id:
+            logger.error("No user context available for engagement metrics")
+            log_to_database("error", "No user context available for engagement metrics")
+            return {
+                "error": "No user context available for engagement metrics",
+                "count": 0,
+                "result": []
+            }
+        
+        log_to_database("info", f"Fetching top {limit} engagement metrics for user {user_id}")
+        
+        # Query the engagement_metrics table in Supabase with user_id filtering
+        result = supabase_client.table("engagement_metrics").select("*").eq("user_id", user_id).order("engagement_score", desc=True).limit(limit).execute()
         
         metrics = result.data if result.data else []
         
-        log_to_database("info", f"Retrieved {len(metrics)} engagement metrics")
+        log_to_database("info", f"Retrieved {len(metrics)} engagement metrics for user {user_id}")
         return {
             "result": metrics,
-            "count": len(metrics)
+            "count": len(metrics),
+            "user_id": user_id
         }
         
     except Exception as e:
@@ -214,22 +243,16 @@ def get_engagement_metrics(limit: int = 20):
         return {
             "error": f"Failed to fetch engagement metrics: {str(e)}",
             "count": 0,
-            "result": [
-                {"topic": "AI", "engagement_score": 95, "last_used_at": None},
-                {"topic": "Machine Learning", "engagement_score": 90, "last_used_at": None},
-                {"topic": "Data Science", "engagement_score": 85, "last_used_at": None},
-                {"topic": "Python", "engagement_score": 80, "last_used_at": None},
-                {"topic": "JavaScript", "engagement_score": 75, "last_used_at": None}
-            ]
+            "result": []
         }
 
 @tool
 def select_next_topic(limit: int = 20):
     """
-    Select the next topic to write about using a rotation system.
+    Select the next topic to write about using a rotation system for the current user.
     
     This function implements topic rotation by:
-    1. Getting the top N topics by engagement score
+    1. Getting the top N topics by engagement score for the current user
     2. Ordering them by last_used_at (NULL first, then oldest to newest)
     3. Returning the topic with the oldest or NULL last_used_at
     
@@ -240,20 +263,31 @@ def select_next_topic(limit: int = 20):
         Dictionary containing the selected topic
     """
     try:
-        log_to_database("info", f"Selecting next topic from top {limit} topics")
-        # Get the top N topics by engagement score
+        # Get user context - CRITICAL for multiuser support
+        user_id = amu.get_user_context()
+        
+        if not user_id:
+            logger.error("No user context available for topic selection")
+            log_to_database("error", "No user context available for topic selection")
+            return {
+                "error": "No user context available for topic selection",
+                "result": None
+            }
+        
+        log_to_database("info", f"Selecting next topic from top {limit} topics for user {user_id}")
+        
+        # Get the top N topics by engagement score for the current user
         metrics_response = get_engagement_metrics.invoke({"limit": limit})
         top_topics = metrics_response.get("result", [])
         
         if not top_topics:
-            logger.error("No topics found in engagement metrics")
+            logger.error(f"No topics found in engagement metrics for user {user_id}")
             return {
-                "error": "No topics found in engagement metrics",
+                "error": f"No topics found in engagement metrics for user {user_id}",
                 "result": None
             }
         
         # Sort topics by last_used_at (NULL first, then oldest to newest)
-        # In SQL we would use "ORDER BY last_used_at NULLS FIRST", but we need to do this in Python
         never_used_topics = [t for t in top_topics if t.get("last_used_at") is None]
         used_topics = [t for t in top_topics if t.get("last_used_at") is not None]
         
@@ -267,16 +301,16 @@ def select_next_topic(limit: int = 20):
         selected_topic = sorted_topics[0] if sorted_topics else None
         
         if selected_topic:
-            logger.info(f"Selected topic for rotation: {selected_topic.get('topic')} (Engagement: {selected_topic.get('engagement_score')}, Last used: {selected_topic.get('last_used_at')})")
-            log_to_database("info", f"Selected topic for rotation: {selected_topic.get('topic')}", {"topic": selected_topic.get('topic'), "engagement_score": selected_topic.get('engagement_score')})
+            logger.info(f"Selected topic for rotation: {selected_topic.get('topic')} (Engagement: {selected_topic.get('engagement_score')}, Last used: {selected_topic.get('last_used_at')}) for user {user_id}")
+            log_to_database("info", f"Selected topic for rotation: {selected_topic.get('topic')} for user {user_id}", {"topic": selected_topic.get('topic'), "engagement_score": selected_topic.get('engagement_score')})
             return {
                 "result": selected_topic
             }
         else:
-            logger.error("No topic selected from rotation")
-            log_to_database("error", "No topic selected from rotation")
+            logger.error(f"No topic selected from rotation for user {user_id}")
+            log_to_database("error", f"No topic selected from rotation for user {user_id}")
             return {
-                "error": "No topic selected from rotation",
+                "error": f"No topic selected from rotation for user {user_id}",
                 "result": None
             }
         
@@ -291,7 +325,7 @@ def select_next_topic(limit: int = 20):
 @tool
 def update_topic_usage(topic: str):
     """
-    Update the last_used_at timestamp for a topic.
+    Update the last_used_at timestamp for a topic for the current user.
     
     Args:
         topic: The topic name to update
@@ -300,27 +334,41 @@ def update_topic_usage(topic: str):
         Dictionary containing the operation result
     """
     try:
-        log_to_database("info", f"Updating last_used_at for topic: {topic}")
+        # Get user context - CRITICAL for multiuser support
+        user_id = amu.get_user_context()
+        
+        if not user_id:
+            logger.error("No user context available for topic usage update")
+            log_to_database("error", "No user context available for topic usage update")
+            return {
+                "error": "No user context available for topic usage update",
+                "topic": topic
+            }
+        
+        log_to_database("info", f"Updating last_used_at for topic: {topic} for user {user_id}")
+        
         # Get current timestamp
         current_time = datetime.now().isoformat()
         
-        # Update the last_used_at timestamp for the topic
-        result = supabase_client.table("engagement_metrics").update({"last_used_at": current_time}).eq("topic", topic).execute()
+        # Update the last_used_at timestamp for the topic with user_id filtering
+        result = supabase_client.table("engagement_metrics").update({"last_used_at": current_time}).eq("topic", topic).eq("user_id", user_id).execute()
         
         if result.data and len(result.data) > 0:
-            logger.info(f"Updated last_used_at for topic '{topic}' to {current_time}")
-            log_to_database("info", f"Updated last_used_at for topic '{topic}'", {"topic": topic, "timestamp": current_time})
+            logger.info(f"Updated last_used_at for topic '{topic}' to {current_time} for user {user_id}")
+            log_to_database("info", f"Updated last_used_at for topic '{topic}' for user {user_id}", {"topic": topic, "timestamp": current_time})
             return {
-                "result": f"Updated last_used_at for topic '{topic}'",
+                "result": f"Updated last_used_at for topic '{topic}' for user {user_id}",
                 "topic": topic,
-                "timestamp": current_time
+                "timestamp": current_time,
+                "user_id": user_id
             }
         else:
-            logger.warning(f"No topic found with name '{topic}' to update last_used_at")
-            log_to_database("warning", f"No topic found with name '{topic}' to update last_used_at")
+            logger.warning(f"No topic found with name '{topic}' for user {user_id} to update last_used_at")
+            log_to_database("warning", f"No topic found with name '{topic}' for user {user_id} to update last_used_at")
             return {
-                "warning": f"No topic found with name '{topic}' to update last_used_at",
-                "topic": topic
+                "warning": f"No topic found with name '{topic}' for user {user_id} to update last_used_at",
+                "topic": topic,
+                "user_id": user_id
             }
         
     except Exception as e:
@@ -334,7 +382,7 @@ def update_topic_usage(topic: str):
 @tool
 def search_tweet_insights(query: str, limit: int = 10):
     """
-    Search for tweet insights in Qdrant based on a query.
+    Search for tweet insights in Qdrant based on a query with user context.
     
     Args:
         query: Search query
@@ -344,15 +392,39 @@ def search_tweet_insights(query: str, limit: int = 10):
         Dictionary containing search results
     """
     try:
-        log_to_database("info", f"Searching tweet insights for: {query}")
+        # Get user context - CRITICAL for multiuser support
+        user_id = amu.get_user_context()
+        
+        if not user_id:
+            logger.error("No user context available for tweet insights search")
+            log_to_database("error", "No user context available for tweet insights search")
+            return {
+                "error": "No user context available for tweet insights search",
+                "count": 0,
+                "result": []
+            }
+        
+        log_to_database("info", f"Searching tweet insights for: {query} for user {user_id}")
+        
         # Generate embedding for the query
         query_embedding = embeddings.embed_query(query)
         
-        # Search in Qdrant
+        # Create filter for user isolation in Qdrant
+        user_filter = models.Filter(
+            must=[
+                models.FieldCondition(
+                    key="user_id",
+                    match=models.MatchValue(value=user_id)
+                )
+            ]
+        )
+        
+        # Search in Qdrant with user filtering
         search_results = qdrant_client.search(
-            collection_name="tweet_insights",
+            collection_name="working_knowledge",  # Using the working_knowledge collection
             query_vector=query_embedding,
-            limit=limit
+            limit=limit,
+            filter=user_filter
         )
         
         # Extract results
@@ -360,15 +432,17 @@ def search_tweet_insights(query: str, limit: int = 10):
         for result in search_results:
             results.append({
                 "tweet_id": result.payload.get("tweet_id"),
-                "tweet_text": result.payload.get("tweet_text"),
-                "analysis": result.payload.get("analysis"),
-                "score": result.score
+                "tweet_text": result.payload.get("content", result.payload.get("tweet_text", "")),
+                "analysis": result.payload.get("alignment_explanation", result.payload.get("analysis", "")),
+                "score": result.score,
+                "user_id": result.payload.get("user_id")
             })
         
-        log_to_database("info", f"Found {len(results)} tweet insights for query: {query}")
+        log_to_database("info", f"Found {len(results)} tweet insights for query: {query} for user {user_id}")
         return {
             "result": results,
-            "count": len(results)
+            "count": len(results),
+            "user_id": user_id
         }
         
     except Exception as e:
@@ -376,13 +450,14 @@ def search_tweet_insights(query: str, limit: int = 10):
         log_to_database("error", f"Error searching tweet insights: {str(e)}")
         return {
             "error": f"Failed to search tweet insights: {str(e)}",
-            "count": 0
+            "count": 0,
+            "result": []
         }
 
 @tool
 def get_recent_blog_posts(limit: int = 5):
     """
-    Get recent blog posts from Supabase.
+    Get recent blog posts from Supabase for the current user.
     
     Args:
         limit: Maximum number of blog posts to return (default: 5)
@@ -391,16 +466,30 @@ def get_recent_blog_posts(limit: int = 5):
         Dictionary containing recent blog posts
     """
     try:
-        log_to_database("info", f"Fetching {limit} recent blog posts")
-        # Query the blog_posts table in Supabase
-        result = supabase_client.table("blog_posts").select("*").order("created_at", desc=True).limit(limit).execute()
+        # Get user context - CRITICAL for multiuser support
+        user_id = amu.get_user_context()
+        
+        if not user_id:
+            logger.error("No user context available for blog posts")
+            log_to_database("error", "No user context available for blog posts")
+            return {
+                "error": "No user context available for blog posts",
+                "count": 0,
+                "result": []
+            }
+        
+        log_to_database("info", f"Fetching {limit} recent blog posts for user {user_id}")
+        
+        # Query the blog_posts table in Supabase with user_id filtering
+        result = supabase_client.table("blog_posts").select("*").eq("user_id", user_id).order("created_at", desc=True).limit(limit).execute()
         
         posts = result.data if result.data else []
         
-        log_to_database("info", f"Retrieved {len(posts)} recent blog posts")
+        log_to_database("info", f"Retrieved {len(posts)} recent blog posts for user {user_id}")
         return {
             "result": posts,
-            "count": len(posts)
+            "count": len(posts),
+            "user_id": user_id
         }
         
     except Exception as e:
@@ -408,349 +497,43 @@ def get_recent_blog_posts(limit: int = 5):
         log_to_database("error", f"Error fetching recent blog posts: {str(e)}")
         return {
             "error": f"Failed to fetch recent blog posts: {str(e)}",
-            "count": 0
+            "count": 0,
+            "result": []
         }
 
 @tool
-def generate_blog_topic(topic_area: str = ""):
+def save_blog_post(blog_post: dict, topic_name: str = None, status: str = "pending_fact_check"):
     """
-    Generate a blog topic based on engagement metrics and tweet insights.
-    
-    Args:
-        topic_area: Optional specific topic area to focus on
-        
-    Returns:
-        Dictionary containing generated blog topic
-    """
-    try:
-        log_to_database("info", f"Generating blog topic" + (f" for area: {topic_area}" if topic_area else ""))
-        
-        if topic_area:
-            # If topic area is specified, filter metrics first
-            metrics_response = get_engagement_metrics.invoke({})
-            metrics = metrics_response.get("result", [])
-            filtered_metrics = [m for m in metrics if topic_area.lower() in m.get("topic", "").lower() or 
-                               topic_area.lower() in m.get("category", "").lower()]
-            
-            # If we found metrics matching the topic area, select from those
-            if filtered_metrics:
-                # Sort by last_used_at (NULL first, then oldest to newest)
-                never_used_topics = [t for t in filtered_metrics if t.get("last_used_at") is None]
-                used_topics = [t for t in filtered_metrics if t.get("last_used_at") is not None]
-                used_topics.sort(key=lambda t: t.get("last_used_at", ""))
-                sorted_topics = never_used_topics + used_topics
-                selected_topic = sorted_topics[0] if sorted_topics else None
-            else:
-                # No matching topics found
-                return {
-                    "error": f"No engagement metrics found for topic area: {topic_area}",
-                    "result": {
-                        "title": "The Future of AI in Everyday Applications",
-                        "description": "An exploration of how AI is being integrated into common applications and changing the way we interact with technology",
-                        "key_points": [
-                            "Current state of AI in consumer applications",
-                            "Emerging trends in AI integration",
-                            "Predictions for the next 5 years"
-                        ],
-                        "target_audience": "Tech enthusiasts and professionals interested in AI developments",
-                        "estimated_word_count": 1200
-                    }
-                }
-        else:
-            # No specific topic area, use the general rotation system
-            next_topic_response = select_next_topic.invoke({})
-            selected_topic = next_topic_response.get("result")
-            
-            if not selected_topic:
-                return {
-                    "error": "Failed to select a topic using the rotation system",
-                    "result": {
-                        "title": "The Future of AI in Everyday Applications",
-                        "description": "An exploration of how AI is being integrated into common applications and changing the way we interact with technology",
-                        "key_points": [
-                            "Current state of AI in consumer applications",
-                            "Emerging trends in AI integration",
-                            "Predictions for the next 5 years"
-                        ],
-                        "target_audience": "Tech enthusiasts and professionals interested in AI developments",
-                        "estimated_word_count": 1200
-                    }
-                }
-        
-        logger.info(f"Selected topic for blog: {selected_topic.get('topic')} (Score: {selected_topic.get('engagement_score')}, Last used: {selected_topic.get('last_used_at')})")
-        log_to_database("info", f"Selected topic for blog: {selected_topic.get('topic')}", {"topic": selected_topic.get('topic')})
-        
-        topic_name = selected_topic.get("topic", "")
-        topic_description = selected_topic.get("topic_description", "")
-        topic_category = selected_topic.get("category", "")
-        topic_subtopics = selected_topic.get("subtopics", [])
-        
-        # Search for insights specifically related to the selected topic
-        search_response = search_tweet_insights.invoke({"query": topic_name, "limit": 10})
-        insights = search_response.get("result", [])
-        
-        # Use OpenAI to generate a blog topic focused on the selected high-engagement topic
-        model = init_chat_model(
-            model="gpt-4o-mini",
-            model_provider="openai",
-            api_key=os.getenv("OPENAI_API_KEY"),
-            temperature=0.7
-        )
-        
-        prompt = f"""
-        I need you to generate a blog topic focused specifically on the following high-engagement topic:
-        
-        Topic: {topic_name}
-        Description: {topic_description}
-        Category: {topic_category}
-        Subtopics: {', '.join(topic_subtopics) if topic_subtopics else 'None specified'}
-        Engagement Score: {selected_topic.get('engagement_score')}
-        
-        Here are some relevant tweet insights related to this topic:
-        {json.dumps(insights, indent=2)}
-        
-        Your task is to create a blog topic that:
-        1. Is DIRECTLY related to "{topic_name}" - this is CRITICAL
-        2. Incorporates the specific insights from the tweets
-        3. Addresses questions or pain points mentioned in the topic description or tweets
-        4. Has potential for good SEO
-        5. Would be interesting to readers interested in {topic_category}
-        
-        DO NOT create a generic topic or one that's only tangentially related to "{topic_name}".
-        The blog MUST be specifically about "{topic_name}" and related concepts.
-        
-        Return your response as a JSON object with the following structure:
-        {{
-            "title": "The blog post title",
-            "description": "A brief description of what the blog post will cover",
-            "key_points": ["Point 1", "Point 2", "Point 3"],
-            "target_audience": "Who this blog post is for",
-            "estimated_word_count": 1000
-        }}
-        """
-        
-        response = model.invoke(prompt)
-        
-        # Parse the response
-        try:
-            # Extract JSON from the response
-            content = response.content
-            
-            # Find JSON in the text if it's not pure JSON
-            if not content.strip().startswith('{'):
-                import re
-                json_match = re.search(r'\{.*\}', content, re.DOTALL)
-                if json_match:
-                    content = json_match.group(0)
-            
-            topic_data = json.loads(content)
-            log_to_database("info", f"Generated blog topic: {topic_data.get('title')}", {"title": topic_data.get('title')})
-            return {"result": topic_data}
-        except Exception as e:
-            logger.error(f"Error parsing blog topic: {str(e)}")
-            log_to_database("error", f"Error parsing blog topic: {str(e)}")
-            return {
-                "error": f"Failed to parse blog topic: {str(e)}",
-                "result": {
-                    "title": "The Future of AI in Everyday Applications",
-                    "description": "An exploration of how AI is being integrated into common applications and changing the way we interact with technology",
-                    "key_points": [
-                        "Current state of AI in consumer applications",
-                        "Emerging trends in AI integration",
-                        "Predictions for the next 5 years"
-                    ],
-                    "target_audience": "Tech enthusiasts and professionals interested in AI developments",
-                    "estimated_word_count": 1200
-                }
-            }
-        
-    except Exception as e:
-        logger.error(f"Error generating blog topic: {str(e)}")
-        log_to_database("error", f"Error generating blog topic: {str(e)}")
-        return {
-            "error": f"Failed to generate blog topic: {str(e)}",
-            "result": {
-                "title": "The Future of AI in Everyday Applications",
-                "description": "An exploration of how AI is being integrated into common applications and changing the way we interact with technology",
-                "key_points": [
-                    "Current state of AI in consumer applications",
-                    "Emerging trends in AI integration",
-                    "Predictions for the next 5 years"
-                ],
-                "target_audience": "Tech enthusiasts and professionals interested in AI developments",
-                "estimated_word_count": 1200
-            }
-        }
-
-@tool
-def write_blog_post(topic: dict, max_tokens: int = 4000, persona: dict = None):
-    """
-    Write a blog post using Claude from Anthropic.
-    
-    Args:
-        topic: Dictionary containing blog topic details
-        max_tokens: Maximum number of tokens for the blog post (default: 4000)
-        persona: Optional persona details to customize the writing style
-        
-    Returns:
-        Dictionary containing the written blog post
-    """
-    try:
-        log_to_database("info", f"Writing blog post: {topic.get('title')}")
-        # Get related insights
-        insights_response = search_tweet_insights.invoke({"query": topic.get("title", ""), "limit": 10})
-        insights = insights_response.get("result", [])
-        
-        # Get engagement metrics to find the original topic this blog is based on
-        metrics_response = get_engagement_metrics.invoke({})
-        metrics = metrics_response.get("result", [])
-        
-        # Find the most relevant high-engagement topic that matches our blog topic
-        relevant_topics = []
-        blog_title_lower = topic.get("title", "").lower()
-        blog_desc_lower = topic.get("description", "").lower()
-        
-        for metric in metrics:
-            metric_topic = metric.get("topic", "").lower()
-            if metric_topic in blog_title_lower or metric_topic in blog_desc_lower:
-                relevant_topics.append(metric)
-        
-        # Include the original high-engagement topic information if found
-        original_topic_info = ""
-        if relevant_topics:
-            top_relevant = relevant_topics[0]
-            original_topic_info = f"""
-            This blog post should be based on the high-engagement topic:
-            - Topic: {top_relevant.get('topic')}
-            - Description: {top_relevant.get('topic_description', '')}
-            - Category: {top_relevant.get('category', '')}
-            - Subtopics: {', '.join(top_relevant.get('subtopics', []))}
-            
-            Make sure to incorporate this specific topic and its nuances throughout the blog post.
-            """
-        
-        # Use default persona if none provided
-        if not persona:
-            persona_response = fetch_persona.invoke({})
-            persona = persona_response.get("result", {})
-        
-        # Customize prompt based on persona
-        tone_descriptor = "formal" if persona.get("tone", 50) > 70 else "conversational" if persona.get("tone", 50) < 30 else "balanced"
-        humor_descriptor = "serious" if persona.get("humor", 50) < 30 else "light-hearted" if persona.get("humor", 50) > 70 else "occasionally humorous"
-        enthusiasm_descriptor = "enthusiastic" if persona.get("enthusiasm", 50) > 70 else "reserved" if persona.get("enthusiasm", 50) < 30 else "moderately enthusiastic"
-        assertiveness_descriptor = "confident and direct" if persona.get("assertiveness", 50) > 70 else "tentative and nuanced" if persona.get("assertiveness", 50) < 30 else "balanced"
-        
-        # Prepare the prompt for Claude
-        prompt = f"""
-        # Blog Post Writing Task
-        
-        ## Topic Details
-        - Title: {topic.get("title", "")}
-        - Description: {topic.get("description", "")}
-        - Key Points: {", ".join(topic.get("key_points", []))}
-        - Target Audience: {topic.get("target_audience", "")}
-        - Estimated Word Count: {topic.get("estimated_word_count", 1000)}
-        
-        {original_topic_info}
-        
-        ## Related Insights from Twitter
-        {json.dumps(insights, indent=2)}
-        
-        ## Writing Style Instructions
-        Write in the voice of {persona.get("name", "Content Creator")}, who is {persona.get("description", "a professional content creator")}.
-        - Use a {tone_descriptor} tone
-        - Be {humor_descriptor} in your writing
-        - Maintain a {enthusiasm_descriptor} energy level
-        - Present information in a {assertiveness_descriptor} manner
-        
-        ## Content Instructions
-        Write a comprehensive, engaging blog post based on the topic details above. The blog post should:
-        
-        1. Have an attention-grabbing introduction
-        2. Cover all the key points mentioned
-        3. DIRECTLY incorporate specific quotes and insights from the Twitter data provided
-        4. Have a clear structure with headings and subheadings
-        5. End with a strong conclusion and call to action
-        6. Be optimized for SEO
-        7. Stay focused on the specific topic and not drift into generic content
-        
-        ## Output Format
-        Return the blog post in Markdown format, with proper headings, formatting, and structure.
-        """
-        
-        # Use Anthropic's Claude API
-        headers = {
-            "x-api-key": os.getenv("ANTHROPIC_API_KEY"),
-            "content-type": "application/json",
-            "anthropic-version": "2023-06-01"
-        }
-        
-        data = {
-            "model": "claude-3-opus-20240229",
-            "max_tokens": max_tokens,
-            "messages": [
-                {"role": "user", "content": prompt}
-            ]
-        }
-        
-        response = requests.post(
-            "https://api.anthropic.com/v1/messages",
-            headers=headers,
-            json=data
-        )
-        
-        if response.status_code == 200:
-            response_data = response.json()
-            blog_content = response_data["content"][0]["text"]
-            
-            word_count = len(blog_content.split())
-            log_to_database("info", f"Successfully wrote blog post: {topic.get('title')}", {"word_count": word_count})
-            
-            return {
-                "result": {
-                    "title": topic.get("title", ""),
-                    "content": blog_content,
-                    "word_count": word_count,
-                    "created_at": datetime.now().isoformat()
-                }
-            }
-        else:
-            logger.error(f"Anthropic API error: {response.status_code} - {response.text}")
-            log_to_database("error", f"Anthropic API error when writing blog post: {response.status_code}")
-            return {
-                "error": f"Failed to generate blog post: {response.status_code}",
-                "result": None
-            }
-        
-    except Exception as e:
-        logger.error(f"Error writing blog post: {str(e)}")
-        log_to_database("error", f"Error writing blog post: {str(e)}")
-        return {
-            "error": f"Failed to write blog post: {str(e)}",
-            "result": None
-        }
-
-@tool
-def save_blog_post(blog_post: dict, topic_name: str = None, status: str = "draft"):
-    """
-    Save a blog post to Supabase.
+    Save a blog post to Supabase with user context.
     
     Args:
         blog_post: Dictionary containing blog post details
         topic_name: The topic name this blog post is about (for updating last_used_at)
-        status: Status of the blog post (draft, review, published)
+        status: Status of the blog post (draft, pending_fact_check, approved, rejected)
         
     Returns:
         Dictionary containing operation result
     """
     try:
-        log_to_database("info", f"Saving blog post: {blog_post.get('title')}", {"status": status})
-        # Prepare blog post data
+        # Get user context - CRITICAL for multiuser support
+        user_id = amu.get_user_context()
+        
+        if not user_id:
+            logger.error("No user context available for saving blog post")
+            log_to_database("error", "No user context available for saving blog post")
+            return {
+                "error": "No user context available for saving blog post"
+            }
+        
+        log_to_database("info", f"Saving blog post: {blog_post.get('title')} for user {user_id}", {"status": status})
+        
+        # Prepare blog post data with user_id
         blog_data = {
             "title": blog_post.get("title", ""),
             "content": blog_post.get("content", ""),
             "word_count": blog_post.get("word_count", 0),
-            "status": status,
+            "review_status": status,  # Use review_status instead of status
+            "user_id": user_id,  # CRITICAL: Associate with user
             "created_at": blog_post.get("created_at", datetime.now().isoformat())
         }
         
@@ -764,11 +547,12 @@ def save_blog_post(blog_post: dict, topic_name: str = None, status: str = "draft
             if "error" in update_result:
                 logger.warning(f"Failed to update last_used_at for topic '{topic_name}': {update_result.get('error')}")
         
-        log_to_database("info", f"Successfully saved blog post with ID: {blog_id}")
+        log_to_database("info", f"Successfully saved blog post with ID: {blog_id} for user {user_id}")
         return {
-            "result": "Blog post saved successfully",
+            "result": f"Blog post saved successfully for user {user_id}",
             "blog_id": blog_id,
-            "topic_updated": topic_name is not None
+            "topic_updated": topic_name is not None,
+            "user_id": user_id
         }
         
     except Exception as e:
@@ -785,37 +569,44 @@ async def create_blog_writing_agent(client, tools, agent_tools):
     prompt = ChatPromptTemplate.from_messages([
         (
             "system",
-            f"""You are blog_writing_agent, responsible for creating blog content based on research and insights from tweets.
+            f"""You are an agent interacting with the tools from Coral Server and having your own tools. Your task is to perform any instructions coming from any agent.
             
             Follow these steps in order:
-            1. Call wait_for_mentions from coral tools (timeoutMs: 8000) to receive instructions from other agents
-            2. If you receive a mention:
-               a. Process the instruction (e.g., write a blog post on a specific topic)
-               b. Execute the requested operation using your tools
-               c. Send a response back to the sender with the results
-            3. If no mentions are received (timeout):
-               a. Check if it's time to create a new blog post (once per day)
-               b. If it is time:
-                  i. Check if there are any engagement metrics using get_engagement_metrics
-                  ii. Generate a blog topic using generate_blog_topic (which uses topic rotation)
-                  iii. Write a blog post using write_blog_post
-                  iv. Save the blog post using save_blog_post with the topic name to update its last_used_at timestamp
-                  v. Notify blog_to_tweet_agent about the new blog post
-            4. Wait for 2 seconds and repeat the process
+            1. Call wait_for_mentions from coral tools (timeoutMs: 8000) to receive mentions from other agents.
+            2. When you receive a mention, keep the thread ID and the sender ID.
+            3. Take 2 seconds to think about the content (instruction) of the message and check only from the list of your tools available for you to action.
+            4. Check the tool schema and make a plan in steps for the task you want to perform.
+            5. Only call the tools you need to perform for each step of the plan to complete the instruction in the content.
+            6. Take 3 seconds and think about the content and see if you have executed the instruction to the best of your ability and the tools. Make this your response as "answer".
+            7. Use `send_message` from coral tools to send a message in the same thread ID to the sender Id you received the mention from, with content: "answer".
+            8. If any error occurs, use `send_message` to send a message in the same thread ID to the sender Id you received the mention from, with content: "error".
+            9. Always respond back to the sender agent even if you have no answer or error.
+            10. Wait for 2 seconds and repeat the process from step 1.
+            
+            If no mentions are received (timeout), you should:
+            1. Check if there are any engagement metrics using get_engagement_metrics
+            2. If engagement metrics exist:
+               a. Select the next topic using select_next_topic (which uses topic rotation)
+               b. Search for related tweet insights using search_tweet_insights
+               c. Generate a blog topic and write a blog post using Claude/Anthropic
+               d. Save the blog post using save_blog_post with status "pending_fact_check"
+               e. Update the topic's last_used_at timestamp
+            3. Wait for 30 minutes before processing the next blog post
             
             Topic Rotation System:
-            - You use a topic rotation system to ensure diversity in blog content
-            - The system selects from the top 20 topics by engagement score
+            - You use a topic rotation system to ensure diversity in blog content for the current user
+            - The system selects from the top 20 topics by engagement score for the current user
             - Topics that have never been used are prioritized
             - After that, topics are selected based on how long ago they were last used (oldest first)
-            - After writing a blog post, update the topic's last_used_at timestamp using the save_blog_post function
+            - After writing a blog post, update the topic's last_used_at timestamp
             
             When writing blog posts, focus on:
             - Creating engaging, informative content
-            - Incorporating insights from tweet research
+            - Incorporating insights from tweet research for the current user
             - Optimizing for SEO
             - Maintaining a consistent brand voice
             - Covering a diverse range of topics through the rotation system
+            - Ensuring all content is user-specific and isolated
             
             These are the list of all tools (Coral + your tools): {tools_description}
             These are the list of your tools: {agent_tools_description}"""
@@ -835,91 +626,72 @@ async def create_blog_writing_agent(client, tools, agent_tools):
     return AgentExecutor(agent=agent, tools=tools, verbose=True)
 
 async def main():
-    max_retries = 3
-    for attempt in range(max_retries):
-        try:
-            # Use the new MCP client pattern (langchain-mcp-adapters 0.1.0+)
-            client = MultiServerMCPClient(
-                connections={
-                    "coral": {
-                        "transport": "sse",
-                        "url": MCP_SERVER_URL,
-                        "timeout": 300,
-                        "sse_read_timeout": 300,
-                    }
-                }
-            )
-            
-            logger.info(f"Connected to MCP server at {MCP_SERVER_URL}")
-            log_to_database("info", "Blog Writing Agent connected to MCP server")
-            
-            # Define agent-specific tools
-            agent_tools = [
-                fetch_persona,
-                get_engagement_metrics,
-                search_tweet_insights,
-                get_recent_blog_posts,
-                generate_blog_topic,
-                write_blog_post,
-                save_blog_post
-            ]
-            
+    # Use the new MCP client pattern (langchain-mcp-adapters 0.1.0+)
+    client = MultiServerMCPClient(
+        connections={
+            "coral": {
+                "transport": "sse",
+                "url": MCP_SERVER_URL,
+                "headers": {"X-User-ID": user_id},  # CRITICAL: User isolation header
+                "timeout": 300,
+                "sse_read_timeout": 300,
+            }
+        }
+    )
+    
+    logger.info(f"Connected to MCP server at {MCP_SERVER_URL}")
+    log_to_database("info", f"Blog Writing Agent started and connected to MCP server")
+    
+    # Define agent-specific tools
+    agent_tools = [
+        fetch_persona,
+        get_engagement_metrics,
+        select_next_topic,
+        update_topic_usage,
+        search_tweet_insights,
+        get_recent_blog_posts,
+        save_blog_post
+    ]
+    
     # Get Coral tools using the new pattern
-            coral_tools = client.get_tools()
-            
-            # Combine Coral tools with agent-specific tools
-            tools = coral_tools + agent_tools
-            
-            # Create and run the agent
-            agent_executor = await create_blog_writing_agent(client, tools, agent_tools)
-            
-            while True:
-                try:
-                    logger.info("Starting new agent invocation")
-                    log_to_database("info", "Starting new agent invocation cycle")
-                    await agent_executor.ainvoke({"agent_scratchpad": []})
-                    logger.info("Completed agent invocation, restarting loop")
-                    log_to_database("info", "Completed agent invocation cycle")
-                    await asyncio.sleep(1)
-                except Exception as e:
-                    logger.error(f"Error in agent loop: {str(e)}")
-                    log_to_database("error", f"Error in agent loop: {str(e)}")
-                    await asyncio.sleep(5)
-                    
-        except ClosedResourceError as e:
-            logger.error(f"ClosedResourceError on attempt {attempt + 1}: {e}")
-            log_to_database("error", f"ClosedResourceError on attempt {attempt + 1}: {e}")
-            if attempt < max_retries - 1:
-                logger.info("Retrying in 5 seconds...")
-                await asyncio.sleep(5)
-                continue
-            else:
-                logger.error("Max retries reached. Exiting.")
-                raise
+    coral_tools = client.get_tools()
+    
+    # Combine Coral tools with agent-specific tools
+    tools = coral_tools + agent_tools
+    
+    # Create and run the agent
+    agent_executor = await create_blog_writing_agent(client, tools, agent_tools)
+    
+    # Use the same main loop as other agents
+    while True:
+        try:
+            logger.info("Starting new agent invocation")
+            log_to_database("info", "Starting new agent invocation cycle")
+            await agent_executor.ainvoke({"agent_scratchpad": []})
+            logger.info("Completed agent invocation, restarting loop")
+            log_to_database("info", "Completed agent invocation cycle")
+            await asyncio.sleep(1)
         except Exception as e:
-            logger.error(f"Unexpected error on attempt {attempt + 1}: {e}")
-            log_to_database("error", f"Unexpected error on attempt {attempt + 1}: {e}")
-            if attempt < max_retries - 1:
-                logger.info("Retrying in 5 seconds...")
-                await asyncio.sleep(5)
-                continue
-            else:
-                logger.error("Max retries reached. Exiting.")
-                raise
+            logger.error(f"Error in agent loop: {str(e)}")
+            log_to_database("error", f"Error in agent loop: {str(e)}")
+            await asyncio.sleep(5)
 
 if __name__ == "__main__":
-    # Mark agent as started
+    # Mark agent as started (use both old and new for compatibility)
     asu.mark_agent_started(AGENT_NAME)
+    amu.mark_agent_started_with_user(AGENT_NAME)
     log_to_database("info", "Blog Writing Agent started")
     
     try:
         asyncio.run(main())
     except Exception as e:
-        # Report error in status
+        # Report error in status (use both old and new for compatibility)
         asu.report_error(AGENT_NAME, f"Fatal error: {str(e)}")
+        amu.report_error_with_user(AGENT_NAME, f"Fatal error: {str(e)}")
         
         # Re-raise the exception
         raise
     finally:
-        # Mark agent as stopped
+        # Mark agent as stopped (use both old and new for compatibility)
         asu.mark_agent_stopped(AGENT_NAME)
+        amu.mark_agent_stopped_with_user(AGENT_NAME)

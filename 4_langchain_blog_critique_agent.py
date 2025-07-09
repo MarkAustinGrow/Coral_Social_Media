@@ -19,25 +19,32 @@ import signal
 import sys
 import atexit
 import agent_status_updater as asu
-
+import agent_multiuser_utils_simple as amu
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
+# Agent name for database logging
+AGENT_NAME = "Blog Critique Agent"
+
 # Load environment variables
 load_dotenv()
 
-base_url = "http://localhost:5555/devmode/exampleApplication/privkey/session1/sse"
+# Get user context for user-specific MCP server
+user_id = amu.get_user_context()
+
+# Use centralized multi-user Coral server
+base_url = "http://coral.8interns.com/devmode/exampleApplication/privkey/session1/sse"
 params = {
     "waitForAgents": 7,  # Total number of agents in the system
-    "agentId": "blog_critique_agent",
-    "agentDescription": "You are blog_critique_agent, responsible for fact-checking and reviewing blog posts for accuracy and quality"
+    "agentId": f"blog_critique_agent_{user_id}",
+    "agentDescription": f"You are blog_critique_agent for user {user_id}, responsible for fact-checking and reviewing blog posts for accuracy and quality"
 }
 query_string = urllib.parse.urlencode(params)
 MCP_SERVER_URL = f"{base_url}?{query_string}"
 
-AGENT_NAME = "blog_critique_agent"
+print(f"🔗 Using centralized MCP server: {MCP_SERVER_URL}")
 
 # Initialize API clients
 try:
@@ -68,30 +75,6 @@ if not os.getenv("PERPLEXITY_API_KEY"):
 if not os.getenv("SUPABASE_URL") or not os.getenv("SUPABASE_KEY"):
     raise ValueError("SUPABASE_URL or SUPABASE_KEY is not set in environment variables.")
 
-# Agent name for status updates - must match exactly what's in the database
-AGENT_NAME = "Blog Critique Agent"
-
-def log_to_database(level, message, metadata=None):
-    """
-    Log agent activity to the agent_logs table in Supabase.
-    
-    Args:
-        level: Log level ('info', 'warning', 'error')
-        message: Log message
-        metadata: Optional JSON metadata
-    """
-    try:
-        # Insert log into agent_logs table
-        supabase_client.table("agent_logs").insert({
-            "timestamp": datetime.now().isoformat(),
-            "level": level,
-            "agent_name": AGENT_NAME,
-            "message": message,
-            "metadata": metadata
-        }).execute()
-    except Exception as e:
-        logger.error(f"Failed to log to database: {str(e)}")
-
 # Register signal handlers for graceful shutdown
 def signal_handler(sig, frame):
     """Handle Ctrl+C and other signals to gracefully shut down"""
@@ -103,8 +86,21 @@ def signal_handler(sig, frame):
 signal.signal(signal.SIGINT, signal_handler)  # Ctrl+C
 signal.signal(signal.SIGTERM, signal_handler)  # Termination signal
 
-# Register function to mark agent as stopped when the script exits
+# Register function to mark agent as stopped when the script exits (use both old and new for compatibility)
 atexit.register(lambda: asu.mark_agent_stopped(AGENT_NAME))
+atexit.register(lambda: amu.mark_agent_stopped_with_user(AGENT_NAME))
+
+def log_to_database(level, message, metadata=None):
+    """
+    Log agent activity to the agent_logs table in Supabase with user context.
+    
+    Args:
+        level: Log level ('info', 'warning', 'error')
+        message: Log message
+        metadata: Optional JSON metadata
+    """
+    # Use the new multiuser-aware logging function
+    amu.log_to_database(AGENT_NAME, level, message, metadata)
 
 def get_tools_description(tools):
     return "\n".join(
@@ -115,7 +111,7 @@ def get_tools_description(tools):
 @tool
 def fetch_pending_blogs(limit: int = 1):
     """
-    Fetch blogs from Supabase that need fact-checking.
+    Fetch blogs from Supabase that need fact-checking for the current user.
     
     Args:
         limit: Maximum number of blogs to fetch (default: 1)
@@ -123,22 +119,34 @@ def fetch_pending_blogs(limit: int = 1):
     Returns:
         Dictionary containing fetched blogs
     """
-    logger.info(f"Fetching {limit} blogs with review_status='pending_fact_check'")
-    log_to_database("info", f"Fetching {limit} blogs with review_status='pending_fact_check'")
-    
     try:
-        # Fetch blogs from Supabase
-        query = supabase_client.table("blog_posts").select("*").eq("review_status", "pending_fact_check")
+        # Get user context - CRITICAL for multiuser support
+        user_id = amu.get_user_context()
+        
+        if not user_id:
+            logger.error("No user context available for blog fetching")
+            log_to_database("error", "No user context available for blog fetching")
+            return {
+                "error": "No user context available for blog fetching",
+                "count": 0
+            }
+        
+        logger.info(f"Fetching {limit} blogs with review_status='pending_fact_check' for user {user_id}")
+        log_to_database("info", f"Fetching {limit} blogs with review_status='pending_fact_check' for user {user_id}")
+        
+        # Fetch blogs from Supabase with user_id filtering
+        query = supabase_client.table("blog_posts").select("*").eq("review_status", "pending_fact_check").eq("user_id", user_id)
         query = query.order("created_at", desc=True).limit(limit)
         
         result = query.execute()
         
         blogs = result.data if result.data else []
         
-        log_to_database("info", f"Retrieved {len(blogs)} blogs pending fact-check")
+        log_to_database("info", f"Retrieved {len(blogs)} blogs pending fact-check for user {user_id}")
         return {
             "result": blogs,
-            "count": len(blogs)
+            "count": len(blogs),
+            "user_id": user_id
         }
         
     except Exception as e:
@@ -152,31 +160,50 @@ def fetch_pending_blogs(limit: int = 1):
 @tool
 def fetch_persona():
     """
-    Fetch the current persona from Supabase.
+    Fetch the current persona from Supabase for the current user.
     
     Returns:
         Dictionary containing persona details or default values if not found
     """
-    logger.info("Fetching persona from Supabase")
-    log_to_database("info", "Fetching persona from Supabase")
-    
     try:
-        # Fetch persona from Supabase
-        query = supabase_client.table("personas").select("*").limit(1)
+        # Get user context - CRITICAL for multiuser support
+        user_id = amu.get_user_context()
+        
+        if not user_id:
+            logger.warning("No user context available for persona fetching, using default")
+            log_to_database("warning", "No user context available for persona fetching, using default")
+            # Return default persona if no user context
+            default_persona = {
+                "name": "Content Reviewer",
+                "description": "A meticulous and objective reviewer who prioritizes factual accuracy, logical consistency, and narrative flow in all content.",
+                "tone": 70,  # More formal
+                "humor": 30,  # More serious
+                "enthusiasm": 60,  # Moderately enthusiastic
+                "assertiveness": 80  # Quite confident
+            }
+            return {
+                "result": default_persona
+            }
+        
+        logger.info(f"Fetching persona from Supabase for user {user_id}")
+        log_to_database("info", f"Fetching persona from Supabase for user {user_id}")
+        
+        # Fetch persona from Supabase with user_id filtering
+        query = supabase_client.table("personas").select("*").eq("user_id", user_id).limit(1)
         
         result = query.execute()
         
         if result.data and len(result.data) > 0:
             persona = result.data[0]
-            logger.info(f"Found persona: {persona.get('name')}")
-            log_to_database("info", f"Found persona: {persona.get('name')}")
+            logger.info(f"Found persona: {persona.get('name')} for user {user_id}")
+            log_to_database("info", f"Found persona: {persona.get('name')} for user {user_id}")
             return {
                 "result": persona
             }
         else:
             # Return default persona values
-            logger.info("No persona found, using default values")
-            log_to_database("info", "No persona found, using default values")
+            logger.info(f"No persona found for user {user_id}, using default values")
+            log_to_database("info", f"No persona found for user {user_id}, using default values")
             default_persona = {
                 "name": "Content Reviewer",
                 "description": "A meticulous and objective reviewer who prioritizes factual accuracy, logical consistency, and narrative flow in all content.",
@@ -429,7 +456,7 @@ IMPORTANT: Your final verdict must explicitly state either "APPROVED" or "REJECT
 @tool
 def store_critique_report(blog_id: int, critique: str, decision: str):
     """
-    Store the critique report in Supabase and update blog status.
+    Store the critique report in Supabase and update blog status with user context.
     
     Args:
         blog_id: ID of the blog post
@@ -439,35 +466,47 @@ def store_critique_report(blog_id: int, critique: str, decision: str):
     Returns:
         Dictionary containing operation result
     """
-    logger.info(f"Storing critique report for blog {blog_id} with decision: {decision}")
-    log_to_database("info", f"Storing critique report for blog {blog_id} with decision: {decision}")
-    
     try:
+        # Get user context - CRITICAL for multiuser support
+        user_id = amu.get_user_context()
+        
+        if not user_id:
+            logger.error("No user context available for storing critique")
+            log_to_database("error", "No user context available for storing critique")
+            return {
+                "error": "No user context available for storing critique"
+            }
+        
+        logger.info(f"Storing critique report for blog {blog_id} with decision: {decision} for user {user_id}")
+        log_to_database("info", f"Storing critique report for blog {blog_id} with decision: {decision} for user {user_id}")
+        
         # Extract a summary from the critique (first 200 characters)
         summary = critique[:200] + "..." if len(critique) > 200 else critique
         
-        # Insert into blog_critique table
+        # Insert into blog_critique table with user_id
         critique_data = {
             "blog_id": blog_id,
             "critique": critique,
             "summary": summary,
-            "decision": decision
+            "decision": decision,
+            "user_id": user_id  # CRITICAL: Associate with user
         }
         
         critique_result = supabase_client.table("blog_critique").insert(critique_data).execute()
         
-        # Update blog_posts table
+        # Update blog_posts table with user_id filtering
         blog_update_data = {
             "review_status": decision,  # approved or rejected
             "fact_checked_at": datetime.utcnow().isoformat()
         }
         
-        blog_result = supabase_client.table("blog_posts").update(blog_update_data).eq("id", blog_id).execute()
+        blog_result = supabase_client.table("blog_posts").update(blog_update_data).eq("id", blog_id).eq("user_id", user_id).execute()
         
-        log_to_database("info", f"Successfully stored critique for blog {blog_id}", {"decision": decision})
+        log_to_database("info", f"Successfully stored critique for blog {blog_id} for user {user_id}", {"decision": decision})
         return {
-            "result": f"Blog {blog_id} marked as {decision}",
-            "critique_id": critique_result.data[0].get("id") if critique_result.data else None
+            "result": f"Blog {blog_id} marked as {decision} for user {user_id}",
+            "critique_id": critique_result.data[0].get("id") if critique_result.data else None,
+            "user_id": user_id
         }
         
     except Exception as e:
@@ -480,41 +519,61 @@ def store_critique_report(blog_id: int, critique: str, decision: str):
 @tool
 def list_fact_check_status():
     """
-    Get a summary of blog fact-checking status.
+    Get a summary of blog fact-checking status for the current user.
     
     Returns:
         Dictionary containing status summary
     """
     try:
-        log_to_database("info", "Fetching fact-check status summary")
-        # Get counts for different statuses
-        pending_query = supabase_client.table("blog_posts").select("count").eq("review_status", "pending_fact_check").execute()
-        approved_query = supabase_client.table("blog_posts").select("count").eq("review_status", "approved").execute()
-        rejected_query = supabase_client.table("blog_posts").select("count").eq("review_status", "rejected").execute()
+        # Get user context - CRITICAL for multiuser support
+        user_id = amu.get_user_context()
+        
+        if not user_id:
+            logger.error("No user context available for status summary")
+            log_to_database("error", "No user context available for status summary")
+            return {
+                "error": "No user context available for status summary",
+                "result": {
+                    "pending_count": 0,
+                    "approved_count": 0,
+                    "rejected_count": 0,
+                    "total_reviewed": 0,
+                    "recent_critiques": []
+                }
+            }
+        
+        log_to_database("info", f"Fetching fact-check status summary for user {user_id}")
+        
+        # Get counts for different statuses with user_id filtering
+        pending_query = supabase_client.table("blog_posts").select("count").eq("review_status", "pending_fact_check").eq("user_id", user_id).execute()
+        approved_query = supabase_client.table("blog_posts").select("count").eq("review_status", "approved").eq("user_id", user_id).execute()
+        rejected_query = supabase_client.table("blog_posts").select("count").eq("review_status", "rejected").eq("user_id", user_id).execute()
         
         pending_count = pending_query.count if hasattr(pending_query, 'count') else 0
         approved_count = approved_query.count if hasattr(approved_query, 'count') else 0
         rejected_count = rejected_query.count if hasattr(rejected_query, 'count') else 0
         
-        # Get recent critiques
-        recent_critiques_query = supabase_client.table("blog_critique").select("*").order("created_at", desc=True).limit(5).execute()
+        # Get recent critiques with user_id filtering
+        recent_critiques_query = supabase_client.table("blog_critique").select("*").eq("user_id", user_id).order("created_at", desc=True).limit(5).execute()
         recent_critiques = recent_critiques_query.data if recent_critiques_query.data else []
         
         status_summary = {
             "pending_count": pending_count,
             "approved_count": approved_count,
             "rejected_count": rejected_count,
-            "total_reviewed": approved_count + rejected_count
+            "total_reviewed": approved_count + rejected_count,
+            "user_id": user_id
         }
         
-        log_to_database("info", "Retrieved fact-check status summary", status_summary)
+        log_to_database("info", f"Retrieved fact-check status summary for user {user_id}", status_summary)
         return {
             "result": {
                 "pending_count": pending_count,
                 "approved_count": approved_count,
                 "rejected_count": rejected_count,
                 "total_reviewed": approved_count + rejected_count,
-                "recent_critiques": recent_critiques
+                "recent_critiques": recent_critiques,
+                "user_id": user_id
             }
         }
         
@@ -539,23 +598,29 @@ async def create_blog_critique_agent(client, tools, agent_tools):
     prompt = ChatPromptTemplate.from_messages([
         (
             "system",
-            f"""You are blog_critique_agent, responsible for fact-checking and reviewing blog posts for accuracy and quality.
+            f"""You are an agent interacting with the tools from Coral Server and having your own tools. Your task is to perform any instructions coming from any agent.
             
             Follow these steps in order:
-            1. Call wait_for_mentions from coral tools (timeoutMs: 8000) to receive instructions from other agents
-            2. If you receive a mention:
-               a. Process the instruction (e.g., check specific blogs, provide status)
-               b. Execute the requested operation using your tools
-               c. Send a response back to the sender with the results
-            3. If no mentions are received (timeout):
-               a. Fetch ONE blog with review_status='pending_fact_check' using fetch_pending_blogs (limit=1)
-               b. If a blog is found:
-                  i. Fetch the current persona using fetch_persona
-                  ii. Use Perplexity to fact-check the blog using fact_check_blog_with_perplexity
-                  iii. Store the critique report using store_critique_report
-               c. Wait for 5 minutes before processing the next blog (to avoid API rate limits)
+            1. Call wait_for_mentions from coral tools (timeoutMs: 8000) to receive mentions from other agents.
+            2. When you receive a mention, keep the thread ID and the sender ID.
+            3. Take 2 seconds to think about the content (instruction) of the message and check only from the list of your tools available for you to action.
+            4. Check the tool schema and make a plan in steps for the task you want to perform.
+            5. Only call the tools you need to perform for each step of the plan to complete the instruction in the content.
+            6. Take 3 seconds and think about the content and see if you have executed the instruction to the best of your ability and the tools. Make this your response as "answer".
+            7. Use `send_message` from coral tools to send a message in the same thread ID to the sender Id you received the mention from, with content: "answer".
+            8. If any error occurs, use `send_message` to send a message in the same thread ID to the sender Id you received the mention from, with content: "error".
+            9. Always respond back to the sender agent even if you have no answer or error.
+            10. Wait for 2 seconds and repeat the process from step 1.
             
-            Your goal is to ensure all blog content is factually accurate and of high quality. Focus on:
+            If no mentions are received (timeout), you should:
+            1. Fetch ONE blog with review_status='pending_fact_check' using fetch_pending_blogs (limit=1)
+            2. If a blog is found:
+               a. Fetch the current persona using fetch_persona
+               b. Use Perplexity to fact-check the blog using fact_check_blog_with_perplexity
+               c. Store the critique report using store_critique_report
+            3. Wait for 5 minutes before processing the next blog (to avoid API rate limits)
+            
+            Your goal is to ensure all blog content is factually accurate and of high quality for the current user. Focus on:
             - Verifying factual claims
             - Checking logical consistency
             - Evaluating overall quality
@@ -579,89 +644,70 @@ async def create_blog_critique_agent(client, tools, agent_tools):
     return AgentExecutor(agent=agent, tools=tools, verbose=True)
 
 async def main():
-    max_retries = 3
-    for attempt in range(max_retries):
+    # Use the new MCP client pattern (langchain-mcp-adapters 0.1.0+)
+    client = MultiServerMCPClient(
+        connections={
+            "coral": {
+                "transport": "sse",
+                "url": MCP_SERVER_URL,
+                "headers": {"X-User-ID": user_id},  # CRITICAL: User isolation header
+                "timeout": 300,
+                "sse_read_timeout": 300,
+            }
+        }
+    )
+    
+    logger.info(f"Connected to MCP server at {MCP_SERVER_URL}")
+    log_to_database("info", f"Blog Critique Agent started and connected to MCP server")
+    
+    # Define agent-specific tools
+    agent_tools = [
+        fetch_pending_blogs,
+        fetch_persona,
+        fact_check_blog_with_perplexity,
+        store_critique_report,
+        list_fact_check_status
+    ]
+    
+    # Get Coral tools using the new pattern
+    coral_tools = client.get_tools()
+    
+    # Combine Coral tools with agent-specific tools
+    tools = coral_tools + agent_tools
+    
+    # Create and run the agent
+    agent_executor = await create_blog_critique_agent(client, tools, agent_tools)
+    
+    # Use the same main loop as other agents
+    while True:
         try:
-            # Use the new MCP client pattern (langchain-mcp-adapters 0.1.0+)
-            client = MultiServerMCPClient(
-                connections={
-                    "coral": {
-                        "transport": "sse",
-                        "url": MCP_SERVER_URL,
-                        "timeout": 300,
-                        "sse_read_timeout": 300,
-                    }
-                }
-            )
-            
-            logger.info(f"Connected to MCP server at {MCP_SERVER_URL}")
-            log_to_database("info", "Blog Critique Agent connected to MCP server")
-            
-            # Define agent-specific tools
-            agent_tools = [
-                fetch_pending_blogs,
-                fetch_persona,
-                fact_check_blog_with_perplexity,
-                store_critique_report,
-                list_fact_check_status
-            ]
-            
-            # Get Coral tools using the new pattern
-            coral_tools = client.get_tools()
-            
-            # Combine Coral tools with agent-specific tools
-            tools = coral_tools + agent_tools
-            
-            # Create and run the agent
-            agent_executor = await create_blog_critique_agent(client, tools, agent_tools)
-            
-            while True:
-                try:
-                    logger.info("Starting new agent invocation")
-                    log_to_database("info", "Starting new agent invocation cycle")
-                    await agent_executor.ainvoke({"agent_scratchpad": []})
-                    logger.info("Completed agent invocation, waiting 5 minutes before next blog")
-                    log_to_database("info", "Completed agent invocation cycle, waiting 5 minutes before next blog")
-                    await asyncio.sleep(300)  # Wait 5 minutes between processing blogs
-                except Exception as e:
-                    logger.error(f"Error in agent loop: {str(e)}")
-                    log_to_database("error", f"Error in agent loop: {str(e)}")
-                    await asyncio.sleep(5)
-                    
-        except ClosedResourceError as e:
-            logger.error(f"ClosedResourceError on attempt {attempt + 1}: {e}")
-            log_to_database("error", f"ClosedResourceError on attempt {attempt + 1}: {e}")
-            if attempt < max_retries - 1:
-                logger.info("Retrying in 5 seconds...")
-                await asyncio.sleep(5)
-                continue
-            else:
-                logger.error("Max retries reached. Exiting.")
-                raise
+            logger.info("Starting new agent invocation")
+            log_to_database("info", "Starting new agent invocation cycle")
+            await agent_executor.ainvoke({"agent_scratchpad": []})
+            logger.info("Completed agent invocation, restarting loop")
+            log_to_database("info", "Completed agent invocation cycle")
+            await asyncio.sleep(1)
         except Exception as e:
-            logger.error(f"Unexpected error on attempt {attempt + 1}: {e}")
-            log_to_database("error", f"Unexpected error on attempt {attempt + 1}: {e}")
-            if attempt < max_retries - 1:
-                logger.info("Retrying in 5 seconds...")
-                await asyncio.sleep(5)
-                continue
-            else:
-                logger.error("Max retries reached. Exiting.")
-                raise
+            logger.error(f"Error in agent loop: {str(e)}")
+            log_to_database("error", f"Error in agent loop: {str(e)}")
+            await asyncio.sleep(5)
 
 if __name__ == "__main__":
-    # Mark agent as started
+    # Mark agent as started (use both old and new for compatibility)
     asu.mark_agent_started(AGENT_NAME)
+    amu.mark_agent_started_with_user(AGENT_NAME)
     log_to_database("info", "Blog Critique Agent started")
     
     try:
         asyncio.run(main())
     except Exception as e:
-        # Report error in status
+        # Report error in status (use both old and new for compatibility)
         asu.report_error(AGENT_NAME, f"Fatal error: {str(e)}")
+        amu.report_error_with_user(AGENT_NAME, f"Fatal error: {str(e)}")
         
         # Re-raise the exception
         raise
     finally:
-        # Mark agent as stopped
+        # Mark agent as stopped (use both old and new for compatibility)
         asu.mark_agent_stopped(AGENT_NAME)
+        amu.mark_agent_stopped_with_user(AGENT_NAME)
