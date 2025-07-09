@@ -35,13 +35,8 @@ load_dotenv()
 # Get user context for user-specific MCP server
 user_id = amu.get_user_context()
 
-# Generate user-specific port (same logic as start_user_coral_server.sh)
-import hashlib
-user_hash = hashlib.md5(user_id.encode()).hexdigest()[:8]
-user_port = 5555 + (int(user_hash, 16) % 1000)
-
-# Use user-specific MCP server URL
-base_url = f"http://localhost:{user_port}/devmode/exampleApplication/privkey/session1/sse"
+# Use centralized multi-user Coral server
+base_url = "http://coral.8interns.com:5555/devmode/exampleApplication/privkey/session1/sse"
 params = {
     "waitForAgents": 2,
     "agentId": f"tweet_scraping_agent_{user_id}",
@@ -50,7 +45,7 @@ params = {
 query_string = urllib.parse.urlencode(params)
 MCP_SERVER_URL = f"{base_url}?{query_string}"
 
-print(f"🔗 Using user-specific MCP server: {MCP_SERVER_URL}")
+print(f"🔗 Using centralized MCP server: {MCP_SERVER_URL}")
 
 # Initialize API clients
 try:
@@ -527,8 +522,9 @@ async def main():
             "coral": {
                 "transport": "sse",
                 "url": MCP_SERVER_URL,
-                "timeout": 300,  # Same as World News Agent
-                "sse_read_timeout": 300,  # Same as World News Agent
+                "headers": {"X-User-ID": user_id},  # CRITICAL: User isolation header
+                "timeout": 300,
+                "sse_read_timeout": 300,
             }
         }
     )

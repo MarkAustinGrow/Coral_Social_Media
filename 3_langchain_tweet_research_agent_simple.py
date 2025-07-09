@@ -17,6 +17,12 @@ from anyio import ClosedResourceError
 import urllib.parse
 import requests
 
+import signal
+import sys
+import atexit
+import agent_status_updater as asu
+import agent_multiuser_utils_simple as amu
+
 # Setup logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -27,15 +33,20 @@ AGENT_NAME = "Tweet Research Agent"
 # Load environment variables
 load_dotenv()
 
-# Use the same waitForAgents=2 as the World News Agent
-base_url = "http://localhost:5555/devmode/exampleApplication/privkey/session1/sse"
+# Get user context for user-specific MCP server
+user_id = amu.get_user_context()
+
+# Use centralized multi-user Coral server
+base_url = "http://coral.8interns.com:5555/devmode/exampleApplication/privkey/session1/sse"
 params = {
-    "waitForAgents": 2,  # Same as World News Agent
-    "agentId": "tweet_research_agent",
-    "agentDescription": "You are tweet_research_agent, responsible for analyzing tweets, extracting insights, and storing them for future reference"
+    "waitForAgents": 2,
+    "agentId": f"tweet_research_agent_{user_id}",
+    "agentDescription": f"You are tweet_research_agent for user {user_id}, responsible for analyzing tweets, extracting insights, and storing them for future reference"
 }
 query_string = urllib.parse.urlencode(params)
 MCP_SERVER_URL = f"{base_url}?{query_string}"
+
+print(f"🔗 Using centralized MCP server: {MCP_SERVER_URL}")
 
 # Initialize API clients
 try:
@@ -103,26 +114,32 @@ if not os.getenv("SUPABASE_URL") or not os.getenv("SUPABASE_KEY"):
 if not os.getenv("PERPLEXITY_API_KEY"):
     raise ValueError("PERPLEXITY_API_KEY is not set in environment variables.")
 
+# Register signal handlers for graceful shutdown
+def signal_handler(sig, frame):
+    """Handle Ctrl+C and other signals to gracefully shut down"""
+    print("Shutting down gracefully...")
+    asu.mark_agent_stopped(AGENT_NAME)
+    sys.exit(0)
+
+# Register signal handlers
+signal.signal(signal.SIGINT, signal_handler)  # Ctrl+C
+signal.signal(signal.SIGTERM, signal_handler)  # Termination signal
+
+# Register function to mark agent as stopped when the script exits (use both old and new for compatibility)
+atexit.register(lambda: asu.mark_agent_stopped(AGENT_NAME))
+atexit.register(lambda: amu.mark_agent_stopped_with_user(AGENT_NAME))
+
 def log_to_database(level, message, metadata=None):
     """
-    Log agent activity to the agent_logs table in Supabase.
+    Log agent activity to the agent_logs table in Supabase with user context.
     
     Args:
         level: Log level ('info', 'warning', 'error')
         message: Log message
         metadata: Optional JSON metadata
     """
-    try:
-        # Insert log into agent_logs table
-        supabase_client.table("agent_logs").insert({
-            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
-            "level": level,
-            "agent_name": AGENT_NAME,
-            "message": message,
-            "metadata": metadata
-        }).execute()
-    except Exception as e:
-        logger.error(f"Failed to log to database: {str(e)}")
+    # Use the new multiuser-aware logging function
+    amu.log_to_database(AGENT_NAME, level, message, metadata)
 
 def get_tools_description(tools):
     return "\n".join(
@@ -778,8 +795,9 @@ async def main():
             "coral": {
                 "transport": "sse",
                 "url": MCP_SERVER_URL,
-                "timeout": 300,  # Same as World News Agent
-                "sse_read_timeout": 300,  # Same as World News Agent
+                "headers": {"X-User-ID": user_id},  # CRITICAL: User isolation header
+                "timeout": 300,
+                "sse_read_timeout": 300,
             }
         }
     )
@@ -822,17 +840,21 @@ async def main():
             await asyncio.sleep(5)
 
 if __name__ == "__main__":
-    logger.info("Tweet Research Agent (Simple) started")
-    log_to_database("info", "Tweet Research Agent (Simple) started")
+    # Mark agent as started (use both old and new for compatibility)
+    asu.mark_agent_started(AGENT_NAME)
+    amu.mark_agent_started_with_user(AGENT_NAME)
+    log_to_database("info", "Tweet Research Agent started")
+    
     try:
         asyncio.run(main())
-    except KeyboardInterrupt:
-        logger.info("Tweet Research Agent stopped by user")
-        log_to_database("info", "Tweet Research Agent stopped by user")
     except Exception as e:
-        logger.error(f"Fatal error: {str(e)}")
-        log_to_database("error", f"Fatal error: {str(e)}")
+        # Report error in status (use both old and new for compatibility)
+        asu.report_error(AGENT_NAME, f"Fatal error: {str(e)}")
+        amu.report_error_with_user(AGENT_NAME, f"Fatal error: {str(e)}")
+        
+        # Re-raise the exception
         raise
     finally:
-        logger.info("Tweet Research Agent stopped")
-        log_to_database("info", "Tweet Research Agent stopped")
+        # Mark agent as stopped (use both old and new for compatibility)
+        asu.mark_agent_stopped(AGENT_NAME)
+        amu.mark_agent_stopped_with_user(AGENT_NAME)

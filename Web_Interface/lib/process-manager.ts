@@ -88,6 +88,9 @@ async function killProcessByName(processName: string): Promise<boolean> {
 // Map of agent names to their processes
 const runningProcesses: Record<string, ChildProcess> = {};
 
+// Map of user IDs to their Coral server processes
+const userCoralServers: Record<string, { port: number, process: ChildProcess }> = {};
+
 // Map of agent names to their file paths
 // Ordered according to the workflow
 const agentFilePaths: Record<string, string> = {
