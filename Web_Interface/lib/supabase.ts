@@ -1,5 +1,4 @@
 import { createClientComponentClient, createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
-import { cookies } from 'next/headers'
 import { Database } from '@/types/database'
 
 // Environment validation for debugging
@@ -33,6 +32,8 @@ const getSupabaseClient = () => createClientComponentClient<Database>()
 // Server-side Supabase client (for API routes) - uses same session as middleware
 const getSupabaseServerClient = () => {
   try {
+    // Dynamic import to avoid client-side build issues
+    const { cookies } = require('next/headers')
     const cookieStore = cookies()
     return createRouteHandlerClient<Database>({ cookies: () => cookieStore })
   } catch (error) {
