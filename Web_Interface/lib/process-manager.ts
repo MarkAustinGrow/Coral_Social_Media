@@ -143,7 +143,7 @@ export async function startAgent(agentName: string, userId?: string): Promise<bo
       console.log(`Using virtual environment wrapper for ${agentName} with user ${userId}`);
       agentProcess = spawn('bash', [wrapperScript, userId, agentFilePath], {
         cwd: rootDir,
-        stdio: 'ignore',
+        stdio: ['ignore', 'pipe', 'pipe'],
         detached: true,
         shell: false
       });
@@ -160,7 +160,7 @@ export async function startAgent(agentName: string, userId?: string): Promise<bo
 
       agentProcess = spawn(pythonExecutable, [agentFilePath], {
         cwd: rootDir,
-        stdio: 'ignore',
+        stdio: ['ignore', 'pipe', 'pipe'],
         detached: true,
         shell: true,
         env: env
@@ -169,6 +169,28 @@ export async function startAgent(agentName: string, userId?: string): Promise<bo
 
     // Store the process
     runningProcesses[agentName] = agentProcess;
+
+    // Handle stdout (agent output)
+    if (agentProcess.stdout) {
+      agentProcess.stdout.on('data', (data: Buffer) => {
+        const output = data.toString();
+        console.log(`[${agentName}] ${output}`);
+        // Log significant output to database
+        if (output.includes('ERROR') || output.includes('Successfully') || output.includes('Started') || output.includes('Stopped')) {
+          updateAgentStatus(agentName, 'running', 100, output.trim().substring(0, 500));
+        }
+      });
+    }
+
+    // Handle stderr (agent errors)
+    if (agentProcess.stderr) {
+      agentProcess.stderr.on('data', (data: Buffer) => {
+        const error = data.toString();
+        console.error(`[${agentName}] ERROR: ${error}`);
+        // Log errors to database
+        updateAgentStatus(agentName, 'error', 50, `Error: ${error.trim().substring(0, 500)}`);
+      });
+    }
 
     // Handle process exit
     agentProcess.on('exit', (code: number | null) => {
