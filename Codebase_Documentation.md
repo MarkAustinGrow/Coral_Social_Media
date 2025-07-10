@@ -1809,6 +1809,93 @@ python agent_status_monitor.py
 3. Check that API keys haven't expired or been revoked
 4. Verify rate limits haven't been exceeded
 
+#### Critical Issue: Twitter API 401 Unauthorized (January 10, 2025)
+
+**Problem**: Tweet Scraping Agent experiencing persistent 401 Unauthorized errors
+
+**Error Details**:
+```
+Twitter API error for user 3b55275a-d666-4724-ae39-26a58fda3aff: 401 Unauthorized
+Failed to fetch tweets: 401 Unauthorized\nUnauthorized
+```
+
+**Affected User**: `3b55275a-d666-4724-ae39-26a58fda3aff` (@0xMaxMacro)
+
+**Log Location**: `/home/coraluser/Coral_Social_Media/Web_Interface/logs/coral-web-error-0.log`
+
+**Symptoms**:
+1. **Primary Issue**: Twitter API returns 401 Unauthorized for all tweet fetching operations
+2. **Agent Behavior**: Agent successfully retrieves user credentials from database but fails Twitter API authentication
+3. **Timing Loop**: Agent repeatedly calls `should_execute_now` multiple times per second, indicating timing logic issues
+4. **Process Management**: Some process killing errors during agent stop operations (though ultimately successful)
+
+**System Status**:
+- ✅ **Database Connection**: Working correctly
+- ✅ **User Credential Retrieval**: Successfully fetching from `user_twitter_credentials` table
+- ✅ **Agent Logging**: Proper logging to database and console
+- ❌ **Twitter API Authentication**: Failing with 401 Unauthorized
+- ⚠️ **Agent Timing Logic**: Excessive `should_execute_now` calls
+
+**Investigation Plan**:
+
+**Phase 1: Twitter API Credential Verification**
+1. **Verify Twitter API credentials** in database for user `3b55275a-d666-4724-ae39-26a58fda3aff`
+2. **Test Twitter API connection** independently using stored credentials
+3. **Check Twitter Developer Console** for app restrictions, suspensions, or permission changes
+4. **Validate OAuth 1.0a signature generation** in the tweet scraping agent
+5. **Verify API key permissions** (ensure read permissions are granted)
+
+**Phase 2: Agent Timing Logic Fix**
+1. **Review timing logic** in Tweet Scraping Agent to prevent excessive API calls
+2. **Fix repeated `should_execute_now` calls** that occur multiple times per second
+3. **Implement proper backoff strategy** when API errors occur
+4. **Add rate limiting protection** to prevent API abuse
+
+**Phase 3: Process Management Enhancement**
+1. **Improve process stopping mechanism** to handle edge cases more gracefully
+2. **Add better error handling** for process management operations
+3. **Enhance agent status tracking** for better visibility
+
+**Debugging Commands**:
+```bash
+# Check user's Twitter credentials in database
+SELECT api_key, api_secret, access_token, access_token_secret, twitter_username 
+FROM user_twitter_credentials 
+WHERE user_id = '3b55275a-d666-4724-ae39-26a58fda3aff';
+
+# Test Twitter API connection manually
+python -c "
+import tweepy
+# Use credentials from database to test connection
+auth = tweepy.OAuth1UserHandler('api_key', 'api_secret', 'access_token', 'access_token_secret')
+api = tweepy.API(auth)
+try:
+    user = api.verify_credentials()
+    print(f'Authentication successful: {user.screen_name}')
+except Exception as e:
+    print(f'Authentication failed: {e}')
+"
+
+# Monitor agent logs in real-time
+tail -f /home/coraluser/Coral_Social_Media/Web_Interface/logs/coral-web-error-0.log
+```
+
+**Potential Root Causes**:
+1. **Expired Twitter API Keys**: API keys may have been revoked or expired
+2. **Twitter App Suspension**: Twitter developer app may be suspended or restricted
+3. **OAuth Signature Issues**: Problems with OAuth 1.0a signature generation
+4. **Rate Limit Exceeded**: Previous API abuse may have triggered rate limiting
+5. **Permission Changes**: Twitter app permissions may have been modified
+
+**Next Steps**:
+1. **Immediate**: Verify Twitter API credentials and app status in Twitter Developer Console
+2. **Short-term**: Fix agent timing logic to prevent excessive API calls
+3. **Long-term**: Implement robust error handling and retry mechanisms
+
+**Status**: 🔴 **Critical** - Requires immediate investigation (scheduled for January 11, 2025)
+
+**Last Updated**: January 10, 2025, 4:37 PM UTC
+
 ### Performance Issues
 
 **Problem**: Agents running slowly or timing out
