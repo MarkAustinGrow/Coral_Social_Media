@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getSupabaseClient } from '@/lib/supabase'
+import { getSupabaseServerClient } from '@/lib/supabase'
 import { getUserTwitterCredentials } from '@/lib/twitter-credentials'
 
 // Interface for API usage data
@@ -61,15 +61,15 @@ const MONITORED_ENDPOINTS = [
 
 export async function GET(request: NextRequest) {
   try {
-    // Get user from session/auth
-    const supabase = await getSupabaseClient()
+    // Get user from session/auth using server-side client
+    const supabase = getSupabaseServerClient()
     if (!supabase) {
-      console.error('Failed to get Supabase client')
+      console.error('Failed to get Supabase server client')
       return NextResponse.json(
         { 
           success: false, 
           error: 'Database connection failed',
-          details: 'Unable to initialize Supabase client. Check database configuration.'
+          details: 'Unable to initialize Supabase server client. Check database configuration.'
         },
         { status: 500 }
       )

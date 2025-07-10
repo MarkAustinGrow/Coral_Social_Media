@@ -1,4 +1,5 @@
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
+import { createClientComponentClient, createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
+import { cookies } from 'next/headers'
 import { Database } from '@/types/database'
 
 // Environment validation for debugging
@@ -21,18 +22,29 @@ const validateSupabaseConfig = () => {
   console.log('Key length:', supabaseAnonKey.length)
 }
 
-// Validate config on import
+// Validate config on import (only in browser)
 if (typeof window !== 'undefined') {
   validateSupabaseConfig()
 }
 
-// Create a single client instance using the middleware-compatible approach
+// Client-side Supabase client (for components)
 const getSupabaseClient = () => createClientComponentClient<Database>()
 
-// Export the client getter for backward compatibility
-export { getSupabaseClient }
+// Server-side Supabase client (for API routes) - uses same session as middleware
+const getSupabaseServerClient = () => {
+  try {
+    const cookieStore = cookies()
+    return createRouteHandlerClient<Database>({ cookies: () => cookieStore })
+  } catch (error) {
+    console.error('❌ Failed to create server-side Supabase client:', error)
+    throw new Error('Failed to initialize server-side Supabase client')
+  }
+}
 
-// Export a default client instance for backward compatibility
+// Export both client getters
+export { getSupabaseClient, getSupabaseServerClient }
+
+// Export a default client instance for backward compatibility (client-side)
 export const supabase = getSupabaseClient()
 
 // Default export for existing imports
