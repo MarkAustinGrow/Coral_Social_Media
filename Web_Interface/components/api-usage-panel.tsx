@@ -42,20 +42,64 @@ export function ApiUsagePanel() {
       try {
         setIsLoading(true)
         setError(null)
+        setIsMockData(false)
+        setMockMessage(null)
         
         const response = await fetch('/api/twitter/rate-limits')
         const data = await response.json()
         
-        if (!data.success) {
-          throw new Error(data.error || 'Failed to fetch API usage data')
+        if (!response.ok || !data.success) {
+          // Create detailed error message from API response
+          let errorMessage = data.error || 'Failed to fetch API usage data'
+          
+          if (data.details) {
+            errorMessage += `: ${data.details}`
+          }
+          
+          // Add debug information if available
+          if (data.debug) {
+            console.error('API Debug Info:', data.debug)
+            
+            // Add specific debug details to error message for better troubleshooting
+            if (data.debug.userId) {
+              errorMessage += ` (User ID: ${data.debug.userId})`
+            }
+            
+            if (data.debug.credentialsFound === false) {
+              errorMessage += ' - No Twitter credentials found in database'
+            }
+            
+            if (data.debug.limitation) {
+              errorMessage += ` - Technical limitation: ${data.debug.limitation}`
+            }
+          }
+          
+          throw new Error(errorMessage)
         }
         
+        // This should not happen anymore since we removed mock data fallbacks
         setApiUsage(data.data || [])
         setIsMockData(data.isMock || false)
         setMockMessage(data.message || null)
+        
       } catch (err: any) {
         console.error('Error fetching API usage:', err)
-        setError(err.message || 'An error occurred while fetching API usage data')
+        
+        // Enhanced error handling with more specific messages
+        let errorMessage = err.message || 'An error occurred while fetching API usage data'
+        
+        // Handle specific HTTP status codes
+        if (err.message.includes('401') || err.message.includes('not authenticated')) {
+          errorMessage = 'Authentication failed. Please log out and log back in.'
+        } else if (err.message.includes('404') || err.message.includes('not configured')) {
+          errorMessage = 'Twitter credentials not configured. Please visit the Setup page to connect your Twitter account.'
+        } else if (err.message.includes('501') || err.message.includes('unavailable')) {
+          errorMessage = 'Twitter API usage data is not available with current credential format. This feature requires Twitter API v2 Bearer token access.'
+        } else if (err.message.includes('500') || err.message.includes('Database connection failed')) {
+          errorMessage = 'Server error. Please try again later or contact support if the problem persists.'
+        }
+        
+        setError(errorMessage)
       } finally {
         setIsLoading(false)
       }

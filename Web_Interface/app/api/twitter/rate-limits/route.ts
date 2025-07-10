@@ -64,77 +64,124 @@ export async function GET(request: NextRequest) {
     // Get user from session/auth
     const supabase = await getSupabaseClient()
     if (!supabase) {
-      return NextResponse.json({
-        success: true,
-        data: generateRealisticRateLimitData(),
-        isMock: true,
-        message: "Unable to connect to database. Using mock data."
-      })
+      console.error('Failed to get Supabase client')
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: 'Database connection failed',
+          details: 'Unable to initialize Supabase client. Check database configuration.'
+        },
+        { status: 500 }
+      )
     }
 
-    // Get user session
-    const { data: { session } } = await supabase.auth.getSession()
+    // Get user session with detailed error info
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+    
+    if (sessionError) {
+      console.error('Session error:', sessionError)
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: 'Authentication session error',
+          details: sessionError.message,
+          debug: sessionError
+        },
+        { status: 401 }
+      )
+    }
+    
     if (!session?.user) {
-      return NextResponse.json({
-        success: true,
-        data: generateRealisticRateLimitData(),
-        isMock: true,
-        message: "Please log in to view your Twitter API usage. Using mock data."
-      })
+      console.error('No user session found')
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: 'User not authenticated',
+          details: 'No valid user session found. Please log in again.',
+          debug: { 
+            hasSession: !!session,
+            hasUser: !!session?.user,
+            sessionData: session ? { 
+              expires_at: session.expires_at,
+              user_id: session.user?.id 
+            } : null
+          }
+        },
+        { status: 401 }
+      )
     }
 
-    // Get user's Twitter credentials
-    const credentials = await getUserTwitterCredentials(session.user.id)
+    console.log(`Checking Twitter credentials for user: ${session.user.id}`)
+
+    // Get user's Twitter credentials with detailed error handling
+    let credentials
+    try {
+      credentials = await getUserTwitterCredentials(session.user.id)
+    } catch (credError: any) {
+      console.error('Error fetching user credentials:', credError)
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: 'Failed to fetch Twitter credentials',
+          details: credError.message,
+          debug: { 
+            userId: session.user.id,
+            error: credError.message,
+            stack: credError.stack
+          }
+        },
+        { status: 500 }
+      )
+    }
+    
     if (!credentials) {
       console.log('User Twitter credentials not found in database')
-      
-      // Generate mock data
-      const mockData = generateRealisticRateLimitData()
-      
-      return NextResponse.json({
-        success: true,
-        data: mockData,
-        isMock: true,
-        message: "Twitter credentials not configured. Please visit the Setup page to connect your Twitter account."
-      })
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: 'Twitter credentials not configured',
+          details: 'No Twitter API credentials found for this user. Please visit the Setup page to connect your Twitter account.',
+          debug: { 
+            userId: session.user.id,
+            credentialsFound: false
+          }
+        },
+        { status: 404 }
+      )
     }
     
-    console.log('Found user Twitter credentials, attempting to connect to Twitter API')
+    console.log('Found user Twitter credentials, but Twitter API v2 usage endpoint requires Bearer token')
     
-    try {
-      // Create a bearer token from user credentials (if available)
-      // Note: Twitter API v2 usage endpoint requires Bearer token, but user credentials are OAuth 1.0a
-      // For now, we'll show mock data with a message about the limitation
-      const mockData = generateRealisticRateLimitData()
-      
-      return NextResponse.json({
-        success: true,
-        data: mockData,
-        isMock: true,
-        message: "Using your configured Twitter credentials. Real-time usage data requires Twitter API v2 Bearer token access."
-      })
-    } catch (twitterError: any) {
-      console.error('Error connecting to Twitter API:', twitterError)
-      
-      // Generate mock data as fallback
-      const mockData = generateRealisticRateLimitData()
-      
-      return NextResponse.json({
-        success: true,
-        data: mockData,
-        isMock: true,
-        message: `Error connecting to Twitter API: ${twitterError.message}. Using mock data.`,
-        debug: { error: twitterError.message, stack: twitterError.stack }
-      })
-    }
+    // Return error explaining the limitation instead of mock data
+    return NextResponse.json(
+      { 
+        success: false, 
+        error: 'Twitter API usage data unavailable',
+        details: 'Twitter API v2 usage endpoint requires Bearer token access, but user credentials are OAuth 1.0a format. Real-time usage data is not available with current credential format.',
+        debug: { 
+          userId: session.user.id,
+          hasCredentials: true,
+          credentialType: 'OAuth 1.0a',
+          requiredType: 'Bearer Token (OAuth 2.0)',
+          limitation: 'Twitter API v2 /usage endpoint only accepts Bearer tokens'
+        }
+      },
+      { status: 501 }
+    )
+    
   } catch (error: any) {
-    console.error('Error in Twitter rate limits API:', error)
+    console.error('Unexpected error in Twitter rate limits API:', error)
     
     return NextResponse.json(
       { 
         success: false, 
-        error: error.message || 'Failed to fetch Twitter rate limits',
-        debug: { stack: error.stack }
+        error: 'Internal server error',
+        details: error.message || 'An unexpected error occurred while fetching Twitter rate limits',
+        debug: { 
+          message: error.message,
+          stack: error.stack,
+          name: error.name
+        }
       },
       { status: 500 }
     )

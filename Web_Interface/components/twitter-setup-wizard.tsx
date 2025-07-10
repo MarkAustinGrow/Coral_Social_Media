@@ -64,18 +64,38 @@ export function TwitterSetupWizard() {
 
       try {
         setIsCheckingCredentials(true)
+        setError(null)
+        
         const response = await fetch('/api/user/twitter-credentials')
         const result = await response.json()
 
-        if (result.success && result.credentials) {
+        if (!response.ok || !result.success) {
+          // Handle specific error cases
+          if (response.status === 404 || result.error?.includes('not found')) {
+            // No credentials found - this is normal for new users, continue with setup
+            console.log('No existing credentials found, proceeding with setup')
+            return
+          } else if (response.status === 401 || result.error?.includes('not authenticated')) {
+            setError('Authentication failed. Please log out and log back in.')
+            return
+          } else {
+            // Other errors - show them to the user
+            const errorMessage = result.error || 'Failed to check existing credentials'
+            setError(`Error checking credentials: ${errorMessage}`)
+            return
+          }
+        }
+
+        if (result.credentials) {
           setHasExistingCredentials(true)
           setCredentials(result.credentials)
           // Skip to the complete step if credentials exist and are verified
           setCurrentStepIndex(4) // Complete step
           setSuccess("Twitter credentials already configured!")
         }
-      } catch (error) {
+      } catch (error: any) {
         console.error('Error checking existing credentials:', error)
+        setError(`Network error while checking credentials: ${error.message}`)
       } finally {
         setIsCheckingCredentials(false)
       }
