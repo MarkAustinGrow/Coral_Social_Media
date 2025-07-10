@@ -94,14 +94,14 @@ const userCoralServers: Record<string, { port: number, process: ChildProcess }> 
 // Map of agent names to their file paths
 // Ordered according to the workflow
 const agentFilePaths: Record<string, string> = {
-  'Tweet Scraping Agent': '2_langchain_tweet_scraping_agent_simple.py',
+  'Tweet Scraping Agent': '2_langchain_tweet_scraping_agent.py',
   'Hot Topic Agent': '3.5_langchain_hot_topic_agent_simple.py',
   'Tweet Research Agent': '3_langchain_tweet_research_agent_simple.py',
   'Blog Writing Agent': '4_langchain_blog_writing_agent.py',
   'Blog Critique Agent': '4_langchain_blog_critique_agent.py',
   'Blog to Tweet Agent': '5_langchain_blog_to_tweet_agent.py',
-  'Twitter Posting Agent': '7_langchain_twitter_posting_agent_v3.py',
-  'X Reply Agent': '6_langchain_x_reply_agent_simple.py'
+  'Twitter Posting Agent': '7_langchain_twitter_posting_agent.py',
+  'X Reply Agent': '6_langchain_x_reply_agent.py'
 };
 
 /**
