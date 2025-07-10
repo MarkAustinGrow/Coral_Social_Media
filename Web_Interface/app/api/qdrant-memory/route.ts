@@ -1,5 +1,8 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { loadEnvFromRoot, getRootEnv } from "@/lib/env-loader"
+import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
+import { cookies } from 'next/headers'
+import { Database } from '@/types/database'
 
 // Sample data for when Qdrant is not available
 const SAMPLE_MEMORIES = [
@@ -70,9 +73,28 @@ const COLLECTION_NAME = "working_knowledge"
 
 export async function GET(req: NextRequest) {
   try {
+    // Get the current user from Supabase
+    const supabase = createRouteHandlerClient<Database>({ cookies })
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+    
+    if (sessionError || !session?.user) {
+      console.error('Authentication error:', sessionError || 'No session found')
+      return NextResponse.json(
+        { success: false, error: 'Authentication required' },
+        { status: 401 }
+      )
+    }
+    
+    const userId = session.user.id
+    console.log(`User authenticated: ${userId}`)
+    
+    // Use user-specific collection name
+    const userCollectionName = `working_knowledge_${userId}`
+    console.log(`Using user-specific collection: ${userCollectionName}`)
+    
     // First, check if the collection exists
     try {
-      const collectionUrl = `${QDRANT_URL}/collections/${COLLECTION_NAME}`
+      const collectionUrl = `${QDRANT_URL}/collections/${userCollectionName}`
       const headers: HeadersInit = {
         'Content-Type': 'application/json',
       }
@@ -87,7 +109,7 @@ export async function GET(req: NextRequest) {
       })
       
       if (!collectionResponse.ok) {
-      console.error(`Collection ${COLLECTION_NAME} not found or not accessible`)
+      console.error(`Collection ${userCollectionName} not found or not accessible`)
       // Return sample data instead of empty results
       return NextResponse.json({
         success: true,
@@ -95,7 +117,7 @@ export async function GET(req: NextRequest) {
         total: SAMPLE_MEMORIES.length,
         query_time_ms: 0,
         next_page_offset: null,
-        message: `Collection ${COLLECTION_NAME} not found or not accessible. Showing sample data.`
+        message: `Collection ${userCollectionName} not found or not accessible. Showing sample data.`
       })
       }
     } catch (error) {
@@ -172,11 +194,11 @@ export async function GET(req: NextRequest) {
       offset: offset ? offset : null
     }
     
-    console.log(`Connecting to Qdrant at ${QDRANT_URL}, collection: ${COLLECTION_NAME}`)
+    console.log(`Connecting to Qdrant at ${QDRANT_URL}, collection: ${userCollectionName}`)
     console.log(`Using scroll API to get memories`)
     
     // Call Qdrant API - use scroll API which doesn't require a vector
-    const scrollUrl = `${QDRANT_URL}/collections/${COLLECTION_NAME}/points/scroll`
+    const scrollUrl = `${QDRANT_URL}/collections/${userCollectionName}/points/scroll`
     const headers: HeadersInit = {
       'Content-Type': 'application/json',
     }
@@ -342,6 +364,25 @@ export async function GET(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   try {
+    // Get the current user from Supabase
+    const supabase = createRouteHandlerClient<Database>({ cookies })
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+    
+    if (sessionError || !session?.user) {
+      console.error('Authentication error:', sessionError || 'No session found')
+      return NextResponse.json(
+        { success: false, error: 'Authentication required' },
+        { status: 401 }
+      )
+    }
+    
+    const userId = session.user.id
+    console.log(`User authenticated: ${userId}`)
+    
+    // Use user-specific collection name
+    const userCollectionName = `working_knowledge_${userId}`
+    console.log(`Using user-specific collection: ${userCollectionName}`)
+    
     const { point_id } = await req.json()
     
     if (!point_id) {
@@ -352,7 +393,7 @@ export async function DELETE(req: NextRequest) {
     }
     
     // Call Qdrant API to delete the point
-    const deleteUrl = `${QDRANT_URL}/collections/${COLLECTION_NAME}/points/delete`
+    const deleteUrl = `${QDRANT_URL}/collections/${userCollectionName}/points/delete`
     const headers: HeadersInit = {
       'Content-Type': 'application/json',
     }

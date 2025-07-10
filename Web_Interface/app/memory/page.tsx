@@ -12,8 +12,8 @@ export default function MemoryPage() {
   return (
     <DashboardShell>
       <DashboardHeader
-        heading="Research Memory Viewer"
-        text="Search and manage knowledge collected by the Tweet Research Agent."
+        heading="Your Research Memory"
+        text="Search and manage knowledge collected by your Tweet Research Agent."
       />
       <div className="space-y-4">
         <MemoryDashboard />

@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { useUser } from "@/hooks/use-user"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -28,6 +29,7 @@ import type { DateRange } from "react-day-picker"
 
 export function MemoryDashboard() {
   const { toast } = useToast()
+  const { user } = useUser()
   const [query, setQuery] = useState("")
   const [filters, setFilters] = useState<MemoryFilters>({
     topic: "all",
@@ -260,6 +262,25 @@ export function MemoryDashboard() {
           </div>
         </CardContent>
       </Card>
+
+      {/* User Information */}
+      {user && (
+        <Card className="bg-muted/50">
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-medium">Your Research Memory</h3>
+                <p className="text-sm text-muted-foreground">
+                  Viewing memories for {user.email}
+                </p>
+              </div>
+              <Badge variant="outline" className="px-3 py-1">
+                User-Specific Collection
+              </Badge>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Results */}
       <Card>
