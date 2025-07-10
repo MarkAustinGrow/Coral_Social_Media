@@ -1,6 +1,6 @@
 "use client"
 
-import { SetupWizard } from "@/components/setup-wizard"
+import { TwitterSetupWizard } from "@/components/twitter-setup-wizard"
 
 export default function SetupPage() {
   
@@ -9,13 +9,13 @@ export default function SetupPage() {
       <div className="mx-auto flex w-full max-w-4xl flex-col justify-center space-y-6 p-4 md:p-8">
         <div className="flex flex-col space-y-2 text-center mb-8">
           <h1 className="text-3xl font-semibold tracking-tight">
-            Welcome to Social Media Agent System
+            Connect Your Twitter Account
           </h1>
           <p className="text-muted-foreground">
-            Let&apos;s set up your system in a few simple steps
+            Set up your Twitter integration to start using 8 Interns
           </p>
         </div>
-        <SetupWizard />
+        <TwitterSetupWizard />
       </div>
     </div>
   )
