@@ -49,7 +49,16 @@ export function ApiUsagePanel() {
         const data = await response.json()
         
         if (!response.ok || !data.success) {
-          // Create detailed error message from API response
+          // Handle 501 (Not Implemented) as a permanent limitation, not a temporary error
+          if (response.status === 501 || data.error?.includes('unavailable') || data.error?.includes('not available')) {
+            // This is a permanent limitation due to credential format
+            // Don't treat as an error that should trigger retries
+            setApiUsage([])
+            setError(`Twitter API usage data is not available with current credential format. ${data.details || 'This feature requires Twitter API v2 Bearer token access.'}`)
+            return // Exit without throwing error to prevent retry loop
+          }
+          
+          // Create detailed error message from API response for other errors
           let errorMessage = data.error || 'Failed to fetch API usage data'
           
           if (data.details) {
