@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useUser } from "@/hooks/use-user"
+import { useAuth } from "@/contexts/AuthContext"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -29,7 +29,7 @@ import type { DateRange } from "react-day-picker"
 
 export function MemoryDashboard() {
   const { toast } = useToast()
-  const { user } = useUser()
+  const { user } = useAuth()
   const [query, setQuery] = useState("")
   const [filters, setFilters] = useState<MemoryFilters>({
     topic: "all",
