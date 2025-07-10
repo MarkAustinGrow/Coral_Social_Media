@@ -1877,6 +1877,38 @@ If you encounter issues not covered in this troubleshooting guide:
 - **Supabase Integration**: Full integration with Supabase Auth and database
 - **API Security**: All API endpoints secured with user authentication
 
+### 🔧 Recent Critical Fixes (July 2025)
+
+#### Authentication System Fixes
+- **Session Synchronization Issue**: Fixed critical issue where middleware and API routes were using different Supabase client instances
+  - **Problem**: Users appeared authenticated in middleware but API routes returned 401 errors
+  - **Solution**: Updated all API routes to use `createRouteHandlerClient` for consistent session handling
+  - **Result**: Perfect session synchronization across all components
+
+- **Build Process Fix**: Resolved Next.js build errors related to server-only imports in client components
+  - **Problem**: `next/headers` import causing build failures in AuthContext
+  - **Solution**: Moved cookies import inside server function using dynamic require()
+  - **Result**: Successful builds with proper client/server component separation
+
+- **Infinite Loop Prevention**: Fixed browser performance issue with API usage panel
+  - **Problem**: Frontend making hundreds of requests per second for 501 errors
+  - **Solution**: Handle 501 responses as permanent limitations, not temporary errors
+  - **Result**: No more browser spam, clear user messaging about limitations
+
+#### Twitter API Rate Limits Enhancement
+- **OAuth 1.0a Support**: Restored Twitter rate limits functionality using Twitter API v1.1
+  - **Problem**: Migration to database storage broke existing rate limits functionality
+  - **Solution**: Implemented OAuth 1.0a authentication for Twitter API v1.1 rate_limit_status endpoint
+  - **Result**: Real-time rate limit monitoring working with existing OAuth 1.0a credentials
+  - **Note**: Bearer Token support identified as future enhancement for Twitter API v2 usage endpoint
+
+#### User Twitter Credentials System
+- **Database Storage**: Successfully migrated Twitter credentials from .env file to database
+  - **Implementation**: Per-user credential storage in `user_twitter_credentials` table
+  - **Security**: Row Level Security (RLS) ensures users only access their own credentials
+  - **API Integration**: All agents now retrieve user-specific credentials from database
+  - **Setup Wizard**: Enhanced to save credentials to database instead of .env file
+
 ### 📋 Future Enhancements
 
 Planned enhancements for the system include:

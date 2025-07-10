@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseServerClient } from '@/lib/supabase'
 import { getUserTwitterCredentials } from '@/lib/twitter-credentials'
+import crypto from 'crypto'
 
 // Interface for API usage data
 interface ApiUsageData {
@@ -25,37 +26,37 @@ interface RateLimitResponse {
   debug?: any
 }
 
-// Endpoints we're interested in monitoring
+// Endpoints we're interested in monitoring (Twitter API v1.1 format)
 const MONITORED_ENDPOINTS = [
   { 
-    path: '/2/tweets/search/recent', 
-    method: 'GET',
-    description: 'Search for recent tweets'
-  },
-  { 
-    path: '/2/tweets', 
+    path: '/statuses/update', 
     method: 'POST',
     description: 'Create tweets'
   },
   { 
-    path: '/2/users/by/username', 
+    path: '/search/tweets', 
+    method: 'GET',
+    description: 'Search for tweets'
+  },
+  { 
+    path: '/users/show', 
     method: 'GET',
     description: 'Get user information'
   },
   { 
-    path: '/2/tweets/:id', 
-    method: 'GET',
-    description: 'Get tweet details'
-  },
-  { 
-    path: '/2/users/:id/tweets', 
+    path: '/statuses/user_timeline', 
     method: 'GET',
     description: 'Get user tweets'
   },
   { 
-    path: '/2/tweets/:id/retweets', 
+    path: '/statuses/retweet', 
     method: 'POST',
     description: 'Retweet functionality'
+  },
+  { 
+    path: '/statuses/mentions_timeline', 
+    method: 'GET',
+    description: 'Get mentions'
   }
 ]
 
@@ -150,24 +151,39 @@ export async function GET(request: NextRequest) {
       )
     }
     
-    console.log('Found user Twitter credentials, but Twitter API v2 usage endpoint requires Bearer token')
+    console.log('Found user Twitter credentials, fetching rate limit data with OAuth 1.0a')
     
-    // Return error explaining the limitation instead of mock data
-    return NextResponse.json(
-      { 
-        success: false, 
-        error: 'Twitter API usage data unavailable',
-        details: 'Twitter API v2 usage endpoint requires Bearer token access, but user credentials are OAuth 1.0a format. Real-time usage data is not available with current credential format.',
-        debug: { 
+    // Get Twitter rate limit data using OAuth 1.0a credentials
+    try {
+      const rateLimitData = await getTwitterRateLimitData(credentials)
+      
+      return NextResponse.json({
+        success: true,
+        data: rateLimitData,
+        debug: {
           userId: session.user.id,
           hasCredentials: true,
           credentialType: 'OAuth 1.0a',
-          requiredType: 'Bearer Token (OAuth 2.0)',
-          limitation: 'Twitter API v2 /usage endpoint only accepts Bearer tokens'
+          endpointsMonitored: MONITORED_ENDPOINTS.length
         }
-      },
-      { status: 501 }
-    )
+      })
+    } catch (apiError: any) {
+      console.error('Twitter API error:', apiError)
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: 'Failed to fetch Twitter rate limit data',
+          details: apiError.message,
+          debug: { 
+            userId: session.user.id,
+            hasCredentials: true,
+            credentialType: 'OAuth 1.0a',
+            apiError: apiError.message
+          }
+        },
+        { status: 500 }
+      )
+    }
     
   } catch (error: any) {
     console.error('Unexpected error in Twitter rate limits API:', error)
@@ -188,16 +204,18 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// Function to get Twitter usage data from the API
-async function getTwitterUsageData(bearerToken: string) {
-  // Request all available usage fields for the last 7 days
-  const url = 'https://api.twitter.com/2/usage/tweets?usage.fields=cap_reset_day,daily_client_app_usage,daily_project_usage,project_cap,project_id,project_usage&days=7';
+// Function to get Twitter rate limit data using OAuth 1.0a credentials
+async function getTwitterRateLimitData(credentials: any): Promise<ApiUsageData[]> {
+  const url = 'https://api.twitter.com/1.1/application/rate_limit_status.json';
   
-  console.log('Fetching Twitter usage data from:', url);
+  console.log('Fetching Twitter rate limit data from:', url);
+  
+  // Generate OAuth 1.0a signature
+  const oauthParams = generateOAuthParams(credentials, 'GET', url);
   
   const response = await fetch(url, {
     headers: {
-      'Authorization': `Bearer ${bearerToken}`
+      'Authorization': oauthParams
     }
   });
   
@@ -208,9 +226,117 @@ async function getTwitterUsageData(bearerToken: string) {
   }
   
   const data = await response.json();
-  console.log('Twitter API response:', JSON.stringify(data, null, 2));
+  console.log('Twitter API response received');
   
-  return data;
+  return formatRateLimitData(data);
+}
+
+// Function to generate OAuth 1.0a authorization header
+function generateOAuthParams(credentials: any, method: string, url: string): string {
+  const timestamp = Math.floor(Date.now() / 1000).toString();
+  const nonce = crypto.randomBytes(16).toString('hex');
+  
+  const oauthParams = {
+    oauth_consumer_key: credentials.api_key,
+    oauth_nonce: nonce,
+    oauth_signature_method: 'HMAC-SHA1',
+    oauth_timestamp: timestamp,
+    oauth_token: credentials.access_token,
+    oauth_version: '1.0'
+  };
+  
+  // Create parameter string
+  const paramString = Object.keys(oauthParams)
+    .sort()
+    .map(key => `${encodeURIComponent(key)}=${encodeURIComponent(oauthParams[key as keyof typeof oauthParams])}`)
+    .join('&');
+  
+  // Create signature base string
+  const signatureBaseString = `${method}&${encodeURIComponent(url)}&${encodeURIComponent(paramString)}`;
+  
+  // Create signing key
+  const signingKey = `${encodeURIComponent(credentials.api_secret)}&${encodeURIComponent(credentials.access_token_secret)}`;
+  
+  // Generate signature
+  const signature = crypto.createHmac('sha1', signingKey).update(signatureBaseString).digest('base64');
+  
+  // Create authorization header
+  const authParams = {
+    ...oauthParams,
+    oauth_signature: signature
+  };
+  
+  const authHeader = 'OAuth ' + Object.keys(authParams)
+    .sort()
+    .map(key => `${encodeURIComponent(key)}="${encodeURIComponent(authParams[key as keyof typeof authParams])}"`)
+    .join(', ');
+  
+  return authHeader;
+}
+
+// Function to format Twitter v1.1 rate limit data for our frontend
+function formatRateLimitData(rateLimitData: any): ApiUsageData[] {
+  const result: ApiUsageData[] = [];
+  
+  try {
+    const resources = rateLimitData.resources;
+    
+    // Process each monitored endpoint
+    for (const endpoint of MONITORED_ENDPOINTS) {
+      let rateLimitInfo = null;
+      
+      // Map our endpoint paths to Twitter's rate limit structure
+      switch (endpoint.path) {
+        case '/statuses/update':
+          rateLimitInfo = resources.statuses?.['/statuses/update'];
+          break;
+        case '/search/tweets':
+          rateLimitInfo = resources.search?.['/search/tweets'];
+          break;
+        case '/users/show':
+          rateLimitInfo = resources.users?.['/users/show/:id'];
+          break;
+        case '/statuses/user_timeline':
+          rateLimitInfo = resources.statuses?.['/statuses/user_timeline'];
+          break;
+        case '/statuses/retweet':
+          rateLimitInfo = resources.statuses?.['/statuses/retweet/:id'];
+          break;
+        case '/statuses/mentions_timeline':
+          rateLimitInfo = resources.statuses?.['/statuses/mentions_timeline'];
+          break;
+      }
+      
+      if (rateLimitInfo) {
+        const resetTime = new Date(rateLimitInfo.reset * 1000).toISOString();
+        const requestsMade = rateLimitInfo.limit - rateLimitInfo.remaining;
+        
+        result.push({
+          endpoint: `${endpoint.method} ${endpoint.path}`,
+          requestsMade: requestsMade,
+          quota: rateLimitInfo.limit,
+          resetTime: resetTime,
+          description: endpoint.description
+        });
+      }
+    }
+    
+    // Add informational card
+    result.push({
+      endpoint: 'API Rate Limit Information',
+      requestsMade: 0,
+      quota: 100,
+      resetTime: new Date(Date.now() + 15 * 60 * 1000).toISOString(), // 15 minutes from now
+      description: 'Twitter API Rate Limit Information',
+      note: 'Real-time rate limit data from Twitter API v1.1. Rate limits reset every 15 minutes for most endpoints.',
+      isInformational: true
+    });
+    
+    return result;
+  } catch (error) {
+    console.error('Error formatting rate limit data:', error);
+    throw new Error('Failed to format rate limit data');
+  }
 }
 
 // Function to format Twitter usage data for our frontend
