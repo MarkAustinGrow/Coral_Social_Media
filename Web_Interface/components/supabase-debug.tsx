@@ -4,7 +4,7 @@ import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { AlertCircle, CheckCircle2 } from "lucide-react"
+import { AlertCircle, CheckCircle2, User } from "lucide-react"
 
 export function SupabaseDebug() {
   const [result, setResult] = useState<any>(null)
@@ -37,7 +37,7 @@ export function SupabaseDebug() {
       <CardHeader>
         <CardTitle>Supabase Connection Debug</CardTitle>
         <CardDescription>
-          Test the connection to your Supabase database and check the x_accounts table.
+          Test the connection to your Supabase database and view your Twitter accounts.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -57,8 +57,19 @@ export function SupabaseDebug() {
               <AlertDescription>{result.message}</AlertDescription>
             </Alert>
             
+            {/* User Information */}
+            {result.user && (
+              <div className="p-3 bg-blue-50 rounded-md flex items-center space-x-2 border border-blue-200">
+                <User className="h-4 w-4 text-blue-500" />
+                <div className="text-sm">
+                  <span className="font-medium">Current User:</span> {result.user.email}
+                  <span className="text-xs text-muted-foreground ml-2">({result.user.id})</span>
+                </div>
+              </div>
+            )}
+            
             <div className="space-y-2">
-              <h3 className="text-sm font-medium">Account Count: {result.accountCount}</h3>
+              <h3 className="text-sm font-medium">Your Twitter Accounts: {result.accountCount || 0}</h3>
               
               {result.accounts && result.accounts.length > 0 ? (
                 <div className="border rounded-md overflow-hidden">
@@ -84,7 +95,10 @@ export function SupabaseDebug() {
                   </table>
                 </div>
               ) : (
-                <p className="text-sm text-muted-foreground">No accounts found in the database.</p>
+                <p className="text-sm text-muted-foreground">
+                  You don't have any Twitter accounts configured yet. 
+                  Visit the <a href="/accounts" className="text-blue-600 hover:underline">Accounts page</a> to add some.
+                </p>
               )}
             </div>
           </div>

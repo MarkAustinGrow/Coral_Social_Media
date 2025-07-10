@@ -6,29 +6,58 @@ import { SupabaseDebug } from "@/components/supabase-debug"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
-import { Database, Activity, BarChart4 } from "lucide-react"
+import { Database, Activity, BarChart4, User } from "lucide-react"
+import { useEffect, useState } from "react"
+import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
 
 export default function DebugPage() {
+  const [user, setUser] = useState<any>(null)
+  
+  useEffect(() => {
+    const fetchUser = async () => {
+      const supabase = createClientComponentClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session?.user) {
+        setUser(session.user)
+      }
+    }
+    
+    fetchUser()
+  }, [])
+  
   return (
     <DashboardShell>
       <DashboardHeader 
         heading="Debug Tools" 
-        text="Tools for debugging the application."
+        text={user ? `Tools for debugging your account and application.` : "Tools for debugging the application."}
       />
+      
+      {user && (
+        <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-md flex items-start gap-3">
+          <User className="h-5 w-5 text-blue-500 mt-0.5" />
+          <div>
+            <h3 className="font-medium text-blue-800">User-Specific Debug Mode</h3>
+            <p className="text-sm text-blue-700">
+              You are viewing debug tools as <strong>{user.email}</strong>. 
+              All data shown is specific to your account.
+            </p>
+          </div>
+        </div>
+      )}
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center">
               <Database className="mr-2 h-5 w-5" />
-              Database Debug
+              Your Database Connection
             </CardTitle>
             <CardDescription>
-              Test Supabase connection and view database data
+              Test Supabase connection and view your Twitter accounts
             </CardDescription>
           </CardHeader>
           <CardContent>
             <p className="text-sm text-muted-foreground">
-              Check if the Supabase connection is working properly and view account data.
+              Check if your Supabase connection is working properly and view your Twitter accounts.
             </p>
           </CardContent>
           <CardFooter>
@@ -42,15 +71,15 @@ export default function DebugPage() {
           <CardHeader>
             <CardTitle className="flex items-center">
               <Activity className="mr-2 h-5 w-5" />
-              Agent Status Debug
+              Your Agent Status
             </CardTitle>
             <CardDescription>
-              Initialize and test agent status functionality
+              Initialize and test your agent status functionality
             </CardDescription>
           </CardHeader>
           <CardContent>
             <p className="text-sm text-muted-foreground">
-              Update agent names, set random statuses, and test agent status functionality.
+              Update your agent names, set random statuses, and test your agent status functionality.
             </p>
           </CardContent>
           <CardFooter>
@@ -64,15 +93,15 @@ export default function DebugPage() {
           <CardHeader>
             <CardTitle className="flex items-center">
               <BarChart4 className="mr-2 h-5 w-5" />
-              Logs Debug
+              Your Activity Logs
             </CardTitle>
             <CardDescription>
-              Add sample logs and test log functionality
+              View and manage your system logs
             </CardDescription>
           </CardHeader>
           <CardContent>
             <p className="text-sm text-muted-foreground">
-              Generate sample logs, clear logs, and test the log viewer functionality.
+              Generate sample logs, clear your logs, and test the log viewer functionality for your account.
             </p>
           </CardContent>
           <CardFooter>

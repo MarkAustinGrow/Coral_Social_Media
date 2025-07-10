@@ -1,9 +1,34 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs";
+import { cookies } from "next/headers";
 import { loadEnvFromRoot } from "@/lib/env-loader";
+import type { Database } from "@/types/database";
 
 export async function GET() {
   try {
+    // Get authenticated user from session
+    const supabase = createRouteHandlerClient<Database>({ cookies });
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    
+    if (sessionError) {
+      console.error("Session error:", sessionError);
+      return NextResponse.json(
+        { error: "Authentication error", details: sessionError.message },
+        { status: 401 }
+      );
+    }
+    
+    if (!session?.user) {
+      console.error("No authenticated user found");
+      return NextResponse.json(
+        { error: "Not authenticated", details: "Please log in to access this resource" },
+        { status: 401 }
+      );
+    }
+    
+    const userId = session.user.id;
+    const userEmail = session.user.email;
+    
     // Load environment variables
     const env = loadEnvFromRoot();
     
@@ -11,23 +36,11 @@ export async function GET() {
     console.log("SUPABASE_URL:", env.SUPABASE_URL ? "Defined" : "Undefined");
     console.log("SUPABASE_KEY:", env.SUPABASE_KEY ? "Defined" : "Undefined");
     
-    // Initialize Supabase client
-    const supabaseUrl = env.SUPABASE_URL;
-    const supabaseKey = env.SUPABASE_KEY;
-    
-    if (!supabaseUrl || !supabaseKey) {
-      return NextResponse.json(
-        { error: "Supabase credentials not configured" },
-        { status: 500 }
-      );
-    }
-    
-    const supabase = createClient(supabaseUrl, supabaseKey);
-    
-    // Test connection by fetching x_accounts table
+    // Test connection by fetching user-specific x_accounts
     const { data, error, count } = await supabase
       .from("x_accounts")
-      .select("*", { count: "exact" });
+      .select("*", { count: "exact" })
+      .eq("user_id", userId);
     
     if (error) {
       console.error("Error fetching accounts:", error);
@@ -37,11 +50,15 @@ export async function GET() {
       );
     }
     
-    // Return the result
+    // Return the result with user information
     return NextResponse.json({
       message: "Supabase connection successful",
       accountCount: count,
       accounts: data,
+      user: {
+        id: userId,
+        email: userEmail
+      }
     });
     
   } catch (error: any) {
@@ -52,3 +69,6 @@ export async function GET() {
     );
   }
 }
+
+// Make this route dynamic to ensure we always get fresh data
+export const dynamic = 'force-dynamic';
