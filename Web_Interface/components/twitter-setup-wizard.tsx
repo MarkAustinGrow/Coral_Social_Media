@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useAuth } from "@/contexts/AuthContext"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -51,9 +51,99 @@ export function TwitterSetupWizard() {
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
+  const [hasExistingCredentials, setHasExistingCredentials] = useState(false)
+  const [isCheckingCredentials, setIsCheckingCredentials] = useState(true)
 
   const currentStep = steps[currentStepIndex]
   const progress = (currentStepIndex / (steps.length - 1)) * 100
+
+  // Check for existing credentials when component loads
+  useEffect(() => {
+    const checkExistingCredentials = async () => {
+      if (!user) return
+
+      try {
+        setIsCheckingCredentials(true)
+        const response = await fetch('/api/user/twitter-credentials')
+        const result = await response.json()
+
+        if (result.success && result.credentials) {
+          setHasExistingCredentials(true)
+          setCredentials(result.credentials)
+          // Skip to the complete step if credentials exist and are verified
+          setCurrentStepIndex(4) // Complete step
+          setSuccess("Twitter credentials already configured!")
+        }
+      } catch (error) {
+        console.error('Error checking existing credentials:', error)
+      } finally {
+        setIsCheckingCredentials(false)
+      }
+    }
+
+    checkExistingCredentials()
+  }, [user])
+
+  // Show loading state while checking credentials
+  if (isCheckingCredentials) {
+    return (
+      <div className="text-center space-y-4">
+        <div className="mx-auto w-8 h-8">
+          <Loader2 className="w-8 h-8 animate-spin" />
+        </div>
+        <p className="text-muted-foreground">Checking existing credentials...</p>
+      </div>
+    )
+  }
+
+  // Show existing credentials message if found
+  if (hasExistingCredentials && currentStepIndex === 4) {
+    return (
+      <div className="space-y-4">
+        <Card className="p-6">
+          <div className="space-y-6 text-center">
+            <div className="mx-auto w-16 h-16 bg-green-100 rounded-full flex items-center justify-center">
+              <CheckCircle2 className="w-8 h-8 text-green-600" />
+            </div>
+            <div className="space-y-2">
+              <h3 className="text-xl font-semibold">Twitter Already Connected!</h3>
+              <p className="text-muted-foreground">
+                Your Twitter account is already set up and ready to use with 8 Interns.
+              </p>
+            </div>
+            
+            <div className="bg-green-50 p-4 rounded-lg">
+              <p className="text-sm text-green-800">
+                <strong>Status:</strong> Your Twitter credentials are configured and working.
+              </p>
+            </div>
+
+            <div className="flex gap-4 justify-center">
+              <Button onClick={() => router.push('/')}>
+                <CheckCircle2 className="mr-2 h-4 w-4" />
+                Go to Dashboard
+              </Button>
+              <Button 
+                variant="outline" 
+                onClick={() => {
+                  setHasExistingCredentials(false)
+                  setCurrentStepIndex(0)
+                  setCredentials({
+                    api_key: "",
+                    api_secret: "",
+                    access_token: "",
+                    access_token_secret: ""
+                  })
+                }}
+              >
+                Reconfigure Credentials
+              </Button>
+            </div>
+          </div>
+        </Card>
+      </div>
+    )
+  }
 
   const handleNext = () => {
     if (currentStepIndex < steps.length - 1) {

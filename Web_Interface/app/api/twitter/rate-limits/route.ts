@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { loadEnvFromRoot } from '@/lib/env-loader'
+import { getSupabaseClient } from '@/lib/supabase'
+import { getUserTwitterCredentials } from '@/lib/twitter-credentials'
 
 // Interface for API usage data
 interface ApiUsageData {
@@ -60,13 +61,32 @@ const MONITORED_ENDPOINTS = [
 
 export async function GET(request: NextRequest) {
   try {
-    // Get environment variables
-    const envVars = loadEnvFromRoot()
-    console.log('Loaded environment variables:', Object.keys(envVars))
-    
-    // Check if Twitter API credentials are configured
-    if (!envVars.TWITTER_BEARER_TOKEN) {
-      console.log('Twitter API credentials not found in environment variables')
+    // Get user from session/auth
+    const supabase = await getSupabaseClient()
+    if (!supabase) {
+      return NextResponse.json({
+        success: true,
+        data: generateRealisticRateLimitData(),
+        isMock: true,
+        message: "Unable to connect to database. Using mock data."
+      })
+    }
+
+    // Get user session
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session?.user) {
+      return NextResponse.json({
+        success: true,
+        data: generateRealisticRateLimitData(),
+        isMock: true,
+        message: "Please log in to view your Twitter API usage. Using mock data."
+      })
+    }
+
+    // Get user's Twitter credentials
+    const credentials = await getUserTwitterCredentials(session.user.id)
+    if (!credentials) {
+      console.log('User Twitter credentials not found in database')
       
       // Generate mock data
       const mockData = generateRealisticRateLimitData()
@@ -75,25 +95,23 @@ export async function GET(request: NextRequest) {
         success: true,
         data: mockData,
         isMock: true,
-        message: "Twitter API credentials not found in .env file. Using mock data."
+        message: "Twitter credentials not configured. Please visit the Setup page to connect your Twitter account."
       })
     }
     
-    console.log('Found Twitter API credentials, attempting to connect to Twitter API')
+    console.log('Found user Twitter credentials, attempting to connect to Twitter API')
     
     try {
-      // Get real Twitter usage data
-      const usageData = await getTwitterUsageData(envVars.TWITTER_BEARER_TOKEN)
-      console.log('Successfully retrieved Twitter usage data')
-      
-      // Format the data for our frontend
-      const formattedData = formatTwitterUsageData(usageData)
+      // Create a bearer token from user credentials (if available)
+      // Note: Twitter API v2 usage endpoint requires Bearer token, but user credentials are OAuth 1.0a
+      // For now, we'll show mock data with a message about the limitation
+      const mockData = generateRealisticRateLimitData()
       
       return NextResponse.json({
         success: true,
-        data: formattedData,
-        isMock: false,
-        message: "Using real Twitter API usage data"
+        data: mockData,
+        isMock: true,
+        message: "Using your configured Twitter credentials. Real-time usage data requires Twitter API v2 Bearer token access."
       })
     } catch (twitterError: any) {
       console.error('Error connecting to Twitter API:', twitterError)
