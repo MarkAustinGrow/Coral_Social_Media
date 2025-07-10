@@ -151,7 +151,7 @@ export async function GET(request: NextRequest) {
       )
     }
     
-    console.log('Found user Twitter credentials, fetching rate limit data with OAuth 1.0a')
+    console.log('Found user Twitter credentials, using OAuth 1.0a for Twitter API v1.1 rate limits')
     
     // Get Twitter rate limit data using OAuth 1.0a credentials
     try {
@@ -210,25 +210,30 @@ async function getTwitterRateLimitData(credentials: any): Promise<ApiUsageData[]
   
   console.log('Fetching Twitter rate limit data from:', url);
   
-  // Generate OAuth 1.0a signature
-  const oauthParams = generateOAuthParams(credentials, 'GET', url);
-  
-  const response = await fetch(url, {
-    headers: {
-      'Authorization': oauthParams
+  try {
+    // Generate OAuth 1.0a signature
+    const oauthParams = generateOAuthParams(credentials, 'GET', url);
+    
+    const response = await fetch(url, {
+      headers: {
+        'Authorization': oauthParams
+      }
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Twitter API error:', errorText);
+      throw new Error(`Twitter API returned ${response.status}: ${errorText}`);
     }
-  });
-  
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error('Twitter API error:', errorText);
-    throw new Error(`Twitter API returned ${response.status}: ${errorText}`);
+    
+    const data = await response.json();
+    console.log('Twitter API v1.1 rate limit data received successfully');
+    
+    return formatRateLimitData(data);
+  } catch (error: any) {
+    console.error('Error fetching Twitter rate limit data:', error.message);
+    throw new Error(`Failed to fetch Twitter rate limits: ${error.message}`);
   }
-  
-  const data = await response.json();
-  console.log('Twitter API response received');
-  
-  return formatRateLimitData(data);
 }
 
 // Function to generate OAuth 1.0a authorization header
@@ -318,6 +323,8 @@ function formatRateLimitData(rateLimitData: any): ApiUsageData[] {
           resetTime: resetTime,
           description: endpoint.description
         });
+      } else {
+        console.log(`Rate limit info not found for endpoint: ${endpoint.path}`);
       }
     }
     
@@ -332,106 +339,20 @@ function formatRateLimitData(rateLimitData: any): ApiUsageData[] {
       isInformational: true
     });
     
-    return result;
-  } catch (error) {
-    console.error('Error formatting rate limit data:', error);
-    throw new Error('Failed to format rate limit data');
-  }
-}
-
-// Function to format Twitter usage data for our frontend
-function formatTwitterUsageData(usageData: any) {
-  const result = [];
-  
-  try {
-    // Extract the data from the response
-    const { 
-      cap_reset_day, 
-      project_cap, 
-      project_usage, 
-      daily_project_usage, 
-      daily_client_app_usage 
-    } = usageData.data;
-    
-    // Calculate days until cap reset
-    const today = new Date().getDate();
-    const daysUntilReset = (cap_reset_day - today + 30) % 30; // Handle month boundaries
-    const resetDate = new Date();
-    resetDate.setDate(resetDate.getDate() + daysUntilReset);
-    
-    // Calculate hours and minutes until reset
-    const hoursUntilReset = daysUntilReset * 24;
-    
-    // Add overall project usage
-    result.push({
-      endpoint: 'POST /2/tweets',
-      requestsMade: project_usage || 0,
-      quota: project_cap || 1000, // Default to 1000 if not provided
-      resetTime: resetDate.toISOString(),
-      description: 'Tweet creation (overall project usage)',
-      dailyUsage: daily_project_usage?.usage || []
-    });
-    
-    // Add client app usage if available
-    if (daily_client_app_usage && daily_client_app_usage.length > 0) {
-      for (const clientApp of daily_client_app_usage) {
-        const clientId = clientApp.client_app_id;
-        
-        // Calculate the total usage by summing all daily usage values
-        const totalUsage = clientApp.usage ? 
-          clientApp.usage.reduce((sum: number, day: { date: string, usage: string }) => 
-            sum + parseInt(day.usage || '0'), 0) : 0;
-        
-        result.push({
-          endpoint: `Client App ${clientId}`,
-          requestsMade: totalUsage,
-          quota: 0, // No specific quota for client apps, just show the usage
-          resetTime: resetDate.toISOString(),
-          description: `Usage for client app ${clientId}`,
-          dailyUsage: clientApp.usage || [],
-          isClientApp: true // Mark as client app for special handling in UI
-        });
-      }
+    // If no endpoints were found, add a helpful message
+    if (result.length === 1) { // Only the informational card
+      result[0].note = 'No rate limit data was returned for the monitored endpoints. This may be due to API access level restrictions or endpoint changes.';
     }
     
-    // Add a note about endpoint-specific data
-    result.push({
-      endpoint: 'API Usage Information',
-      requestsMade: 0,
-      quota: 100,
-      resetTime: resetDate.toISOString(),
-      description: 'Twitter API Usage Information',
-      note: 'Twitter API v2 only provides overall project usage and client app usage data. Endpoint-specific usage data is not available through the API. Rate limits vary by endpoint and subscription tier.',
-      isInformational: true
-    });
-    
     return result;
-  } catch (error) {
-    console.error('Error formatting Twitter usage data:', error);
-    // Return mock data if we can't format the real data
-    return generateRealisticRateLimitData();
+  } catch (error: any) {
+    console.error('Error formatting rate limit data:', error);
+    throw new Error(`Failed to format rate limit data: ${error.message}`);
   }
 }
 
-// Helper function to get default quota for each endpoint
-function getDefaultQuotaForEndpoint(path: string): number {
-  switch (path) {
-    case '/2/tweets/search/recent':
-      return 1000
-    case '/2/tweets':
-      return 50
-    case '/2/users/by/username':
-      return 300
-    case '/2/tweets/:id':
-      return 3000
-    case '/2/users/:id/tweets':
-      return 200
-    case '/2/tweets/:id/retweets':
-      return 25
-    default:
-      return 100
-  }
-}
+// This function is no longer needed as we're using Twitter API v1.1 rate limits
+// Keeping this comment as a placeholder in case we need to reimplement v2 support in the future
 
 // Helper function to generate realistic mock data based on system state
 function generateRealisticRateLimitData(): ApiUsageData[] {
