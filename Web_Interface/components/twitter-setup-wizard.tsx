@@ -81,14 +81,14 @@ export function TwitterSetupWizard() {
           } else {
             // Other errors - show them to the user
             const errorMessage = result.error || 'Failed to check existing credentials'
-            setError(`Error checking credentials: ${errorMessage}`)
+            const details = result.details ? `: ${result.details}` : ''
+            setError(`Error checking credentials: ${errorMessage}${details}`)
             return
           }
         }
 
-        if (result.credentials) {
+        if (result.success && result.credentials) {
           setHasExistingCredentials(true)
-          setCredentials(result.credentials)
           // Skip to the complete step if credentials exist and are verified
           setCurrentStepIndex(4) // Complete step
           setSuccess("Twitter credentials already configured!")
@@ -225,7 +225,6 @@ export function TwitterSetupWizard() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          userId: user.id,
           ...credentials,
           twitter_username: accountInfo.username
         })
