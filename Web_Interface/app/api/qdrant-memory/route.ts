@@ -383,8 +383,8 @@ export async function DELETE(req: NextRequest) {
     
     console.log(`Attempting to delete point_id: ${point_id} (type: ${typeof point_id})`)
     
-    // Call Qdrant API to delete the point
-    const deleteUrl = `${QDRANT_URL}/collections/${userCollectionName}/points/delete`
+    // Call Qdrant API to delete the point with synchronous operation
+    const deleteUrl = `${QDRANT_URL}/collections/${userCollectionName}/points/delete?wait=true`
     const headers: HeadersInit = {
       'Content-Type': 'application/json',
     }
