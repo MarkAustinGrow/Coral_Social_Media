@@ -176,7 +176,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { api_key, api_secret, access_token, access_token_secret, twitter_username } = body
+    const { api_key, api_secret, access_token, access_token_secret, bearer_token, twitter_username } = body
 
     if (!api_key || !api_secret || !access_token || !access_token_secret) {
       return NextResponse.json({ 
@@ -200,6 +200,7 @@ export async function POST(request: NextRequest) {
       api_secret,
       access_token,
       access_token_secret,
+      bearer_token: bearer_token || null,
       twitter_username: twitter_username || null,
       updated_at: new Date().toISOString()
     }

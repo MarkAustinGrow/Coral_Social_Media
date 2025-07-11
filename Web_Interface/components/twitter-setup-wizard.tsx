@@ -24,6 +24,7 @@ interface TwitterCredentials {
   api_secret: string
   access_token: string
   access_token_secret: string
+  bearer_token: string
 }
 
 interface AccountInfo {
@@ -44,7 +45,8 @@ export function TwitterSetupWizard() {
     api_key: "",
     api_secret: "",
     access_token: "",
-    access_token_secret: ""
+    access_token_secret: "",
+    bearer_token: ""
   })
   const [accountInfo, setAccountInfo] = useState<AccountInfo | null>(null)
   const [isVerifying, setIsVerifying] = useState(false)
@@ -152,7 +154,8 @@ export function TwitterSetupWizard() {
                     api_key: "",
                     api_secret: "",
                     access_token: "",
-                    access_token_secret: ""
+                    access_token_secret: "",
+                    bearer_token: ""
                   })
                 }}
               >
@@ -385,6 +388,20 @@ export function TwitterSetupWizard() {
                   value={credentials.access_token_secret}
                   onChange={(e) => setCredentials(prev => ({ ...prev, access_token_secret: e.target.value }))}
                 />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="bearer_token">Bearer Token (Optional)</Label>
+                <Input
+                  id="bearer_token"
+                  type="password"
+                  placeholder="Your Twitter Bearer Token (for premium API access)"
+                  value={credentials.bearer_token}
+                  onChange={(e) => setCredentials(prev => ({ ...prev, bearer_token: e.target.value }))}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Required for premium Twitter API features. Leave blank if using basic access.
+                </p>
               </div>
             </div>
 

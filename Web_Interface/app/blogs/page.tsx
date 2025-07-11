@@ -15,7 +15,7 @@ export const metadata: Metadata = {
 export default function BlogsPage() {
   return (
     <DashboardShell>
-      <DashboardHeader heading="Blog Interface" text="View, manage, and approve blog content.">
+      <DashboardHeader heading="Your Blog Interface" text="View, manage, and approve your blog content.">
         <div className="flex items-center gap-2">
           <Button>
             <Plus className="mr-2 h-4 w-4" />

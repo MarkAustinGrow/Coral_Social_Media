@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { api_key, api_secret, access_token, access_token_secret } = body
+    const { api_key, api_secret, access_token, access_token_secret, bearer_token } = body
 
     if (!api_key || !api_secret || !access_token || !access_token_secret) {
       return NextResponse.json({ 

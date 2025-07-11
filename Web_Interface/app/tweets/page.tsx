@@ -15,7 +15,7 @@ export const metadata: Metadata = {
 export default function TweetsPage() {
   return (
     <DashboardShell>
-      <DashboardHeader heading="Tweets Interface" text="View and manage system-generated tweets.">
+      <DashboardHeader heading="Your Tweets Interface" text="View and manage your system-generated tweets.">
         <div className="flex items-center gap-2">
           <Button>
             <Plus className="mr-2 h-4 w-4" />

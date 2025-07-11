@@ -1,6 +1,8 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
+import { User } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
@@ -51,6 +53,24 @@ export function TweetList({ status }: TweetListProps) {
   const [editedContent, setEditedContent] = useState<string>("")
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [editDialogOpen, setEditDialogOpen] = useState(false)
+  const [userEmail, setUserEmail] = useState<string | null>(null)
+  
+  // Get the current user's email
+  useEffect(() => {
+    const fetchUserEmail = async () => {
+      try {
+        const supabase = createClientComponentClient()
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session?.user?.email) {
+          setUserEmail(session.user.email)
+        }
+      } catch (error) {
+        console.error("Error fetching user email:", error)
+      }
+    }
+    
+    fetchUserEmail()
+  }, [])
 
   // Handle refresh button click
   const handleRefresh = () => {
@@ -301,6 +321,14 @@ export function TweetList({ status }: TweetListProps) {
 
   return (
     <>
+      {userEmail && (
+        <div className="mb-4 p-3 bg-blue-50 rounded-md flex items-center space-x-2 border border-blue-200">
+          <User className="h-4 w-4 text-blue-500" />
+          <div className="text-sm">
+            <span className="font-medium">Viewing tweets for:</span> {userEmail}
+          </div>
+        </div>
+      )}
       <DataState
         isLoading={isLoading}
         error={error ? { message: 'Error loading tweets', details: error.message } : null}

@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { getSupabaseClient, handleSupabaseError } from '@/lib/supabase'
+import { getSupabaseClient, getSupabaseServerClient, handleSupabaseError } from '@/lib/supabase'
 import { BlogPost, BlogCritique, BlogWithCritique } from '@/hooks/use-blog-data'
+import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
+import { cookies } from 'next/headers'
+import type { Database } from '@/types/database'
 
 // Helper function to check if a table exists
 async function tableExists(supabase: any, tableName: string): Promise<boolean> {
@@ -37,7 +40,36 @@ export async function GET(request: NextRequest) {
     const limit = searchParams.get('limit') ? parseInt(searchParams.get('limit')!) : 50
     const withCritiques = searchParams.get('with_critiques') === 'true'
     
-    console.log('Fetching blogs with params:', { status, limit, withCritiques })
+    // Get authenticated user
+    const authClient = createRouteHandlerClient<Database>({ cookies })
+    const { data: { session }, error: sessionError } = await authClient.auth.getSession()
+    
+    if (sessionError) {
+      console.error('Session error:', sessionError)
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: 'Authentication error', 
+          details: sessionError.message 
+        },
+        { status: 401 }
+      )
+    }
+    
+    if (!session?.user) {
+      console.error('No authenticated user found')
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: 'Not authenticated', 
+          details: 'Please log in to access this resource' 
+        },
+        { status: 401 }
+      )
+    }
+    
+    const userId = session.user.id
+    console.log(`Fetching blogs for user ${userId} with params:`, { status, limit, withCritiques })
     
     // Get Supabase client
     console.log('Getting Supabase client for blogs API')
@@ -63,7 +95,7 @@ export async function GET(request: NextRequest) {
           console.log('Direct Supabase client created successfully')
           
           // Continue with the direct client
-          return await handleBlogRequests(directClient, status, limit, withCritiques)
+          return await handleBlogRequests(directClient, status, limit, withCritiques, userId)
         } catch (directError) {
           console.error('Failed to create direct Supabase client:', directError)
         }
@@ -79,7 +111,7 @@ export async function GET(request: NextRequest) {
     }
     
     // If we have a client, continue with the request
-    return await handleBlogRequests(supabase, status, limit, withCritiques)
+    return await handleBlogRequests(supabase, status, limit, withCritiques, userId)
   } catch (error: any) {
     console.error('Error in blogs API:', error)
     
@@ -101,7 +133,8 @@ async function handleBlogRequests(
   supabase: any, 
   status: string | null, 
   limit: number,
-  withCritiques: boolean = false
+  withCritiques: boolean = false,
+  userId: string
 ) {
   try {
     
@@ -266,9 +299,10 @@ async function handleBlogRequests(
         const uniqueBlogIds = [...new Set(blogIds.map((item: { blog_id: number }) => item.blog_id))]
         console.log(`Found ${uniqueBlogIds.length} unique blogs with critiques`)
         
-        // Fetch the blog posts with these IDs
+        // Fetch the blog posts with these IDs and filter by user_id
         let query = supabase.from('blog_posts').select('*')
           .in('id', uniqueBlogIds)
+          .eq('user_id', userId)
           .order('created_at', { ascending: false })
           .limit(limit)
         
@@ -342,8 +376,11 @@ async function handleBlogRequests(
         })
       }
       
-      // Standard query for blog posts by status
+      // Standard query for blog posts by status and user_id
       let query = supabase.from('blog_posts').select('*')
+      
+      // Filter by user_id
+      query = query.eq('user_id', userId)
       
       // Apply status filter if provided
       if (status) {

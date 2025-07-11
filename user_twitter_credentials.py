@@ -32,7 +32,7 @@ def get_user_twitter_credentials(user_id: str) -> Optional[Dict[str, str]]:
         supabase = get_supabase_client()
         
         result = supabase.table('user_twitter_credentials').select(
-            'api_key, api_secret, access_token, access_token_secret, twitter_username'
+            'api_key, api_secret, access_token, access_token_secret, twitter_username, bearer_token'
         ).eq('user_id', user_id).execute()
         
         if result.data and len(result.data) > 0:

@@ -1,6 +1,7 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -11,7 +12,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { Eye, Edit, Trash2, MoreHorizontal, ExternalLink, CheckCircle, RefreshCw } from "lucide-react"
+import { Eye, Edit, Trash2, MoreHorizontal, ExternalLink, CheckCircle, RefreshCw, User } from "lucide-react"
 import { useBlogData, useFallbackBlogData, BlogWithCritique } from "@/hooks/use-blog-data"
 import { DataState } from "@/components/ui/data-state"
 import { BlogCritiqueDialog } from "@/components/blog-critique-dialog"
@@ -25,6 +26,24 @@ export function BlogList({ status, withCritiques }: BlogListProps) {
   const [refreshKey, setRefreshKey] = useState(0)
   const [selectedBlog, setSelectedBlog] = useState<BlogWithCritique | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [userEmail, setUserEmail] = useState<string | null>(null)
+  
+  // Get the current user's email
+  useEffect(() => {
+    const fetchUserEmail = async () => {
+      try {
+        const supabase = createClientComponentClient()
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session?.user?.email) {
+          setUserEmail(session.user.email)
+        }
+      } catch (error) {
+        console.error("Error fetching user email:", error)
+      }
+    }
+    
+    fetchUserEmail()
+  }, [])
   
   // Use the real data hook with fallback to mock data if API fails
   const { data, isLoading, error } = useBlogData({ status, withCritiques }, refreshKey)
@@ -76,6 +95,14 @@ export function BlogList({ status, withCritiques }: BlogListProps) {
 
   return (
     <>
+      {userEmail && (
+        <div className="mb-4 p-3 bg-blue-50 rounded-md flex items-center space-x-2 border border-blue-200">
+          <User className="h-4 w-4 text-blue-500" />
+          <div className="text-sm">
+            <span className="font-medium">Viewing blogs for:</span> {userEmail}
+          </div>
+        </div>
+      )}
       <DataState
         isLoading={isLoading}
         error={error ? { message: 'Error loading blogs', details: error.message } : null}

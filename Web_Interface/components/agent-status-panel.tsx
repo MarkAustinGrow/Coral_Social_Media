@@ -1,13 +1,14 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-import { PlayCircle, StopCircle, RefreshCw, AlertTriangle } from "lucide-react"
-import { useSupabaseData } from "@/hooks/use-supabase-data"
+import { PlayCircle, StopCircle, RefreshCw, AlertTriangle, User } from "lucide-react"
+import { useUserAgentStatus } from "@/hooks/use-user-agent-status"
 import { DataState } from "@/components/ui/data-state"
 import { toast } from "sonner"
+import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
 
 // Agent descriptions
 const agentDescriptions: Record<string, string> = {
@@ -50,16 +51,27 @@ export function AgentStatusPanel() {
   const [isStarting, setIsStarting] = useState<Record<string, boolean>>({})
   const [isStopping, setIsStopping] = useState<Record<string, boolean>>({})
   const [isRestarting, setIsRestarting] = useState<Record<string, boolean>>({})
+  const [userEmail, setUserEmail] = useState<string | null>(null)
   
-  // Fetch agent status from the agent_status table
-  const agentStatusResult = useSupabaseData<AgentStatus>(
-    'agent_status',
-    { 
-      columns: '*',
-      // We'll sort the data after fetching to match the workflow order
-    },
-    refreshKey
-  )
+  // Get the current user's email
+  useEffect(() => {
+    const fetchUserEmail = async () => {
+      try {
+        const supabase = createClientComponentClient()
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session?.user?.email) {
+          setUserEmail(session.user.email)
+        }
+      } catch (error) {
+        console.error("Error fetching user email:", error)
+      }
+    }
+    
+    fetchUserEmail()
+  }, [])
+  
+  // Fetch agent status from the agent_status table for the current user
+  const agentStatusResult = useUserAgentStatus(refreshKey)
   
   // Sort the agents according to the workflow order
   const sortedAgentStatusResult = {
@@ -289,73 +301,92 @@ export function AgentStatusPanel() {
     }
   }
 
+  // Loading component
+  const loadingComponent = (
+    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+      {[...Array(8)].map((_, i) => (
+        <Card key={i} className="p-4">
+          <div className="flex flex-col space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="animate-pulse bg-muted rounded h-4 w-32"></div>
+              <div className="animate-pulse bg-muted rounded h-4 w-16"></div>
+            </div>
+            <div className="animate-pulse bg-muted rounded h-3 w-full"></div>
+            <div className="animate-pulse bg-muted rounded h-2 w-3/4"></div>
+            <div className="animate-pulse bg-muted rounded h-2 w-3/4"></div>
+            <div className="flex justify-end">
+              <div className="animate-pulse bg-muted rounded h-8 w-20"></div>
+            </div>
+          </div>
+        </Card>
+      ))}
+    </div>
+  )
+
+  // Empty component
+  const emptyComponent = (
+    <div className="text-center p-8 border rounded-lg">
+      <AlertTriangle className="h-10 w-10 mx-auto mb-2 text-muted-foreground" />
+      <h3 className="font-medium mb-1">No Agents Found</h3>
+      <p className="text-sm text-muted-foreground mb-3">
+        No agent status information is available. You may need to configure your agents first.
+      </p>
+      <Button size="sm" variant="outline" onClick={handleRefresh}>
+        Check Again
+      </Button>
+    </div>
+  )
+
+  // Render function for agents
+  const renderAgents = (agents: AgentStatus[]) => (
+    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+      {agents.map((agent) => (
+        <Card key={agent.id} className="p-4">
+          <div className="flex flex-col space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="font-medium">{agent.agent_name}</h3>
+              {getStatusBadge(agent.status)}
+            </div>
+            <p className="text-sm text-muted-foreground">
+              {agentDescriptions[agent.agent_name] || "Agent for the social media system"}
+            </p>
+            {agent.last_error && (
+              <div className="flex items-center text-sm text-red-600 dark:text-red-400">
+                <AlertTriangle className="mr-1 h-4 w-4" />
+                {agent.last_error}
+              </div>
+            )}
+            <div className="text-xs text-muted-foreground">
+              <div>Last Heartbeat: {formatDateTime(agent.last_heartbeat)}</div>
+              <div>Last Activity: {formatDateTime(agent.updated_at)}</div>
+            </div>
+            <div className="flex justify-end">{getActionButton(agent)}</div>
+          </div>
+        </Card>
+      ))}
+    </div>
+  )
+
   return (
-    <DataState
-      isLoading={agentStatusResult.isLoading}
-      error={agentStatusResult.error}
-      data={sortedAgentStatusResult.data}
-      onRetry={handleRefresh}
-      loadingComponent={
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {[...Array(8)].map((_, i) => (
-            <Card key={i} className="p-4">
-              <div className="flex flex-col space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="animate-pulse bg-muted rounded h-4 w-32"></div>
-                  <div className="animate-pulse bg-muted rounded h-4 w-16"></div>
-                </div>
-                <div className="animate-pulse bg-muted rounded h-3 w-full"></div>
-                <div className="animate-pulse bg-muted rounded h-2 w-3/4"></div>
-                <div className="animate-pulse bg-muted rounded h-2 w-3/4"></div>
-                <div className="flex justify-end">
-                  <div className="animate-pulse bg-muted rounded h-8 w-20"></div>
-                </div>
-              </div>
-            </Card>
-          ))}
-        </div>
-      }
-      emptyComponent={
-        <div className="text-center p-8 border rounded-lg">
-          <AlertTriangle className="h-10 w-10 mx-auto mb-2 text-muted-foreground" />
-          <h3 className="font-medium mb-1">No Agents Found</h3>
-          <p className="text-sm text-muted-foreground mb-3">
-            No agent status information is available. You may need to configure your agents first.
-          </p>
-          <Button size="sm" variant="outline" onClick={handleRefresh}>
-            Check Again
-          </Button>
-        </div>
-      }
-    >
-      {(agents) => (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {agents.map((agent) => (
-            <Card key={agent.id} className="p-4">
-              <div className="flex flex-col space-y-3">
-                <div className="flex items-center justify-between">
-                  <h3 className="font-medium">{agent.agent_name}</h3>
-                  {getStatusBadge(agent.status)}
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  {agentDescriptions[agent.agent_name] || "Agent for the social media system"}
-                </p>
-                {agent.last_error && (
-                  <div className="flex items-center text-sm text-red-600 dark:text-red-400">
-                    <AlertTriangle className="mr-1 h-4 w-4" />
-                    {agent.last_error}
-                  </div>
-                )}
-                <div className="text-xs text-muted-foreground">
-                  <div>Last Heartbeat: {formatDateTime(agent.last_heartbeat)}</div>
-                  <div>Last Activity: {formatDateTime(agent.updated_at)}</div>
-                </div>
-                <div className="flex justify-end">{getActionButton(agent)}</div>
-              </div>
-            </Card>
-          ))}
+    <>
+      {userEmail && (
+        <div className="mb-4 p-3 bg-blue-50 rounded-md flex items-center space-x-2 border border-blue-200">
+          <User className="h-4 w-4 text-blue-500" />
+          <div className="text-sm">
+            <span className="font-medium">Viewing agents for:</span> {userEmail}
+          </div>
         </div>
       )}
-    </DataState>
+      <DataState
+        isLoading={agentStatusResult.isLoading}
+        error={agentStatusResult.error}
+        data={sortedAgentStatusResult.data}
+        onRetry={handleRefresh}
+        loadingComponent={loadingComponent}
+        emptyComponent={emptyComponent}
+      >
+        {renderAgents}
+      </DataState>
+    </>
   )
 }

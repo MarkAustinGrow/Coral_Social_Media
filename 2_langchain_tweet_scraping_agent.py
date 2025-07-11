@@ -96,7 +96,7 @@ def log_to_database(level, message, metadata=None):
     amu.log_to_database(AGENT_NAME, level, message, metadata)
 
 def get_user_twitter_client():
-    """Get user-specific Twitter client."""
+    """Get user-specific Twitter client using API v2 with Bearer Token (premium access)."""
     user_id = amu.get_user_context()
     
     if not user_id:
@@ -108,7 +108,26 @@ def get_user_twitter_client():
         return None
     
     try:
-        return create_user_twitter_client(user_id)
+        # Get user credentials from database
+        from user_twitter_credentials import get_user_twitter_credentials
+        credentials = get_user_twitter_credentials(user_id)
+        
+        if not credentials:
+            logger.error(f"No Twitter credentials found for user {user_id}")
+            return None
+        
+        # Create Twitter API v2 client with user-specific Bearer Token (premium access method)
+        twitter_client = tweepy.Client(
+            bearer_token=credentials.get('bearer_token'),  # Use user-specific bearer token from database
+            consumer_key=credentials['api_key'],
+            consumer_secret=credentials['api_secret'],
+            access_token=credentials['access_token'],
+            access_token_secret=credentials['access_token_secret'],
+            wait_on_rate_limit=True
+        )
+        
+        return twitter_client
+        
     except Exception as e:
         logger.error(f"Failed to create Twitter client for user {user_id}: {str(e)}")
         return None
@@ -174,19 +193,19 @@ def fetch_tweets(
             logger.info(f"Fetching tweets for target user: {target_username}")
             log_to_database("info", f"Fetching tweets for target user: {target_username}")
             
-            # Get user ID from username
+            # Get user ID from username (API v2 method)
             user = twitter_client.get_user(username=target_username)
             if not user.data:
                 logger.warning(f"User not found: {target_username}")
                 log_to_database("warning", f"User not found: {target_username}")
                 continue
             
-            target_user_id = user.data.id
+            user_id = user.data.id
             
-            # Fetch tweets using user-specific credentials
+            # Fetch tweets using API v2 (premium access method)
             tweets = twitter_client.get_users_tweets(
-                id=target_user_id,
-                max_results=min(count_per_user, 100),  # Twitter API limit
+                id=user_id,
+                max_results=min(count_per_user, 100),  # API v2 limit
                 exclude=['retweets'] if not include_retweets else None,
                 expansions=['author_id', 'referenced_tweets.id'],
                 tweet_fields=['created_at', 'public_metrics', 'text', 'conversation_id'],
