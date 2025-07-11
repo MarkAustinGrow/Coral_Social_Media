@@ -21,7 +21,7 @@ echo "🤖 Agent: $AGENT_SCRIPT"
 cd /home/coraluser/Coral_Social_Media
 
 # Check if virtual environment exists
-if [ ! -d "agent_venv" ]; then
+if [ ! -d "coral_env" ]; then
     echo "❌ Virtual environment not found. Please run setup_production_agents.sh first."
     exit 1
 fi
@@ -34,7 +34,7 @@ fi
 
 # Activate virtual environment
 echo "🔧 Activating virtual environment..."
-source agent_venv/bin/activate
+source coral_env/bin/activate
 
 # Set user context
 export AGENT_USER_ID="$USER_ID"

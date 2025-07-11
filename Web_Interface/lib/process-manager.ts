@@ -134,7 +134,7 @@ export async function startAgent(agentName: string, userId?: string): Promise<bo
 
     // Use the virtual environment wrapper script for production
     const wrapperScript = path.join(rootDir, 'run_agent_with_venv.sh');
-    const useVirtualEnv = fs.existsSync(wrapperScript) && fs.existsSync(path.join(rootDir, 'agent_venv'));
+    const useVirtualEnv = fs.existsSync(wrapperScript) && fs.existsSync(path.join(rootDir, 'coral_env'));
     
     let agentProcess: ChildProcess;
     
