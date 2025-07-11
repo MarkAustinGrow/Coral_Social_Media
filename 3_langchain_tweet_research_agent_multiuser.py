@@ -36,6 +36,11 @@ load_dotenv()
 # Get user context for user-specific MCP server
 user_id = amu.get_user_context()
 
+# Handle case where user_id is None (direct command line execution)
+if user_id is None:
+    user_id = "3b55275a-d666-4724-ae39-26a58fda3aff"  # Default test user
+    print(f"⚠️  No user context found, using default test user: {user_id}")
+
 # Use centralized multi-user Coral server
 base_url = "http://coral.8interns.com/devmode/exampleApplication/privkey/session1/sse"
 params = {
@@ -48,9 +53,12 @@ MCP_SERVER_URL = f"{base_url}?{query_string}"
 
 print(f"🔗 Using centralized MCP server: {MCP_SERVER_URL}")
 
-# Create a user-specific collection name for Qdrant
-COLLECTION_NAME = f"working_knowledge_{user_id}"
+# Create a user-specific collection name for Qdrant (shortened to avoid length limits)
+import hashlib
+user_hash = hashlib.md5(user_id.encode()).hexdigest()[:8]
+COLLECTION_NAME = f"research_{user_hash}"
 print(f"🔍 Using user-specific Qdrant collection: {COLLECTION_NAME}")
+print(f"📝 Collection name length: {len(COLLECTION_NAME)} characters (user: {user_id})")
 
 # Initialize API clients
 try:
@@ -756,3 +764,108 @@ def generate_research_question(tweet_text: str, persona: dict = None):
             "error": f"Failed to generate research question: {str(e)}",
             "result": "What is the author of this tweet truly trying to communicate?"
         }
+
+# Main agent execution
+async def main():
+    """Main agent execution loop"""
+    try:
+        # Mark agent as started
+        asu.mark_agent_started(AGENT_NAME)
+        amu.mark_agent_started_with_user(AGENT_NAME)
+        log_to_database("info", "Tweet Research Agent started with user context")
+        
+        # Initialize MCP client
+        client = MultiServerMCPClient(
+            connections={
+                "coral": {
+                    "transport": "sse",
+                    "url": MCP_SERVER_URL,
+                    "timeout": 300,
+                    "sse_read_timeout": 300,
+                }
+            }
+        )
+        
+        # Get Coral tools
+        coral_tools = await client.get_tools()
+        
+        # Define agent tools
+        agent_tools = [
+            fetch_persona,
+            fetch_tweets_from_supabase,
+            mark_tweet_as_analyzed,
+            analyze_tweet_perplexity,
+            store_analysis_qdrant,
+            search_qdrant,
+            generate_research_question
+        ]
+        
+        # Combine Coral tools with agent-specific tools
+        tools = coral_tools + agent_tools
+        
+        # Initialize the chat model
+        model = init_chat_model(
+            model="gpt-4o-mini",
+            model_provider="openai",
+            api_key=os.getenv("OPENAI_API_KEY"),
+            temperature=0.7
+        )
+        
+        # Create the prompt template
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", """You are the Tweet Research Agent for user {user_id}. Your role is to analyze tweets and extract deep insights using research tools.
+
+Your workflow:
+1. Fetch unanalyzed tweets from the database
+2. For each tweet, generate a focused research question
+3. Use Perplexity to conduct in-depth analysis
+4. Store the analysis in Qdrant vector database
+5. Mark tweets as analyzed
+
+Available tools:
+{tools}
+
+Always maintain user context and ensure all operations are user-specific."""),
+            ("human", "{input}"),
+            ("placeholder", "{agent_scratchpad}")
+        ])
+        
+        # Create the agent
+        agent = create_tool_calling_agent(model, tools, prompt)
+        agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
+        
+        # Main execution loop
+        while True:
+            try:
+                log_to_database("info", "Starting new agent invocation cycle")
+                
+                # Execute the agent
+                result = agent_executor.invoke({
+                    "input": f"Analyze unanalyzed tweets for user {user_id}. Fetch tweets, generate research questions, analyze with Perplexity, store in Qdrant, and mark as analyzed.",
+                    "user_id": user_id,
+                    "tools": get_tools_description(tools)
+                })
+                
+                logger.info("Agent execution completed successfully")
+                log_to_database("info", "Completed agent invocation cycle")
+                
+                # Wait before next execution
+                await asyncio.sleep(300)  # 5 minutes
+                
+            except Exception as e:
+                logger.error(f"Error in agent execution: {str(e)}")
+                log_to_database("error", f"Error in agent execution: {str(e)}")
+                await asyncio.sleep(60)  # Wait 1 minute before retrying
+                
+    except Exception as e:
+        logger.error(f"Fatal error in Tweet Research Agent: {str(e)}")
+        log_to_database("error", f"Fatal error in Tweet Research Agent: {str(e)}")
+        raise
+    finally:
+        # Mark agent as stopped
+        asu.mark_agent_stopped(AGENT_NAME)
+        amu.mark_agent_stopped_with_user(AGENT_NAME)
+        log_to_database("info", "Tweet Research Agent stopped with user context")
+
+if __name__ == "__main__":
+    asyncio.run(main())
