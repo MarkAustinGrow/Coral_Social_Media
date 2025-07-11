@@ -377,9 +377,47 @@ async function handleBlogRequests(
       }
       
       // Standard query for blog posts by status and user_id
+      console.log('=== BLOG QUERY DEBUG ===')
+      console.log('User ID:', userId)
+      console.log('Status filter:', status)
+      console.log('Limit:', limit)
+      
+      // First, test basic connectivity by counting all rows
+      console.log('Testing basic table access...')
+      const { count: totalCount, error: countError } = await supabase
+        .from('blog_posts')
+        .select('*', { count: 'exact', head: true })
+      
+      if (countError) {
+        console.error('Error counting blog_posts:', countError)
+      } else {
+        console.log('Total blog_posts in table:', totalCount)
+      }
+      
+      // Test query without user filter
+      console.log('Testing query without user filter...')
+      const { data: allBlogs, error: allBlogsError } = await supabase
+        .from('blog_posts')
+        .select('*')
+        .limit(5)
+      
+      if (allBlogsError) {
+        console.error('Error fetching all blogs:', allBlogsError)
+      } else {
+        console.log('All blogs (first 5):', allBlogs)
+        if (allBlogs && allBlogs.length > 0) {
+          console.log('Sample blog user_id:', allBlogs[0].user_id)
+          console.log('Sample blog user_id type:', typeof allBlogs[0].user_id)
+          console.log('Query user_id type:', typeof userId)
+          console.log('User IDs match:', allBlogs[0].user_id === userId)
+        }
+      }
+      
+      // Now build the actual query
       let query = supabase.from('blog_posts').select('*')
       
       // Filter by user_id
+      console.log('Adding user_id filter:', userId)
       query = query.eq('user_id', userId)
       
       // Apply status filter if provided
@@ -394,7 +432,7 @@ async function handleBlogRequests(
       // Order by created_at in descending order (newest first)
       query = query.order('created_at', { ascending: false })
       
-      console.log('Executing blog posts query')
+      console.log('Executing blog posts query with user filter')
       // Execute query
       const { data: blogPosts, error: blogError } = await query
     
