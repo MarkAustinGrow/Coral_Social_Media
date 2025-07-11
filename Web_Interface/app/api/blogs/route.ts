@@ -71,11 +71,11 @@ export async function GET(request: NextRequest) {
     const userId = session.user.id
     console.log(`Fetching blogs for user ${userId} with params:`, { status, limit, withCritiques })
     
-    // Get Supabase client
-    console.log('Getting Supabase client for blogs API')
+    // Get Supabase client - use service role to bypass RLS
+    console.log('Getting Supabase service role client for blogs API')
     console.log('SUPABASE_URL from env:', process.env.SUPABASE_URL)
-    console.log('SUPABASE_KEY from env (first 20 chars):', process.env.SUPABASE_KEY?.substring(0, 20) + '...')
-    const supabase = await getSupabaseClient()
+    console.log('SUPABASE_SERVICE_ROLE_KEY from env (first 20 chars):', process.env.SUPABASE_SERVICE_ROLE_KEY?.substring(0, 20) + '...')
+    const supabase = await getSupabaseServerClient()
     
     if (!supabase) {
       console.error('Supabase client is not available')
