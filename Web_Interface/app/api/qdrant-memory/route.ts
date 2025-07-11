@@ -112,28 +112,18 @@ export async function GET(req: NextRequest) {
       })
       
       if (!collectionResponse.ok) {
-      console.error(`Collection ${userCollectionName} not found or not accessible`)
-      // Return sample data instead of empty results
-      return NextResponse.json({
-        success: true,
-        result: SAMPLE_MEMORIES,
-        total: SAMPLE_MEMORIES.length,
-        query_time_ms: 0,
-        next_page_offset: null,
-        message: `Collection ${userCollectionName} not found or not accessible. Showing sample data.`
-      })
+        console.error(`Collection ${userCollectionName} not found or not accessible`)
+        return NextResponse.json(
+          { success: false, error: `Collection ${userCollectionName} not found or not accessible` },
+          { status: 404 }
+        )
       }
     } catch (error) {
       console.error(`Error checking collection: ${error}`)
-      // Return sample data instead of empty results
-      return NextResponse.json({
-        success: true,
-        result: SAMPLE_MEMORIES,
-        total: SAMPLE_MEMORIES.length,
-        query_time_ms: 0,
-        next_page_offset: null,
-        message: "Error connecting to Qdrant server. Showing sample data."
-      })
+      return NextResponse.json(
+        { success: false, error: "Error connecting to Qdrant server" },
+        { status: 500 }
+      )
     }
     const query = req.nextUrl.searchParams.get("query") || ""
     const filtersParam = req.nextUrl.searchParams.get("filters")
@@ -331,15 +321,15 @@ export async function GET(req: NextRequest) {
       };
     });
     
-    // If no results were found, return sample data
+    // If no results were found, return empty results
     if (formattedResults.length === 0) {
       return NextResponse.json({
         success: true,
-        result: SAMPLE_MEMORIES,
-        total: SAMPLE_MEMORIES.length,
+        result: [],
+        total: 0,
         query_time_ms: queryTime,
         next_page_offset: null,
-        message: "No matching memories found in Qdrant. Showing sample data."
+        message: "No memories found in collection."
       });
     }
     
@@ -353,15 +343,10 @@ export async function GET(req: NextRequest) {
     })
   } catch (error) {
     console.error("Error searching Qdrant memories:", error)
-    // Return sample data instead of error
-    return NextResponse.json({
-      success: true,
-      result: SAMPLE_MEMORIES,
-      total: SAMPLE_MEMORIES.length,
-      query_time_ms: 0,
-      next_page_offset: null,
-      message: "Error searching memories. Showing sample data."
-    })
+    return NextResponse.json(
+      { success: false, error: "Error searching memories" },
+      { status: 500 }
+    )
   }
 }
 
