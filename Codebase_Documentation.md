@@ -1982,19 +1982,42 @@ If you encounter issues not covered in this troubleshooting guide:
   - **Solution**: Handle 501 responses as permanent limitations, not temporary errors
   - **Result**: No more browser spam, clear user messaging about limitations
 
+#### Bearer Token Enhancement (July 11, 2025) 🎉
+- **Complete Bearer Token System Implementation**: Successfully deployed comprehensive Bearer Token support for Twitter API v2 premium features
+  - **Problem**: System was limited to Twitter API v1.1 with OAuth 1.0a, missing premium API v2 features
+  - **Solution**: Implemented complete Bearer Token system with database storage and agent integration
+  - **Components Enhanced**:
+    - **Setup Wizard**: Added Bearer Token field to Twitter credentials setup (`Web_Interface/components/twitter-setup-wizard.tsx`)
+    - **Database Schema**: Added `bearer_token` column to `user_twitter_credentials` table
+    - **API Endpoints**: Enhanced credential management APIs (`Web_Interface/app/api/user/twitter-credentials/`)
+    - **Agent Integration**: Updated Tweet Scraping Agent to use Bearer Token for API v2 calls (`2_langchain_tweet_scraping_agent.py`)
+  - **Result**: ✅ **Fully operational Bearer Token system with successful tweet collection using premium API features**
+
+#### Virtual Environment Fix (July 11, 2025) 🔧
+- **Critical Virtual Environment Path Fix**: Resolved agent startup failures when launched via web interface
+  - **Problem**: Process manager looking for `agent_venv` but server has `coral_env`, causing `ModuleNotFoundError: No module named 'langchain_mcp_adapters'`
+  - **Root Cause**: Mismatch between expected virtual environment name and actual server environment
+  - **Solution**: Updated virtual environment references to use correct `coral_env` path
+  - **Files Modified**:
+    - **Agent Startup Script**: `run_agent_with_venv.sh` - Updated to activate `coral_env` instead of `agent_venv`
+    - **Process Manager**: `Web_Interface/lib/process-manager.ts` - Updated to look for `coral_env` directory
+  - **Deployment**: Changes committed (`ce9783c`) and deployed to production server
+  - **Result**: ✅ **Agents now start successfully via web interface with all dependencies available**
+
 #### Twitter API Rate Limits Enhancement
 - **OAuth 1.0a Support**: Restored Twitter rate limits functionality using Twitter API v1.1
   - **Problem**: Migration to database storage broke existing rate limits functionality
   - **Solution**: Implemented OAuth 1.0a authentication for Twitter API v1.1 rate_limit_status endpoint
   - **Result**: Real-time rate limit monitoring working with existing OAuth 1.0a credentials
-  - **Note**: Bearer Token support identified as future enhancement for Twitter API v2 usage endpoint
+  - **Note**: Bearer Token support now available for Twitter API v2 usage endpoint
 
 #### User Twitter Credentials System
 - **Database Storage**: Successfully migrated Twitter credentials from .env file to database
-  - **Implementation**: Per-user credential storage in `user_twitter_credentials` table
+  - **Implementation**: Per-user credential storage in `user_twitter_credentials` table with Bearer Token support
   - **Security**: Row Level Security (RLS) ensures users only access their own credentials
   - **API Integration**: All agents now retrieve user-specific credentials from database
-  - **Setup Wizard**: Enhanced to save credentials to database instead of .env file
+  - **Setup Wizard**: Enhanced to save credentials including Bearer Token to database instead of .env file
+  - **Bearer Token Support**: Complete integration for Twitter API v2 premium features
 
 ### 📋 Future Enhancements
 
