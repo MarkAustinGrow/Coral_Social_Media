@@ -396,6 +396,8 @@ export async function DELETE(req: NextRequest) {
       )
     }
     
+    console.log(`Attempting to delete point_id: ${point_id} (type: ${typeof point_id})`)
+    
     // Call Qdrant API to delete the point
     const deleteUrl = `${QDRANT_URL}/collections/${userCollectionName}/points/delete`
     const headers: HeadersInit = {
@@ -406,12 +408,24 @@ export async function DELETE(req: NextRequest) {
       headers['Api-Key'] = QDRANT_API_KEY
     }
     
+    // Ensure point_id is properly formatted - try both string and number formats
+    let formattedPointId = point_id
+    
+    // If it's a string that looks like a number, convert to number
+    if (typeof point_id === 'string' && !isNaN(Number(point_id))) {
+      formattedPointId = Number(point_id)
+    }
+    
+    const deleteBody = {
+      points: [formattedPointId]
+    }
+    
+    console.log(`Delete request body: ${JSON.stringify(deleteBody)}`)
+    
     const response = await fetch(deleteUrl, {
       method: 'POST',
       headers,
-      body: JSON.stringify({
-        points: [point_id]
-      }),
+      body: JSON.stringify(deleteBody),
     })
     
     if (!response.ok) {
