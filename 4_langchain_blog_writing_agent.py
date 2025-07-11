@@ -409,22 +409,16 @@ def search_tweet_insights(query: str, limit: int = 10):
         # Generate embedding for the query
         query_embedding = embeddings.embed_query(query)
         
-        # Create filter for user isolation in Qdrant
-        user_filter = models.Filter(
-            must=[
-                models.FieldCondition(
-                    key="user_id",
-                    match=models.MatchValue(value=user_id)
-                )
-            ]
-        )
+        # Create user-specific collection name (same as memory interface)
+        import hashlib
+        user_hash = hashlib.md5(user_id.encode()).hexdigest()[:8]
+        user_collection_name = f"research_{user_hash}"
         
-        # Search in Qdrant with user filtering
+        # Search in user-specific Qdrant collection
         search_results = qdrant_client.search(
-            collection_name="working_knowledge",  # Using the working_knowledge collection
+            collection_name=user_collection_name,
             query_vector=query_embedding,
-            limit=limit,
-            filter=user_filter
+            limit=limit
         )
         
         # Extract results
@@ -532,7 +526,8 @@ def save_blog_post(blog_post: dict, topic_name: str = None, status: str = "pendi
             "title": blog_post.get("title", ""),
             "content": blog_post.get("content", ""),
             "word_count": blog_post.get("word_count", 0),
-            "review_status": status,  # Use review_status instead of status
+            "status": "draft",  # Use status field for consistency with API
+            "review_status": status,  # Keep review_status for internal tracking
             "user_id": user_id,  # CRITICAL: Associate with user
             "created_at": blog_post.get("created_at", datetime.now().isoformat())
         }
