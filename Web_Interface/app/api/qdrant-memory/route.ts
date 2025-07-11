@@ -410,7 +410,7 @@ export async function DELETE(req: NextRequest) {
       method: 'POST',
       headers,
       body: JSON.stringify({
-        points: [point_id],
+        points: [point_id]
       }),
     })
     
