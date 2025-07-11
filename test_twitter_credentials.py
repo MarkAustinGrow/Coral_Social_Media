@@ -57,7 +57,8 @@ class TwitterCredentialTester:
         
         # Try to get Supabase credentials from environment
         self.supabase_url = os.getenv('SUPABASE_URL')
-        self.supabase_key = os.getenv('SUPABASE_ANON_KEY') or os.getenv('SUPABASE_KEY')
+        # Use service role key for direct table access to user_twitter_credentials
+        self.supabase_key = os.getenv('SUPABASE_SERVICE_ROLE_KEY') or os.getenv('SUPABASE_KEY') or os.getenv('SUPABASE_ANON_KEY')
         
         if not self.supabase_url or not self.supabase_key:
             print("❌ Supabase credentials not found in environment variables")
