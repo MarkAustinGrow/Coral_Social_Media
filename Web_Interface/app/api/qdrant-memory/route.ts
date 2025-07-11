@@ -3,6 +3,7 @@ import { loadEnvFromRoot, getRootEnv } from "@/lib/env-loader"
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
 import { cookies } from 'next/headers'
 import { Database } from '@/types/database'
+import crypto from 'crypto'
 
 // Sample data for when Qdrant is not available
 const SAMPLE_MEMORIES = [
@@ -88,8 +89,10 @@ export async function GET(req: NextRequest) {
     const userId = session.user.id
     console.log(`User authenticated: ${userId}`)
     
-    // Use user-specific collection name
-    const userCollectionName = `working_knowledge_${userId}`
+    // Use the same collection naming convention as the Tweet Research Agent
+    // Create a user-specific collection name for Qdrant (shortened to avoid length limits)
+    const userHash = crypto.createHash('md5').update(userId).digest('hex').substring(0, 8)
+    const userCollectionName = `research_${userHash}`
     console.log(`Using user-specific collection: ${userCollectionName}`)
     
     // First, check if the collection exists
@@ -379,8 +382,9 @@ export async function DELETE(req: NextRequest) {
     const userId = session.user.id
     console.log(`User authenticated: ${userId}`)
     
-    // Use user-specific collection name
-    const userCollectionName = `working_knowledge_${userId}`
+    // Use the same collection naming convention as the Tweet Research Agent
+    const userHash = crypto.createHash('md5').update(userId).digest('hex').substring(0, 8)
+    const userCollectionName = `research_${userHash}`
     console.log(`Using user-specific collection: ${userCollectionName}`)
     
     const { point_id } = await req.json()

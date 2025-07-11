@@ -787,7 +787,7 @@ async def main():
         )
         
         # Get Coral tools
-        coral_tools = await client.get_tools()
+        coral_tools = client.get_tools()
         
         # Define agent tools
         agent_tools = [
