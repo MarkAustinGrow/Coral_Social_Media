@@ -73,6 +73,8 @@ export async function GET(request: NextRequest) {
     
     // Get Supabase client
     console.log('Getting Supabase client for blogs API')
+    console.log('SUPABASE_URL from env:', process.env.SUPABASE_URL)
+    console.log('SUPABASE_KEY from env (first 20 chars):', process.env.SUPABASE_KEY?.substring(0, 20) + '...')
     const supabase = await getSupabaseClient()
     
     if (!supabase) {
