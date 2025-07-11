@@ -413,18 +413,32 @@ export async function DELETE(req: NextRequest) {
       body: JSON.stringify(deleteBody),
     })
     
+    console.log(`Qdrant delete response status: ${response.status}`)
+    
+    const responseText = await response.text()
+    console.log(`Qdrant delete response body: ${responseText}`)
+    
     if (!response.ok) {
-      const errorText = await response.text()
-      console.error(`Qdrant API error: ${response.status} - ${errorText}`)
+      console.error(`Qdrant API error: ${response.status} - ${responseText}`)
       return NextResponse.json(
-        { success: false, error: `Failed to delete memory: ${errorText}` },
+        { success: false, error: `Failed to delete memory: ${responseText}` },
         { status: response.status }
       )
+    }
+    
+    // Try to parse the response as JSON to see the result
+    let responseData
+    try {
+      responseData = JSON.parse(responseText)
+      console.log(`Qdrant delete response data:`, responseData)
+    } catch (e) {
+      console.log(`Qdrant response is not JSON: ${responseText}`)
     }
     
     return NextResponse.json({
       success: true,
       message: `Memory ${point_id} deleted successfully`,
+      qdrant_response: responseData || responseText
     })
   } catch (error) {
     console.error("Error deleting Qdrant memory:", error)
