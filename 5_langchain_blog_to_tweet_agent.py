@@ -217,13 +217,13 @@ def get_unconverted_blog_posts(limit: int = 1):
             
             # Then exclude those blog posts from our query and filter by user_id
             if existing_blog_ids:
-                result = supabase_client.table("blog_posts").select("*").eq("review_status", "approved").eq("user_id", user_id).not_.in_("id", existing_blog_ids).order("created_at", desc=True).limit(limit).execute()
+                result = supabase_client.table("blog_posts").select("*").eq("review_status", "approve").eq("user_id", user_id).not_.in_("id", existing_blog_ids).order("created_at", desc=True).limit(limit).execute()
             else:
-                result = supabase_client.table("blog_posts").select("*").eq("review_status", "approved").eq("user_id", user_id).order("created_at", desc=True).limit(limit).execute()
+                result = supabase_client.table("blog_posts").select("*").eq("review_status", "approve").eq("user_id", user_id).order("created_at", desc=True).limit(limit).execute()
         except Exception as e:
             logger.error(f"Error in blog posts query: {str(e)}")
             # Fallback query with just user_id filtering
-            result = supabase_client.table("blog_posts").select("*").eq("review_status", "approved").eq("user_id", user_id).order("created_at", desc=True).limit(limit).execute()
+            result = supabase_client.table("blog_posts").select("*").eq("review_status", "approve").eq("user_id", user_id).order("created_at", desc=True).limit(limit).execute()
         
         posts = result.data if result.data else []
         
