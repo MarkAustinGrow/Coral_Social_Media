@@ -96,12 +96,13 @@ export function TweetList({ status }: TweetListProps) {
     const threadGroups: Tweet[][] = []
     
     Object.values(blogPostGroups).forEach(blogPostTweets => {
-      // Sort by position
+      // Sort by position - ensure proper numeric sorting
       blogPostTweets.sort((a, b) => {
         if (a.position === null && b.position === null) return 0
         if (a.position === null) return 1
         if (b.position === null) return -1
-        return a.position - b.position
+        // Ensure numeric comparison
+        return Number(a.position) - Number(b.position)
       })
       
       // If there's only one tweet or position is null, it's a standalone tweet
