@@ -46,7 +46,7 @@ export async function GET(request: NextRequest) {
     
     // Get Supabase client
     console.log('Getting Supabase client for tweets API')
-    const supabase = await getSupabaseClient()
+    const supabase = getSupabaseServerClient()
     
     if (!supabase) {
       console.error('Supabase client is not available')
