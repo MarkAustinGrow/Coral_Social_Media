@@ -159,9 +159,9 @@ export function BlogList({ status, withCritiques }: BlogListProps) {
                     )}
                     {blog.critique && (
                       <Badge variant="secondary" className="text-xs">
-                        {blog.critique.decision === "approved" 
+                        {blog.critique.decision === "approve" 
                           ? "Approved" 
-                          : blog.critique.decision === "rejected"
+                          : blog.critique.decision === "reject"
                             ? "Rejected"
                             : "Pending"}
                       </Badge>

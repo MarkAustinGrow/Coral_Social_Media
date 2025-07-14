@@ -29,14 +29,14 @@ export function BlogCritiqueDialog({ blog, open, onOpenChange }: BlogCritiqueDia
 
   const getDecisionBadge = (decision: string) => {
     switch (decision) {
-      case "approved":
+      case "approve":
         return (
           <Badge className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
             <CheckCircle className="mr-1 h-3 w-3" />
             Approved
           </Badge>
         )
-      case "rejected":
+      case "reject":
         return (
           <Badge className="bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200">
             <XCircle className="mr-1 h-3 w-3" />
@@ -122,7 +122,7 @@ export function BlogCritiqueDialog({ blog, open, onOpenChange }: BlogCritiqueDia
               </div>
 
               {/* Action buttons */}
-              {blog.critique.decision !== "approved" && blog.critique.decision !== "rejected" && (
+              {blog.critique.decision !== "approve" && blog.critique.decision !== "reject" && (
                 <div className="flex justify-end gap-2 mt-4">
                   <Button variant="outline" className="border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700">
                     <XCircle className="mr-2 h-4 w-4" />
