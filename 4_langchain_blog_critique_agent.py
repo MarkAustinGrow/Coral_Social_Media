@@ -330,10 +330,10 @@ IMPORTANT: Your final verdict must explicitly state either "APPROVED" or "REJECT
                         if "message" in response_data["choices"][0] and "content" in response_data["choices"][0]["message"]:
                             critique = response_data["choices"][0]["message"]["content"]
                             
-                            # Extract decision (approved or rejected)
-                            decision = "rejected"  # Default to rejected
+                            # Extract decision (approve or reject)
+                            decision = "reject"  # Default to reject
                             if "APPROVED" in critique.upper():
-                                decision = "approved"
+                                decision = "approve"
                             
                             # Log the critique result
                             logger.info(f"Critique result for blog {blog_id}: {decision}")
@@ -358,7 +358,7 @@ IMPORTANT: Your final verdict must explicitly state either "APPROVED" or "REJECT
                                     "blog_id": blog_id,
                                     "error": "Unexpected response structure - missing message.content",
                                     "critique": "Error: Unable to generate critique due to API response format issues.",
-                                    "decision": "rejected"  # Default to rejected on error
+                                    "decision": "reject"  # Default to reject on error
                                 }
                     else:
                         logger.error(f"Unexpected response structure - missing choices: {response_data}")
@@ -373,7 +373,7 @@ IMPORTANT: Your final verdict must explicitly state either "APPROVED" or "REJECT
                                 "blog_id": blog_id,
                                 "error": "Unexpected response structure - missing choices",
                                 "critique": "Error: Unable to generate critique due to API response format issues.",
-                                "decision": "rejected"  # Default to rejected on error
+                                "decision": "reject"  # Default to reject on error
                             }
                 except Exception as e:
                     logger.error(f"Error parsing Perplexity API response: {str(e)}")
@@ -389,7 +389,7 @@ IMPORTANT: Your final verdict must explicitly state either "APPROVED" or "REJECT
                             "blog_id": blog_id,
                             "error": f"Error parsing response: {str(e)}",
                             "critique": "Error: Unable to generate critique due to parsing issues.",
-                            "decision": "rejected"  # Default to rejected on error
+                            "decision": "reject"  # Default to reject on error
                         }
             elif response.status_code == 429:  # Rate limit error
                 logger.warning(f"Perplexity API rate limit reached: {response.status_code} - {response.text}")
@@ -404,7 +404,7 @@ IMPORTANT: Your final verdict must explicitly state either "APPROVED" or "REJECT
                         "blog_id": blog_id,
                         "error": f"Rate limit error: {response.status_code}",
                         "critique": "Error: Unable to generate critique due to API rate limits.",
-                        "decision": "rejected"  # Default to rejected on error
+                        "decision": "reject"  # Default to reject on error
                     }
             else:
                 logger.error(f"Perplexity API error: {response.status_code} - {response.text}")
@@ -419,7 +419,7 @@ IMPORTANT: Your final verdict must explicitly state either "APPROVED" or "REJECT
                         "blog_id": blog_id,
                         "error": f"API error: {response.status_code}",
                         "critique": "Error: Unable to generate critique due to API errors.",
-                        "decision": "rejected"  # Default to rejected on error
+                        "decision": "reject"  # Default to reject on error
                     }
                 
         except requests.exceptions.Timeout:
@@ -435,7 +435,7 @@ IMPORTANT: Your final verdict must explicitly state either "APPROVED" or "REJECT
                     "blog_id": blog_id,
                     "error": "API request timed out",
                     "critique": "Error: Unable to generate critique due to API timeout.",
-                    "decision": "rejected"  # Default to rejected on error
+                    "decision": "reject"  # Default to reject on error
                 }
         except Exception as e:
             logger.error(f"Error calling Perplexity API: {str(e)}")
@@ -450,7 +450,7 @@ IMPORTANT: Your final verdict must explicitly state either "APPROVED" or "REJECT
                     "blog_id": blog_id,
                     "error": f"Error: {str(e)}",
                     "critique": "Error: Unable to generate critique due to unexpected errors.",
-                    "decision": "rejected"  # Default to rejected on error
+                    "decision": "reject"  # Default to reject on error
                 }
 
 @tool
