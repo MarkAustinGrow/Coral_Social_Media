@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
 
     const userId = session.user.id;
     
-    // Fetch the user's persona
+    // Fetch the user's persona with all fields
     const { data, error } = await supabase
       .from('personas')
       .select('*')
@@ -43,7 +43,32 @@ export async function GET(request: NextRequest) {
     
     // Return the persona or a default if none exists
     if (data && data.length > 0) {
-      return NextResponse.json(data[0]);
+      const persona = data[0];
+      return NextResponse.json({
+        name: persona.name || "Tech Thought Leader",
+        description: persona.description || "A knowledgeable and insightful tech industry expert who shares valuable perspectives on emerging technologies and industry trends.",
+        tone: persona.tone || 70,
+        humor: persona.humor || 40,
+        enthusiasm: persona.enthusiasm || 65,
+        assertiveness: persona.assertiveness || 75,
+        expertise: persona.expertise || [
+          "Artificial Intelligence",
+          "Machine Learning", 
+          "Software Development",
+          "Tech Industry Trends",
+          "Digital Transformation"
+        ],
+        tabooTopics: persona.taboo_topics || [
+          "Partisan Politics",
+          "Religious Debates", 
+          "Controversial Social Issues"
+        ],
+        writingStyle: persona.writing_style || "The persona writes in a clear, concise manner with occasional technical terminology. Paragraphs are kept relatively short for readability. The persona uses data and examples to support points and occasionally asks rhetorical questions to engage readers.",
+        audienceLevel: persona.audience_level || "intermediate",
+        background: persona.background || "20+ years in the tech industry with experience at major tech companies and startups.",
+        interests: persona.interests || "Emerging technologies, open source software, developer tools, and tech ethics.",
+        values: persona.values || "Innovation, education, ethical technology development, and community building."
+      });
     } else {
       return NextResponse.json({
         name: "Tech Thought Leader",
@@ -51,7 +76,24 @@ export async function GET(request: NextRequest) {
         tone: 70,
         humor: 40,
         enthusiasm: 65,
-        assertiveness: 75
+        assertiveness: 75,
+        expertise: [
+          "Artificial Intelligence",
+          "Machine Learning",
+          "Software Development", 
+          "Tech Industry Trends",
+          "Digital Transformation"
+        ],
+        tabooTopics: [
+          "Partisan Politics",
+          "Religious Debates",
+          "Controversial Social Issues"
+        ],
+        writingStyle: "The persona writes in a clear, concise manner with occasional technical terminology. Paragraphs are kept relatively short for readability. The persona uses data and examples to support points and occasionally asks rhetorical questions to engage readers.",
+        audienceLevel: "intermediate",
+        background: "20+ years in the tech industry with experience at major tech companies and startups.",
+        interests: "Emerging technologies, open source software, developer tools, and tech ethics.",
+        values: "Innovation, education, ethical technology development, and community building."
       });
     }
   } catch (error: any) {
@@ -101,6 +143,24 @@ export async function POST(request: NextRequest) {
       }
     }
     
+    // Prepare persona data for database
+    const personaData = {
+      name: persona.name,
+      description: persona.description,
+      tone: persona.tone,
+      humor: persona.humor,
+      enthusiasm: persona.enthusiasm,
+      assertiveness: persona.assertiveness,
+      expertise: persona.expertise || [],
+      taboo_topics: persona.tabooTopics || [],
+      writing_style: persona.writingStyle || null,
+      audience_level: persona.audienceLevel || 'intermediate',
+      background: persona.background || null,
+      interests: persona.interests || null,
+      values: persona.values || null,
+      updated_at: new Date().toISOString()
+    };
+    
     // Check if the user already has a persona
     const { data: existingPersonas, error: fetchError } = await supabase
       .from('personas')
@@ -122,15 +182,7 @@ export async function POST(request: NextRequest) {
       // Update existing user persona
       result = await supabase
         .from('personas')
-        .update({
-          name: persona.name,
-          description: persona.description,
-          tone: persona.tone,
-          humor: persona.humor,
-          enthusiasm: persona.enthusiasm,
-          assertiveness: persona.assertiveness,
-          updated_at: new Date().toISOString()
-        })
+        .update(personaData)
         .eq('id', existingPersonas[0].id)
         .eq('user_id', userId);
     } else {
@@ -138,12 +190,7 @@ export async function POST(request: NextRequest) {
       result = await supabase
         .from('personas')
         .insert({
-          name: persona.name,
-          description: persona.description,
-          tone: persona.tone,
-          humor: persona.humor,
-          enthusiasm: persona.enthusiasm,
-          assertiveness: persona.assertiveness,
+          ...personaData,
           user_id: userId
         });
     }
