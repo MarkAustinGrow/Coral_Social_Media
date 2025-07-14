@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
@@ -9,7 +9,8 @@ import { Slider } from "@/components/ui/slider"
 import { Switch } from "@/components/ui/switch"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { X } from "lucide-react"
+import { X, Save, Loader2 } from "lucide-react"
+import { useToast } from "@/hooks/use-toast"
 
 // Mock data - would be fetched from API in real implementation
 const mockPersona = {
@@ -46,6 +47,112 @@ export function PersonaEditor() {
   const [persona, setPersona] = useState(mockPersona)
   const [newExpertise, setNewExpertise] = useState("")
   const [newTabooTopic, setNewTabooTopic] = useState("")
+  const [isLoading, setIsLoading] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
+  const { toast } = useToast()
+
+  // Load persona from API on component mount
+  useEffect(() => {
+    loadPersona()
+  }, [])
+
+  const loadPersona = async () => {
+    setIsLoading(true)
+    try {
+      const response = await fetch('/api/persona')
+      if (response.ok) {
+        const data = await response.json()
+        // Transform API data to match component structure
+        const transformedPersona = {
+          name: data.name || "Tech Thought Leader",
+          description: data.description || "A knowledgeable and insightful tech industry expert who shares valuable perspectives on emerging technologies and industry trends.",
+          voice: {
+            tone: data.tone || 70,
+            humor: data.humor || 40,
+            enthusiasm: data.enthusiasm || 65,
+            assertiveness: data.assertiveness || 75,
+          },
+          expertise: data.expertise || [
+            "Artificial Intelligence",
+            "Machine Learning",
+            "Software Development",
+            "Tech Industry Trends",
+            "Digital Transformation"
+          ],
+          tabooTopics: data.tabooTopics || [
+            "Partisan Politics",
+            "Religious Debates",
+            "Controversial Social Issues"
+          ],
+          writingStyle: data.writingStyle || "The persona writes in a clear, concise manner with occasional technical terminology. Paragraphs are kept relatively short for readability. The persona uses data and examples to support points and occasionally asks rhetorical questions to engage readers.",
+          audienceLevel: data.audienceLevel || "intermediate",
+          personalDetails: {
+            background: data.background || "20+ years in the tech industry with experience at major tech companies and startups.",
+            interests: data.interests || "Emerging technologies, open source software, developer tools, and tech ethics.",
+            values: data.values || "Innovation, education, ethical technology development, and community building."
+          }
+        }
+        setPersona(transformedPersona)
+      }
+    } catch (error) {
+      console.error('Error loading persona:', error)
+      toast({
+        title: "Error",
+        description: "Failed to load persona. Using default values.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const savePersona = async () => {
+    setIsSaving(true)
+    try {
+      // Transform persona data for API
+      const apiData = {
+        name: persona.name,
+        description: persona.description,
+        tone: persona.voice.tone,
+        humor: persona.voice.humor,
+        enthusiasm: persona.voice.enthusiasm,
+        assertiveness: persona.voice.assertiveness,
+        expertise: persona.expertise,
+        tabooTopics: persona.tabooTopics,
+        writingStyle: persona.writingStyle,
+        audienceLevel: persona.audienceLevel,
+        background: persona.personalDetails.background,
+        interests: persona.personalDetails.interests,
+        values: persona.personalDetails.values
+      }
+
+      const response = await fetch('/api/persona', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(apiData),
+      })
+
+      if (response.ok) {
+        toast({
+          title: "Success",
+          description: "Persona saved successfully!",
+        })
+      } else {
+        throw new Error('Failed to save persona')
+      }
+    } catch (error) {
+      console.error('Error saving persona:', error)
+      toast({
+        title: "Error",
+        description: "Failed to save persona. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsSaving(false)
+    }
+  }
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target
@@ -366,6 +473,27 @@ export function PersonaEditor() {
           </div>
         </TabsContent>
       </Tabs>
+      
+      {/* Save Button */}
+      <div className="flex justify-end pt-4">
+        <Button 
+          onClick={savePersona} 
+          disabled={isSaving}
+          className="min-w-[120px]"
+        >
+          {isSaving ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Saving...
+            </>
+          ) : (
+            <>
+              <Save className="mr-2 h-4 w-4" />
+              Save Persona
+            </>
+          )}
+        </Button>
+      </div>
     </div>
   )
 }

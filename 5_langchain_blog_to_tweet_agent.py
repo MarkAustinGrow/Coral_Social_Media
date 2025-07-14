@@ -8,6 +8,7 @@ from langchain.prompts import ChatPromptTemplate
 from langchain.chat_models import init_chat_model
 from langchain.agents import create_tool_calling_agent, AgentExecutor
 from langchain_core.tools import tool
+from typing import Optional
 from supabase import create_client, Client
 from dotenv import load_dotenv
 from anyio import ClosedResourceError
@@ -294,7 +295,7 @@ def get_blog_post_by_id(blog_post_id: int):
         }
 
 @tool
-def convert_blog_to_tweets(blog_post: dict, max_tweets: int = 10, persona: dict = None):
+def convert_blog_to_tweets(blog_post: dict, max_tweets: int = 10, persona: Optional[dict] = None):
     """
     Convert a blog post into a tweet thread.
     

@@ -1,3 +1,5 @@
+"use client"
+
 import type { Metadata } from "next"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
@@ -8,6 +10,7 @@ import { PersonaEditor } from "@/components/persona-editor"
 import { PersonaPreview } from "@/components/persona-preview"
 import { PersonaTemplates } from "@/components/persona-templates"
 import { Save, Download, Upload, RotateCcw } from "lucide-react"
+import { useRef } from "react"
 
 export const metadata: Metadata = {
   title: "Persona Configuration | Social Media Agent System",
