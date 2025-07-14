@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSupabaseClient } from '@/lib/supabase';
+import { getSupabaseServerClient } from '@/lib/supabase';
 
 // GET /api/persona - Get the current user's persona
 export async function GET(request: NextRequest) {
   try {
-    const supabase = await getSupabaseClient();
+    const supabase = getSupabaseServerClient();
     
     if (!supabase) {
       return NextResponse.json(
@@ -110,7 +110,7 @@ export async function POST(request: NextRequest) {
   console.log('🚀 POST /api/persona - Starting persona save request');
   
   try {
-    const supabase = await getSupabaseClient();
+    const supabase = getSupabaseServerClient();
     
     if (!supabase) {
       console.error('❌ Supabase client is not available');
