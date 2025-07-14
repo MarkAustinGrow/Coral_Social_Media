@@ -413,7 +413,8 @@ def get_scheduled_tweets(limit: int = 10):
         now = datetime.now()
         
         # Query the potential_tweets table in Supabase with user_id filtering
-        result = supabase_client.table("potential_tweets").select("*").eq("status", "scheduled").eq("user_id", user_id).lte("scheduled_for", now.isoformat()).order("scheduled_for", desc=False).order("position", desc=False).limit(limit).execute()
+        # Order by blog_post_id first, then position to ensure threads are grouped and ordered correctly
+        result = supabase_client.table("potential_tweets").select("*").eq("status", "scheduled").eq("user_id", user_id).lte("scheduled_for", now.isoformat()).order("blog_post_id", desc=False).order("position", desc=False).limit(limit).execute()
         
         tweets = result.data if result.data else []
         
@@ -599,18 +600,30 @@ def post_tweet_thread(tweets: list):
         for index, tweet in enumerate(sorted_tweets):
             logger.info(f"Posting tweet {index + 1}/{len(sorted_tweets)} in thread for user {user_id}")
 
+            # For threading, pass the previous tweet ID as in_reply_to_id
             response = post_tweet(tweet.get("content", ""), previous_tweet_id)
 
             if not response.get("success", False) or "error" in response:
                 logger.error(f"Failed to post tweet ID {tweet.get('id')} for user {user_id}: {response.get('error') or response.get('message')}")
                 log_to_database("error", f"Failed to post tweet ID {tweet.get('id')} in thread for user {user_id}", {"error": response.get('error')})
+                
+                # Mark this tweet as failed
                 try:
-                    # Update with user_id filtering
                     supabase_client.table("potential_tweets").update({
                         "status": "failed"
                     }).eq("id", tweet.get("id")).eq("user_id", user_id).execute()
                 except Exception as db_error:
                     logger.error(f"Failed to update Supabase on failure: {str(db_error)}")
+
+                # CRITICAL: Stop the thread here - don't continue posting individual tweets
+                # Mark remaining tweets as failed too
+                for remaining_tweet in sorted_tweets[index+1:]:
+                    try:
+                        supabase_client.table("potential_tweets").update({
+                            "status": "failed"
+                        }).eq("id", remaining_tweet.get("id")).eq("user_id", user_id).execute()
+                    except Exception as db_error:
+                        logger.error(f"Failed to update remaining tweet {remaining_tweet.get('id')} status: {str(db_error)}")
 
                 return {
                     "success": False,
