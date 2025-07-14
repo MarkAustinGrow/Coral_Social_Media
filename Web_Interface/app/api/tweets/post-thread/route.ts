@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { getSupabaseClient, handleSupabaseError } from '@/lib/supabase'
-import { spawn } from 'child_process'
-import path from 'path'
+import { getSupabaseServerClient, handleSupabaseError } from '@/lib/supabase'
+import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
+import { cookies } from 'next/headers'
+import type { Database } from '@/types/database'
 
 export async function POST(request: NextRequest) {
   try {
@@ -20,10 +21,41 @@ export async function POST(request: NextRequest) {
       )
     }
     
-    console.log(`Posting thread with IDs: ${threadIds.join(', ')}`)
+    console.log(`Scheduling thread for immediate posting with IDs: ${threadIds.join(', ')}`)
     
-    // Get Supabase client
-    const supabase = await getSupabaseClient()
+    // Get authenticated user
+    const authClient = createRouteHandlerClient<Database>({ cookies })
+    const { data: { session }, error: sessionError } = await authClient.auth.getSession()
+    
+    if (sessionError) {
+      console.error('Session error:', sessionError)
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: 'Authentication error', 
+          details: sessionError.message 
+        },
+        { status: 401 }
+      )
+    }
+    
+    if (!session?.user) {
+      console.error('No authenticated user found')
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: 'Not authenticated', 
+          details: 'Please log in to post tweets' 
+        },
+        { status: 401 }
+      )
+    }
+    
+    const userId = session.user.id
+    console.log(`User ${userId} requesting to post thread`)
+    
+    // Get Supabase server client
+    const supabase = getSupabaseServerClient()
     
     if (!supabase) {
       return NextResponse.json(
@@ -35,11 +67,12 @@ export async function POST(request: NextRequest) {
       )
     }
     
-    // Fetch all tweets in the thread to make sure they exist
+    // Fetch all tweets in the thread to make sure they exist and belong to user
     const { data: tweets, error: tweetsError } = await supabase
       .from('potential_tweets')
       .select('*')
       .in('id', threadIds)
+      .eq('user_id', userId)
       .order('position', { ascending: true })
     
     if (tweetsError) {
@@ -58,7 +91,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { 
           success: false, 
-          error: 'No tweets found for the provided IDs' 
+          error: 'No tweets found for the provided IDs or you do not have permission to access them' 
         },
         { status: 404 }
       )
@@ -66,13 +99,13 @@ export async function POST(request: NextRequest) {
     
     // Check if all tweets in the thread exist
     if (tweets.length !== threadIds.length) {
-      const foundIds = tweets.map(tweet => tweet.id)
+      const foundIds = tweets.map((tweet: any) => tweet.id)
       const missingIds = threadIds.filter(id => !foundIds.includes(id))
       
       return NextResponse.json(
         { 
           success: false, 
-          error: 'Some tweets in the thread were not found',
+          error: 'Some tweets in the thread were not found or you do not have permission to access them',
           details: {
             missingIds
           }
@@ -82,145 +115,58 @@ export async function POST(request: NextRequest) {
     }
     
     // Check if any tweets in the thread are already posted
-    const postedTweets = tweets.filter(tweet => tweet.status === 'posted' && tweet.posted_at)
+    const postedTweets = tweets.filter((tweet: any) => tweet.status === 'posted' && tweet.posted_at)
     if (postedTweets.length > 0) {
       return NextResponse.json(
         { 
           success: false, 
           error: 'Some tweets in the thread are already posted',
           details: {
-            postedTweetIds: postedTweets.map(tweet => tweet.id)
+            postedTweetIds: postedTweets.map((tweet: any) => tweet.id)
           }
         },
         { status: 400 }
       )
     }
     
-    // Update all tweets in the thread to 'posting' status
+    // Update all tweets in the thread to be scheduled for NOW so the agent picks them up
+    const now = new Date().toISOString()
     const { error: updateError } = await supabase
       .from('potential_tweets')
-      .update({ status: 'posting' })
+      .update({ 
+        status: 'scheduled',
+        scheduled_for: now
+      })
       .in('id', threadIds)
     
     if (updateError) {
-      console.error('Error updating tweet statuses:', updateError)
+      console.error('Error updating tweet schedules:', updateError)
       return NextResponse.json(
         { 
           success: false, 
-          error: 'Failed to update tweet statuses',
+          error: 'Failed to schedule tweets for posting',
           details: handleSupabaseError(updateError) 
         },
         { status: 500 }
       )
     }
     
-    // Run the Twitter posting agent to post the thread
-    try {
-      // Get the root directory (where the Python scripts are located)
-      const rootDir = process.cwd()
-      const scriptPath = path.join(rootDir, '..', '7_langchain_twitter_posting_agent_v3.py')
-      
-      console.log(`Running Twitter posting agent: ${scriptPath}`)
-      console.log(`With thread IDs: ${threadIds.join(', ')}`)
-      
-      // Spawn the Twitter posting agent process with the first tweet ID
-      // The agent will handle finding and posting the rest of the thread
-      const pythonProcess = spawn('python', [
-        scriptPath, 
-        '--tweet_id', threadIds[0].toString(),
-        '--thread', 'true'
-      ])
-      
-      // Collect stdout and stderr
-      let stdout = ''
-      let stderr = ''
-      
-      // Set up a promise to handle the process completion
-      const processPromise = new Promise<{exitCode: number, stdout: string, stderr: string}>((resolve, reject) => {
-        pythonProcess.stdout.on('data', (data) => {
-          const dataStr = data.toString()
-          stdout += dataStr
-          console.log(`Twitter posting agent stdout: ${dataStr}`)
-        })
-        
-        pythonProcess.stderr.on('data', (data) => {
-          const dataStr = data.toString()
-          stderr += dataStr
-          console.error(`Twitter posting agent stderr: ${dataStr}`)
-        })
-        
-        pythonProcess.on('close', (code) => {
-          console.log(`Twitter posting agent process exited with code ${code}`)
-          resolve({ exitCode: code || 0, stdout, stderr })
-        })
-        
-        pythonProcess.on('error', (err) => {
-          console.error(`Failed to start Twitter posting agent process: ${err}`)
-          reject(err)
-        })
-      })
-      
-      // Wait for the process to complete with a timeout
-      const timeoutPromise = new Promise<{exitCode: number, stdout: string, stderr: string}>((_, reject) => {
-        setTimeout(() => {
-          reject(new Error('Twitter posting agent process timed out after 60 seconds'))
-        }, 60000) // 60 second timeout for threads (longer than single tweets)
-      })
-      
-      // Race the process completion against the timeout
-      const result = await Promise.race([processPromise, timeoutPromise])
-      
-      if (result.exitCode !== 0) {
-        // Update the tweets status back to 'scheduled'
-        await supabase
-          .from('potential_tweets')
-          .update({ status: 'failed' })
-          .in('id', threadIds)
-        
-        return NextResponse.json(
-          { 
-            success: false, 
-            error: 'Twitter posting agent process failed',
-            details: {
-              exitCode: result.exitCode,
-              stderr: result.stderr
-            }
-          },
-          { status: 500 }
-        )
-      }
-      
-      // Return success response
-      return NextResponse.json({
-        success: true,
-        message: 'Thread posted successfully',
-        threadIds
-      })
-    } catch (error: any) {
-      console.error('Error running Twitter posting agent:', error)
-      
-      // Update the tweets status back to 'scheduled'
-      await supabase
-        .from('potential_tweets')
-        .update({ status: 'scheduled' })
-        .in('id', threadIds)
-      
-      return NextResponse.json(
-        { 
-          success: false, 
-          error: 'Failed to run Twitter posting agent',
-          details: error.message
-        },
-        { status: 500 }
-      )
-    }
+    console.log(`Successfully scheduled ${threadIds.length} tweets for immediate posting at ${now}`)
+    
+    // Return success response
+    return NextResponse.json({
+      success: true,
+      message: 'Thread scheduled for immediate posting. The Twitter Posting Agent will pick it up within the next minute.',
+      threadIds,
+      scheduledFor: now
+    })
   } catch (error: any) {
     console.error('Error in post thread API:', error)
     
     return NextResponse.json(
       { 
         success: false, 
-        error: error.message || 'Failed to post thread',
+        error: error.message || 'Failed to schedule thread for posting',
         stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
       },
       { status: 500 }
