@@ -235,12 +235,38 @@ class UserTwitterClient:
             raise Exception("Rate limit would be exceeded. Try again later.")
         
         try:
+            # DEBUGGING: Log threading information
+            if in_reply_to_tweet_id:
+                logger.info(f"🔗 THREADING: Creating reply tweet for user {self.user_id}")
+                logger.info(f"🔗 Reply to tweet ID: {in_reply_to_tweet_id}")
+                logger.info(f"🔗 Tweet content: {text[:100]}...")
+                log_to_database("info", f"Creating threaded tweet for user {self.user_id}", {
+                    "in_reply_to_tweet_id": in_reply_to_tweet_id,
+                    "content_preview": text[:100]
+                })
+            else:
+                logger.info(f"🆕 THREADING: Creating standalone tweet for user {self.user_id}")
+                logger.info(f"🆕 Tweet content: {text[:100]}...")
+                log_to_database("info", f"Creating standalone tweet for user {self.user_id}", {
+                    "content_preview": text[:100]
+                })
+            
             # Use the user-specific Twitter client
             if in_reply_to_tweet_id:
                 # For replies, we need to use the v2 API format
+                logger.info(f"🔗 THREADING: Calling Twitter API with reply-to parameter")
                 response = self.twitter_client.create_tweet(text=text, in_reply_to_tweet_id=in_reply_to_tweet_id)
+                logger.info(f"🔗 THREADING: Twitter API response received for reply tweet")
             else:
+                logger.info(f"🆕 THREADING: Calling Twitter API without reply-to parameter")
                 response = self.twitter_client.create_tweet(text=text)
+                logger.info(f"🆕 THREADING: Twitter API response received for standalone tweet")
+            
+            # Log the response for debugging
+            tweet_id = response.data['id']
+            logger.info(f"✅ THREADING: Tweet created successfully with ID: {tweet_id}")
+            if in_reply_to_tweet_id:
+                logger.info(f"✅ THREADING: This tweet should appear as a reply to {in_reply_to_tweet_id}")
             
             # Convert response to consistent format
             return {
@@ -251,7 +277,9 @@ class UserTwitterClient:
             }
             
         except Exception as e:
-            logger.error(f"Error creating tweet for user {self.user_id}: {str(e)}")
+            logger.error(f"❌ THREADING: Error creating tweet for user {self.user_id}: {str(e)}")
+            if in_reply_to_tweet_id:
+                logger.error(f"❌ THREADING: Failed to create reply to tweet {in_reply_to_tweet_id}")
             
             # Handle rate limiting
             if "rate limit" in str(e).lower() or "429" in str(e):
