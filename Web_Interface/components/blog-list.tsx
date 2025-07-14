@@ -68,29 +68,70 @@ export function BlogList({ status, withCritiques }: BlogListProps) {
     })
   }
 
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case "published":
-        return (
-          <Badge variant="outline" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
-            Published
-          </Badge>
-        )
-      case "review":
-        return (
-          <Badge variant="outline" className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200">
-            Review
-          </Badge>
-        )
-      case "draft":
-        return (
-          <Badge variant="outline" className="bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200">
-            Draft
-          </Badge>
-        )
-      default:
-        return null
+  const getConsolidatedStatusBadge = (blog: BlogWithCritique) => {
+    // If blog is published, that's the primary status
+    if (blog.status === "published") {
+      return (
+        <Badge variant="outline" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
+          Published
+        </Badge>
+      )
     }
+
+    // If there's a critique decision, show that as the primary status
+    if (blog.critique?.decision) {
+      switch (blog.critique.decision) {
+        case "approve":
+          return (
+            <Badge variant="outline" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
+              Approved
+            </Badge>
+          )
+        case "reject":
+          return (
+            <Badge variant="outline" className="bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200">
+              Rejected
+            </Badge>
+          )
+        case "revise":
+          return (
+            <Badge variant="outline" className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200">
+              Needs Revision
+            </Badge>
+          )
+        default:
+          return (
+            <Badge variant="outline" className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200">
+              Under Review
+            </Badge>
+          )
+      }
+    }
+
+    // If review status indicates fact-checking, show that
+    if (blog.review_status === "pending_fact_check") {
+      return (
+        <Badge variant="outline" className="bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
+          Fact-Checking
+        </Badge>
+      )
+    }
+
+    // If in review status, show that
+    if (blog.status === "review" || blog.review_status === "review") {
+      return (
+        <Badge variant="outline" className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200">
+          In Review
+        </Badge>
+      )
+    }
+
+    // Default to draft status
+    return (
+      <Badge variant="outline" className="bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200">
+        Draft
+      </Badge>
+    )
   }
 
   return (
@@ -151,21 +192,7 @@ export function BlogList({ status, withCritiques }: BlogListProps) {
                     <span>{blog.word_count} words</span>
                   </div>
                   <div className="flex flex-wrap gap-1 mt-1">
-                    {getStatusBadge(blog.status)}
-                    {blog.review_status && (
-                      <Badge variant="outline" className="text-xs">
-                        {blog.review_status.replace(/_/g, ' ')}
-                      </Badge>
-                    )}
-                    {blog.critique && (
-                      <Badge variant="secondary" className="text-xs">
-                        {blog.critique.decision === "approve" 
-                          ? "Approved" 
-                          : blog.critique.decision === "reject"
-                            ? "Rejected"
-                            : "Pending"}
-                      </Badge>
-                    )}
+                    {getConsolidatedStatusBadge(blog)}
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
