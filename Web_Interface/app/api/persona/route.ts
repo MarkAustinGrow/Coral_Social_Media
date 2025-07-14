@@ -107,10 +107,13 @@ export async function GET(request: NextRequest) {
 
 // POST /api/persona - Create or update the user's persona
 export async function POST(request: NextRequest) {
+  console.log('🚀 POST /api/persona - Starting persona save request');
+  
   try {
     const supabase = await getSupabaseClient();
     
     if (!supabase) {
+      console.error('❌ Supabase client is not available');
       return NextResponse.json(
         { error: 'Supabase client is not available' },
         { status: 500 }
@@ -121,6 +124,7 @@ export async function POST(request: NextRequest) {
     const { data: { session }, error: sessionError } = await supabase.auth.getSession();
     
     if (sessionError || !session?.user) {
+      console.error('❌ Authentication failed:', sessionError);
       return NextResponse.json(
         { error: 'Authentication required' },
         { status: 401 }
@@ -128,14 +132,17 @@ export async function POST(request: NextRequest) {
     }
 
     const userId = session.user.id;
+    console.log('✅ User authenticated:', userId);
     
     // Parse the request body
     const persona = await request.json();
+    console.log('📝 Received persona data:', JSON.stringify(persona, null, 2));
     
     // Validate required fields
     const requiredFields = ['name', 'description', 'tone', 'humor', 'enthusiasm', 'assertiveness'];
     for (const field of requiredFields) {
       if (persona[field] === undefined) {
+        console.error(`❌ Missing required field: ${field}`);
         return NextResponse.json(
           { error: `Missing required field: ${field}` },
           { status: 400 }
@@ -161,7 +168,10 @@ export async function POST(request: NextRequest) {
       updated_at: new Date().toISOString()
     };
     
+    console.log('🔄 Prepared persona data for database:', JSON.stringify(personaData, null, 2));
+    
     // Check if the user already has a persona
+    console.log('🔍 Checking for existing personas...');
     const { data: existingPersonas, error: fetchError } = await supabase
       .from('personas')
       .select('id')
@@ -169,17 +179,20 @@ export async function POST(request: NextRequest) {
       .limit(1);
     
     if (fetchError) {
-      console.error('Error checking existing personas:', fetchError);
+      console.error('❌ Error checking existing personas:', fetchError);
       return NextResponse.json(
         { error: fetchError.message },
         { status: 500 }
       );
     }
     
+    console.log('📊 Existing personas found:', existingPersonas?.length || 0);
+    
     let result;
     
     if (existingPersonas && existingPersonas.length > 0) {
       // Update existing user persona
+      console.log('🔄 Updating existing persona with ID:', existingPersonas[0].id);
       result = await supabase
         .from('personas')
         .update(personaData)
@@ -187,6 +200,7 @@ export async function POST(request: NextRequest) {
         .eq('user_id', userId);
     } else {
       // Insert new persona for the user
+      console.log('➕ Creating new persona for user');
       result = await supabase
         .from('personas')
         .insert({
@@ -195,17 +209,20 @@ export async function POST(request: NextRequest) {
         });
     }
     
+    console.log('💾 Database operation result:', JSON.stringify(result, null, 2));
+    
     if (result.error) {
-      console.error('Error saving persona:', result.error);
+      console.error('❌ Error saving persona:', result.error);
       return NextResponse.json(
         { error: result.error.message },
         { status: 500 }
       );
     }
     
+    console.log('✅ Persona saved successfully');
     return NextResponse.json({ success: true });
   } catch (error: any) {
-    console.error('Unexpected error in POST /api/persona:', error);
+    console.error('💥 Unexpected error in POST /api/persona:', error);
     return NextResponse.json(
       { error: error.message || 'An unexpected error occurred' },
       { status: 500 }
