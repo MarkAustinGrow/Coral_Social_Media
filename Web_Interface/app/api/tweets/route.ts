@@ -180,7 +180,7 @@ async function handleTweetRequests(
       // Order by position (for threads) and created_at
       query = query.order('blog_post_id', { ascending: true })
         .order('position', { ascending: true })
-        .order('created_at', { ascending: false })
+        .order('created_at', { ascending: true })
       
       console.log('Executing tweets query')
       // Execute query
