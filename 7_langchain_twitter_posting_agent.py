@@ -256,17 +256,22 @@ class UserTwitterClient:
             if in_reply_to_tweet_id:
                 # FIXED: Use the official Twitter API v2 reply format
                 logger.info(f"🔗 THREADING: Using official API v2 reply format")
+                logger.info(f"🔗 THREADING: Constructing reply object: {{'in_reply_to_tweet_id': '{in_reply_to_tweet_id}'}}")
+                
+                reply_object = {"in_reply_to_tweet_id": in_reply_to_tweet_id}
+                logger.info(f"🔗 THREADING: Final reply object: {reply_object}")
+                
                 response = self.twitter_client.create_tweet(
                     text=text,
-                    reply={
-                        "in_reply_to_tweet_id": in_reply_to_tweet_id
-                    }
+                    reply=reply_object
                 )
                 logger.info(f"🔗 THREADING: Twitter API response received for reply tweet")
+                logger.info(f"🔗 THREADING: Response data: {response.data if hasattr(response, 'data') else 'No data attribute'}")
             else:
                 logger.info(f"🆕 THREADING: Calling Twitter API without reply-to parameter")
                 response = self.twitter_client.create_tweet(text=text)
                 logger.info(f"🆕 THREADING: Twitter API response received for standalone tweet")
+                logger.info(f"🆕 THREADING: Response data: {response.data if hasattr(response, 'data') else 'No data attribute'}")
             
             # Log the response for debugging
             tweet_id = response.data['id']
@@ -817,9 +822,13 @@ async def create_twitter_posting_agent(client, tools, agent_tools):
             If no mentions are received (timeout), you should:
             1. Check API rate limits using check_api_rate_limits
             2. If rate limits allow, get scheduled tweets using get_scheduled_tweets for the current user
-            3. For each thread:
+            3. If there are scheduled tweets available:
                a. Post the thread using post_tweet_thread
                b. Wait a few seconds between threads to avoid rate limiting
+            4. If there are no scheduled tweets OR if any error occurs:
+               a. Log the status and wait
+               b. Do NOT repeatedly call the same tools
+               c. Move on to the next cycle gracefully
             
             When posting tweets, focus on:
             - Respecting Twitter API rate limits for the current user
