@@ -218,6 +218,7 @@ class UserTwitterClient:
     def create_tweet(self, text, in_reply_to_tweet_id=None):
         """
         Create a tweet using Twitter API v2 with user-specific credentials.
+        Uses the official Twitter API v2 format for threading.
         
         Args:
             text: The text of the tweet
@@ -251,11 +252,16 @@ class UserTwitterClient:
                     "content_preview": text[:100]
                 })
             
-            # Use the user-specific Twitter client
+            # Use the user-specific Twitter client with correct API v2 format
             if in_reply_to_tweet_id:
-                # For replies, we need to use the v2 API format
-                logger.info(f"🔗 THREADING: Calling Twitter API with reply-to parameter")
-                response = self.twitter_client.create_tweet(text=text, in_reply_to_tweet_id=in_reply_to_tweet_id)
+                # FIXED: Use the official Twitter API v2 reply format
+                logger.info(f"🔗 THREADING: Using official API v2 reply format")
+                response = self.twitter_client.create_tweet(
+                    text=text,
+                    reply={
+                        "in_reply_to_tweet_id": in_reply_to_tweet_id
+                    }
+                )
                 logger.info(f"🔗 THREADING: Twitter API response received for reply tweet")
             else:
                 logger.info(f"🆕 THREADING: Calling Twitter API without reply-to parameter")
