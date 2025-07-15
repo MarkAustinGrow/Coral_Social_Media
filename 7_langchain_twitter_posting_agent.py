@@ -639,12 +639,83 @@ def post_tweet_thread(tweets: list):
         for index, tweet in enumerate(sorted_tweets):
             logger.info(f"Posting tweet {index + 1}/{len(sorted_tweets)} in thread for user {user_id}")
 
-            # For threading, pass the previous tweet ID as in_reply_to_id
-            response = post_tweet(tweet.get("content", ""), previous_tweet_id)
-
-            if not response.get("success", False) or "error" in response:
-                logger.error(f"Failed to post tweet ID {tweet.get('id')} for user {user_id}: {response.get('error') or response.get('message')}")
-                log_to_database("error", f"Failed to post tweet ID {tweet.get('id')} in thread for user {user_id}", {"error": response.get('error')})
+            # FIXED: Use direct function call instead of LangChain tool to avoid 'parent_run_id' error
+            try:
+                # Get user-specific Twitter client
+                twitter_client = get_twitter_client()
+                
+                if not twitter_client:
+                    error_msg = "User needs to configure Twitter credentials"
+                    logger.error(f"Failed to get Twitter client for user {user_id}: {error_msg}")
+                    log_to_database("error", f"Failed to get Twitter client for user {user_id}: {error_msg}")
+                    
+                    # Mark remaining tweets as failed
+                    for remaining_tweet in sorted_tweets[index:]:
+                        try:
+                            supabase_client.table("potential_tweets").update({
+                                "status": "failed"
+                            }).eq("id", remaining_tweet.get("id")).eq("user_id", user_id).execute()
+                        except Exception as db_error:
+                            logger.error(f"Failed to update remaining tweet {remaining_tweet.get('id')} status: {str(db_error)}")
+                    
+                    return {
+                        "success": False,
+                        "error": error_msg,
+                        "posted_tweets": posted_tweets
+                    }
+                
+                # FIXED: Direct Twitter API call with proper threading
+                tweet_content = tweet.get("content", "")
+                
+                if previous_tweet_id:
+                    logger.info(f"🔗 THREADING: Posting tweet {index + 1} as reply to {previous_tweet_id}")
+                    log_to_database("info", f"Posting threaded tweet {index + 1} as reply to {previous_tweet_id} for user {user_id}")
+                else:
+                    logger.info(f"🆕 THREADING: Posting tweet {index + 1} as standalone (first in thread)")
+                    log_to_database("info", f"Posting first tweet in thread for user {user_id}")
+                
+                # Use the Twitter client directly
+                twitter_response = twitter_client.create_tweet(tweet_content, previous_tweet_id)
+                
+                # Extract tweet ID from response
+                current_tweet_id = twitter_response['id_str']
+                username = twitter_client.get_username()
+                
+                logger.info(f"✅ THREADING: Tweet {index + 1} posted successfully with ID: {current_tweet_id}")
+                if previous_tweet_id:
+                    logger.info(f"✅ THREADING: Tweet {current_tweet_id} should appear as reply to {previous_tweet_id}")
+                
+                log_to_database("info", f"Tweet {index + 1} posted successfully for user {user_id}", {
+                    "tweet_id": current_tweet_id, 
+                    "twitter_username": username,
+                    "in_reply_to": previous_tweet_id
+                })
+                
+                # Update database
+                try:
+                    supabase_client.table("potential_tweets").update({
+                        "status": "posted",
+                        "posted_at": datetime.now().isoformat()
+                    }).eq("id", tweet.get("id")).eq("user_id", user_id).execute()
+                    logger.info(f"Successfully updated Supabase for tweet {tweet.get('id')} for user {user_id}")
+                    log_to_database("info", f"Successfully updated tweet {tweet.get('id')} status to 'posted' for user {user_id}")
+                except Exception as db_error:
+                    logger.error(f"Failed to update tweet {tweet.get('id')} in Supabase: {str(db_error)}")
+                
+                # Set up for next tweet in thread
+                previous_tweet_id = current_tweet_id
+                posted_tweets.append({
+                    "tweet_id": current_tweet_id,
+                    "content": tweet_content,
+                    "local_id": tweet.get("id")
+                })
+                
+                # Avoid rate limit issues
+                time.sleep(3)
+                
+            except Exception as e:
+                logger.error(f"Failed to post tweet ID {tweet.get('id')} for user {user_id}: {str(e)}")
+                log_to_database("error", f"Failed to post tweet ID {tweet.get('id')} in thread for user {user_id}", {"error": str(e)})
                 
                 # Mark this tweet as failed
                 try:
@@ -666,32 +737,21 @@ def post_tweet_thread(tweets: list):
 
                 return {
                     "success": False,
-                    "error": f"Failed to post tweet {tweet.get('id')}: {response.get('error') or response.get('message')}",
+                    "error": f"Failed to post tweet {tweet.get('id')}: {str(e)}",
                     "posted_tweets": posted_tweets
                 }
 
+        # Get username from the last posted tweet or use default
+        username = posted_tweets[-1].get("twitter_username") if posted_tweets else f"user_{user_id}"
+        if not username or username.startswith("user_"):
+            # Try to get username from Twitter client
             try:
-                # Update with user_id filtering
-                supabase_client.table("potential_tweets").update({
-                    "status": "posted",
-                    "posted_at": datetime.now().isoformat()
-                }).eq("id", tweet.get("id")).eq("user_id", user_id).execute()
-                logger.info(f"Successfully updated Supabase for tweet {tweet.get('id')} for user {user_id}")
-                log_to_database("info", f"Successfully updated tweet {tweet.get('id')} status to 'posted' for user {user_id}")
-            except Exception as db_error:
-                logger.error(f"Failed to update tweet {tweet.get('id')} in Supabase: {str(db_error)}")
-
-            previous_tweet_id = response.get("tweet_id")
-            posted_tweets.append({
-                "tweet_id": previous_tweet_id,
-                "content": tweet.get("content"),
-                "local_id": tweet.get("id")
-            })
-
-            # Avoid rate limit issues
-            time.sleep(3)
-
-        username = response.get("twitter_username", f"user_{user_id}")
+                twitter_client = get_twitter_client()
+                if twitter_client:
+                    username = twitter_client.get_username()
+            except:
+                username = f"user_{user_id}"
+        
         log_to_database("info", f"Successfully posted thread of {len(posted_tweets)} tweets for user {user_id} (@{username})")
         return {
             "success": True,
