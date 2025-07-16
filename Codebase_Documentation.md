@@ -1966,6 +1966,36 @@ If you encounter issues not covered in this troubleshooting guide:
 
 ### 🔧 Recent Critical Fixes (July 2025)
 
+#### Tweet Scraping Agent Logs Display Fix (July 16, 2025) 🎉
+- **Complete Agent Logs Display Fix**: Successfully resolved critical issue where Tweet Scraping Agent logs were not appearing in dashboard despite agent working correctly
+  - **Problem**: Agent was functioning properly (tweets increased from 10 to 16) but logs page at https://8interns.com/logs showed no activity
+  - **Root Cause**: Agent name mismatch between logging (`"Tweet Scraping Agent (Multi-User)"`) and dashboard expectations (`"Tweet Scraping Agent"`)
+  - **Technical Details**:
+    - **Dashboard Registration**: Dashboard buttons register agents with names derived from filenames
+    - **Agent Logging**: Agent code was logging with `"Tweet Scraping Agent (Multi-User)"`
+    - **Log Filtering**: UI fetches user agents from `agent_status` table and filters `agent_logs` by matching names
+    - **Result**: Name mismatch caused logs to be filtered out despite agent working correctly
+  - **Solution**: Updated agent name constant for consistency
+  - **Components Enhanced**:
+    - **Tweet Scraping Agent**: Modified `2_langchain_tweet_scraping_agent.py` to use correct agent name
+    - **Process Manager**: Updated `Web_Interface/lib/process-manager.ts` to use correct multiuser agent files
+    - **Documentation**: Created `TWEET_SCRAPING_AGENT_LOGS_FIX_COMPLETE.md` with comprehensive fix details
+  - **Dashboard File Mapping Updates**: Fixed process manager to point to correct multiuser agent versions:
+    - **Tweet Research Agent**: `3_langchain_tweet_research_agent_simple.py` → `3_langchain_tweet_research_agent_multiuser.py`
+    - **X Reply Agent**: `6_langchain_x_reply_agent.py` → `6_langchain_x_reply_agent_multiuser.py`
+  - **Result**: ✅ **Tweet Scraping Agent logs now appear correctly in dashboard, and all dashboard buttons start correct agent files**
+
+#### Agent Version Analysis and Cleanup (July 16, 2025) 📊
+- **Comprehensive Agent Version Analysis**: Identified and documented the most current versions of all agents
+  - **Tweet Research Agent Analysis**: Determined `3_langchain_tweet_research_agent_multiuser.py` is the latest version with:
+    - **Advanced Collection Naming**: Hashed and shortened collection names to prevent Qdrant length issues
+    - **Robust User Context**: Fallback to default user for direct command line execution
+    - **Enhanced Debugging**: Comprehensive logging with collection name length information
+    - **Better Error Handling**: More comprehensive try-catch blocks and fallback mechanisms
+  - **File Organization**: Identified duplicate agent versions that can be moved to `Retired_Agents/` folder
+  - **Dashboard Consistency**: Ensured all dashboard buttons point to the most current multiuser agent versions
+  - **Result**: ✅ **Clear identification of current agent versions and improved codebase organization**
+
 #### Authentication System Fixes
 - **Session Synchronization Issue**: Fixed critical issue where middleware and API routes were using different Supabase client instances
   - **Problem**: Users appeared authenticated in middleware but API routes returned 401 errors
