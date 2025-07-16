@@ -28,7 +28,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 # Agent name for database logging
-AGENT_NAME = "Tweet Scraping Agent (Multi-User)"
+AGENT_NAME = "Tweet Scraping Agent"
 
 # Load environment variables
 load_dotenv()
