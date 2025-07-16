@@ -252,18 +252,15 @@ class UserTwitterClient:
                     "content_preview": text[:100]
                 })
             
-            # Use the user-specific Twitter client with correct API v2 format
+            # Use the user-specific Twitter client with Tweepy-compatible format
             if in_reply_to_tweet_id:
-                # FIXED: Use the official Twitter API v2 reply format
-                logger.info(f"🔗 THREADING: Using official API v2 reply format")
-                logger.info(f"🔗 THREADING: Constructing reply object: {{'in_reply_to_tweet_id': '{in_reply_to_tweet_id}'}}")
-                
-                reply_object = {"in_reply_to_tweet_id": in_reply_to_tweet_id}
-                logger.info(f"🔗 THREADING: Final reply object: {reply_object}")
+                # FIXED: Use Tweepy-compatible parameter format instead of API v2 reply object
+                logger.info(f"🔗 THREADING: Using Tweepy-compatible threading format")
+                logger.info(f"🔗 THREADING: Setting in_reply_to_tweet_id parameter: {in_reply_to_tweet_id}")
                 
                 response = self.twitter_client.create_tweet(
                     text=text,
-                    reply=reply_object
+                    in_reply_to_tweet_id=in_reply_to_tweet_id
                 )
                 logger.info(f"🔗 THREADING: Twitter API response received for reply tweet")
                 logger.info(f"🔗 THREADING: Response data: {response.data if hasattr(response, 'data') else 'No data attribute'}")
