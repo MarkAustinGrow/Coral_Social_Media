@@ -21,25 +21,36 @@ import signal
 import sys
 import atexit
 import agent_status_updater as asu
-
+import agent_multiuser_utils_simple as amu
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
+# Agent name for database logging
+AGENT_NAME = "Tweet Research Agent"
+
 # Load environment variables
 load_dotenv()
 
-base_url = "http://localhost:5555/devmode/exampleApplication/privkey/session1/sse"
+# Get user context for user-specific MCP server
+user_id = amu.get_user_context()
+
+# Use centralized multi-user Coral server
+base_url = "http://coral.8interns.com/devmode/exampleApplication/privkey/session1/sse"
 params = {
-    "waitForAgents": 7,  # Total number of agents in the system
-    "agentId": "tweet_research_agent",
-    "agentDescription": "You are tweet_research_agent, responsible for analyzing tweets, extracting insights, and storing them for future reference"
+    "waitForAgents": 2,
+    "agentId": f"tweet_research_agent_{user_id}",
+    "agentDescription": f"You are tweet_research_agent for user {user_id}, responsible for analyzing tweets, extracting insights, and storing them for future reference"
 }
 query_string = urllib.parse.urlencode(params)
 MCP_SERVER_URL = f"{base_url}?{query_string}"
 
-AGENT_NAME = "tweet_research_agent"
+print(f"🔗 Using centralized MCP server: {MCP_SERVER_URL}")
+
+# Create a user-specific collection name for Qdrant
+COLLECTION_NAME = f"working_knowledge_{user_id}"
+print(f"🔍 Using user-specific Qdrant collection: {COLLECTION_NAME}")
 
 # Initialize API clients
 try:
@@ -62,19 +73,38 @@ try:
         api_key=os.getenv("OPENAI_API_KEY")
     )
     
-    # Ensure Qdrant collection exists
+    # Ensure user-specific Qdrant collection exists
+    collection_exists = False
+    
+    # First, try to check if collection exists using list_collections
     try:
-        qdrant_client.get_collection("tweet_insights")
-        logger.info("Qdrant collection 'tweet_insights' already exists")
-    except Exception:
-        logger.info("Creating Qdrant collection 'tweet_insights'")
-        qdrant_client.create_collection(
-            collection_name="tweet_insights",
-            vectors_config=models.VectorParams(
-                size=1536,  # OpenAI embeddings dimension
-                distance=models.Distance.COSINE
+        collections = qdrant_client.list_collections()
+        if COLLECTION_NAME in [collection.name for collection in collections.collections]:
+            logger.info(f"Qdrant collection '{COLLECTION_NAME}' already exists")
+            collection_exists = True
+    except Exception as e:
+        logger.warning(f"Error checking collections list: {str(e)}")
+    
+    # If we couldn't confirm from list_collections, try to create it
+    if not collection_exists:
+        try:
+            logger.info(f"Creating user-specific Qdrant collection '{COLLECTION_NAME}'")
+            qdrant_client.create_collection(
+                collection_name=COLLECTION_NAME,
+                vectors_config=models.VectorParams(
+                    size=1536,  # OpenAI embeddings dimension
+                    distance=models.Distance.COSINE
+                )
             )
-        )
+            logger.info(f"Successfully created Qdrant collection '{COLLECTION_NAME}'")
+        except Exception as e:
+            # Check if the error is because collection already exists
+            if "already exists" in str(e):
+                logger.info(f"Qdrant collection '{COLLECTION_NAME}' already exists (from error message)")
+                collection_exists = True
+            else:
+                logger.warning(f"Error creating Qdrant collection: {str(e)}")
+                logger.warning("Will continue without Qdrant collection, some functionality may be limited")
 except Exception as e:
     logger.error(f"Error initializing API clients: {str(e)}")
     raise
@@ -87,9 +117,6 @@ if not os.getenv("SUPABASE_URL") or not os.getenv("SUPABASE_KEY"):
 if not os.getenv("PERPLEXITY_API_KEY"):
     raise ValueError("PERPLEXITY_API_KEY is not set in environment variables.")
 
-# Agent name for status updates - must match exactly what's in the database
-AGENT_NAME = "Tweet Research Agent"
-
 # Register signal handlers for graceful shutdown
 def signal_handler(sig, frame):
     """Handle Ctrl+C and other signals to gracefully shut down"""
@@ -101,8 +128,21 @@ def signal_handler(sig, frame):
 signal.signal(signal.SIGINT, signal_handler)  # Ctrl+C
 signal.signal(signal.SIGTERM, signal_handler)  # Termination signal
 
-# Register function to mark agent as stopped when the script exits
+# Register function to mark agent as stopped when the script exits (use both old and new for compatibility)
 atexit.register(lambda: asu.mark_agent_stopped(AGENT_NAME))
+atexit.register(lambda: amu.mark_agent_stopped_with_user(AGENT_NAME))
+
+def log_to_database(level, message, metadata=None):
+    """
+    Log agent activity to the agent_logs table in Supabase with user context.
+    
+    Args:
+        level: Log level ('info', 'warning', 'error')
+        message: Log message
+        metadata: Optional JSON metadata
+    """
+    # Use the new multiuser-aware logging function
+    amu.log_to_database(AGENT_NAME, level, message, metadata)
 
 def get_tools_description(tools):
     return "\n".join(
@@ -119,6 +159,7 @@ def fetch_persona():
         Dictionary containing persona details or default values if not found
     """
     logger.info("Fetching persona from Supabase")
+    log_to_database("info", "Fetching persona from Supabase")
     
     try:
         # Fetch persona from Supabase
@@ -129,12 +170,14 @@ def fetch_persona():
         if result.data and len(result.data) > 0:
             persona = result.data[0]
             logger.info(f"Found persona: {persona.get('name')}")
+            log_to_database("info", f"Found persona: {persona.get('name')}")
             return {
                 "result": persona
             }
         else:
             # Return default persona values
             logger.info("No persona found, using default values")
+            log_to_database("info", "No persona found, using default values")
             default_persona = {
                 "name": "Content Reviewer",
                 "description": "A meticulous and objective reviewer who prioritizes factual accuracy, logical consistency, and narrative flow in all content.",
@@ -149,6 +192,7 @@ def fetch_persona():
         
     except Exception as e:
         logger.error(f"Error fetching persona from Supabase: {str(e)}")
+        log_to_database("error", f"Error fetching persona from Supabase: {str(e)}")
         # Return default persona values on error
         default_persona = {
             "name": "Content Reviewer",
@@ -176,10 +220,14 @@ def fetch_tweets_from_supabase(limit: int = 1, analyzed: bool = False):
         Dictionary containing fetched tweets
     """
     logger.info(f"Fetching {limit} tweets with analyzed={analyzed}")
+    log_to_database("info", f"Fetching {limit} tweets with analyzed={analyzed}")
     
     try:
-        # Fetch tweets from Supabase
+        # Fetch tweets from Supabase for the current user
         query = supabase_client.table("tweets_cache").select("*")
+        
+        # Filter by user_id
+        query = query.eq("user_id", user_id)
         
         if not analyzed:
             query = query.eq("analyzed", False)
@@ -190,6 +238,7 @@ def fetch_tweets_from_supabase(limit: int = 1, analyzed: bool = False):
         
         tweets = result.data if result.data else []
         
+        log_to_database("info", f"Retrieved {len(tweets)} tweets from Supabase")
         return {
             "result": tweets,
             "count": len(tweets)
@@ -197,6 +246,7 @@ def fetch_tweets_from_supabase(limit: int = 1, analyzed: bool = False):
         
     except Exception as e:
         logger.error(f"Error fetching tweets from Supabase: {str(e)}")
+        log_to_database("error", f"Error fetching tweets from Supabase: {str(e)}")
         return {
             "error": f"Failed to fetch tweets: {str(e)}",
             "count": 0
@@ -208,7 +258,7 @@ def mark_tweet_as_analyzed(tweet_ids: list):
     Mark tweets as analyzed in Supabase.
     
     Args:
-        tweet_ids: List of tweet IDs to mark as analyzed
+        tweet_ids: List of tweet IDs to mark as analyzed (can be database IDs or tweet_ids)
         
     Returns:
         Dictionary containing operation result
@@ -216,10 +266,21 @@ def mark_tweet_as_analyzed(tweet_ids: list):
     try:
         # Update tweets in Supabase
         for tweet_id in tweet_ids:
-            supabase_client.table("tweets_cache").update(
-                {"analyzed": True}
-            ).eq("tweet_id", tweet_id).execute()
+            # Check if the ID is numeric (database ID) or a string (tweet_id)
+            if isinstance(tweet_id, int) or (isinstance(tweet_id, str) and tweet_id.isdigit()):
+                # It's a database ID, use the 'id' column
+                supabase_client.table("tweets_cache").update(
+                    {"analyzed": True}
+                ).eq("id", tweet_id).eq("user_id", user_id).execute()
+                logger.info(f"Marked tweet with database ID {tweet_id} as analyzed")
+            else:
+                # It's a tweet_id, use the 'tweet_id' column
+                supabase_client.table("tweets_cache").update(
+                    {"analyzed": True}
+                ).eq("tweet_id", tweet_id).eq("user_id", user_id).execute()
+                logger.info(f"Marked tweet with tweet_id {tweet_id} as analyzed")
         
+        log_to_database("info", f"Marked {len(tweet_ids)} tweets as analyzed", {"tweet_ids": tweet_ids})
         return {
             "result": f"Marked {len(tweet_ids)} tweets as analyzed",
             "count": len(tweet_ids)
@@ -227,6 +288,7 @@ def mark_tweet_as_analyzed(tweet_ids: list):
         
     except Exception as e:
         logger.error(f"Error marking tweets as analyzed: {str(e)}")
+        log_to_database("error", f"Error marking tweets as analyzed: {str(e)}")
         return {
             "error": f"Failed to mark tweets as analyzed: {str(e)}",
             "count": 0
@@ -247,6 +309,7 @@ def analyze_tweet_perplexity(tweet_text: str, question: str, persona: dict = Non
     """
     logger.info(f"Analyzing tweet with Perplexity: {tweet_text[:50]}...")
     logger.info(f"Research question: {question}")
+    log_to_database("info", f"Analyzing tweet with research question: {question}", {"tweet_preview": tweet_text[:50]})
     
     try:
         # Use default persona if none provided
@@ -271,9 +334,24 @@ def analyze_tweet_perplexity(tweet_text: str, question: str, persona: dict = Non
             question = "What is the author of this tweet truly trying to communicate?"
             logger.warning("No question provided, using default question")
         
-        prompt = f"Tweet: \"{tweet_text}\"\n\nQuestion: {question}\n\nPlease analyze this tweet in a {tone_descriptor} tone, with a {humor_descriptor} approach, maintaining a {enthusiasm_descriptor} energy level, and presenting your analysis in a {assertiveness_descriptor} manner."
+        prompt = f"""
+        Research Question: {question}
+
+        Context (from a tweet): "{tweet_text}"
+
+        Please provide a comprehensive research response that:
+        1. Thoroughly explores the question from multiple perspectives
+        2. Provides specific data points, evidence, and examples where relevant
+        3. Considers historical context and future implications
+        4. Organizes insights into clear sections with logical flow
+        5. Identifies connections to related fields or topics
+        6. Presents a balanced view that considers different interpretations
+        7. Concludes with the most significant implications
+
+        Format your response with clear section headings, bullet points for key insights, and citations where appropriate. Present your analysis in a {tone_descriptor} tone, with a {humor_descriptor} approach, maintaining a {enthusiasm_descriptor} energy level, and presenting your analysis in a {assertiveness_descriptor} manner.
+        """
         
-        system_prompt = f"You are {persona.get('name', 'Content Reviewer')}, {persona.get('description', 'a meticulous and objective reviewer who prioritizes factual accuracy, logical consistency, and narrative flow in all content.')} Provide a thoughtful, insightful response that helps understand the author's true intent and the broader context of this tweet."
+        system_prompt = f"You are {persona.get('name', 'Content Reviewer')}, {persona.get('description', 'a meticulous and objective reviewer who prioritizes factual accuracy, logical consistency, and narrative flow in all content.')} Provide a thorough, well-researched response that explores the topic in depth, going beyond the tweet itself to examine broader implications and contexts."
         
         data = {
             "model": "sonar",
@@ -303,6 +381,7 @@ def analyze_tweet_perplexity(tweet_text: str, question: str, persona: dict = Non
                         
                         # Log the analysis result
                         logger.info(f"Analysis result: {answer[:200]}...")
+                        log_to_database("info", "Successfully analyzed tweet with Perplexity", {"answer_preview": answer[:100]})
                         
                         return {
                             "question": question,
@@ -329,6 +408,7 @@ def analyze_tweet_perplexity(tweet_text: str, question: str, persona: dict = Non
                 }
         else:
             logger.error(f"Perplexity API error: {response.status_code} - {response.text}")
+            log_to_database("error", f"Perplexity API error: {response.status_code}")
             return {
                 "question": question,
                 "answer": f"Error: {response.status_code}"
@@ -336,6 +416,7 @@ def analyze_tweet_perplexity(tweet_text: str, question: str, persona: dict = Non
         
     except Exception as e:
         logger.error(f"Error analyzing tweet with Perplexity: {str(e)}")
+        log_to_database("error", f"Error analyzing tweet with Perplexity: {str(e)}")
         return {
             "error": f"Failed to analyze tweet: {str(e)}",
             "question": question,
@@ -343,7 +424,7 @@ def analyze_tweet_perplexity(tweet_text: str, question: str, persona: dict = Non
         }
 
 @tool
-def store_analysis_qdrant(tweet_id: str, tweet_text: str, question: str, analysis_result: str, metadata: dict = None):
+def store_analysis_qdrant(tweet_id: str, tweet_text: str, question: str, analysis_result: str, tweet_data: dict = None, metadata: dict = None):
     """
     Store tweet analysis in Qdrant vector database with enhanced metadata for better searchability.
     
@@ -352,6 +433,7 @@ def store_analysis_qdrant(tweet_id: str, tweet_text: str, question: str, analysi
         tweet_text: Text of the tweet
         question: The research question that was asked
         analysis_result: The answer from Perplexity
+        tweet_data: Full tweet data object containing author and engagement metrics (optional)
         metadata: Additional metadata to store (optional)
         
     Returns:
@@ -360,13 +442,23 @@ def store_analysis_qdrant(tweet_id: str, tweet_text: str, question: str, analysi
     try:
         # Prepare the text for embedding
         analysis_text = f"{tweet_text}\n\nQuestion: {question}\n\nAnswer: {analysis_result}"
+        log_to_database("info", f"Storing analysis for tweet {tweet_id} in Qdrant collection {COLLECTION_NAME}", {"question": question})
         
         # Generate embedding
         embedding = embeddings.embed_query(analysis_text)
         
-        # Extract author from metadata if available
+        # Extract author and engagement metrics from tweet_data if available
         author = None
-        if metadata and "author" in metadata:
+        likes = 0
+        retweets = 0
+        replies = 0
+        
+        if tweet_data:
+            author = tweet_data.get("author", None)
+            likes = tweet_data.get("likes", 0)
+            retweets = tweet_data.get("retweets", 0)
+            replies = tweet_data.get("replies", 0)
+        elif metadata and "author" in metadata:
             author = metadata.get("author")
         
         # Extract topics and sentiment from analysis
@@ -401,19 +493,38 @@ def store_analysis_qdrant(tweet_id: str, tweet_text: str, question: str, analysi
         # Prepare enhanced payload
         if metadata is None:
             metadata = {}
-            
-        # Create structured payload with searchable fields
+        
+        # Import datetime for proper timestamp formatting
+        from datetime import datetime
+        
+        # Create structured payload that matches the macrobot schema
         payload = {
+            "content": tweet_text,
+            "type": "research",
+            "source": "perplexity:perplexity",
+            "timestamp": datetime.utcfromtimestamp(time.time()).isoformat(),
+            "tags": topics,
+            "persona_alignment_score": metadata.get("confidence_score", 1.0),
+            "matched_aspects": metadata.get("related_entities", []),
+            "alignment_explanation": analysis_result,  # Store the full analysis
+            "character_version": 1,  # Or parse from metadata if dynamic
+            "alignment_bypassed": False,
+            
+            # Add user_id to the payload for multi-user support
+            "user_id": user_id,
+            
+            # Keep original fields for backward compatibility
             "tweet_id": tweet_id,
-            "tweet_text": tweet_text,
             "author": author,
-            "topics": topics,
             "sentiment": sentiment,
             "question": question,
-            "analysis": analysis_result,
-            "custom_metadata": metadata,  # Store original metadata
-            "timestamp": time.time(),
-            "date": time.strftime("%Y-%m-%d", time.localtime())
+            "custom_metadata": {
+                "engagement_score": likes + (retweets * 2) + replies,  # Simple engagement score calculation
+                "like_count": likes,
+                "retweet_count": retweets,
+                "reply_count": replies,
+                "source_url": ""  # Add source URL if available
+            }
         }
         
         # Convert tweet_id to a valid Qdrant point ID
@@ -422,9 +533,9 @@ def store_analysis_qdrant(tweet_id: str, tweet_text: str, question: str, analysi
         # Get the first 8 bytes of the MD5 hash and convert to integer
         point_id = int(hashlib.md5(tweet_id.encode()).hexdigest()[:16], 16)
         
-        # Store in Qdrant
+        # Store in user-specific Qdrant collection
         qdrant_client.upsert(
-            collection_name="tweet_insights",
+            collection_name=COLLECTION_NAME,
             points=[
                 models.PointStruct(
                     id=point_id,
@@ -434,12 +545,14 @@ def store_analysis_qdrant(tweet_id: str, tweet_text: str, question: str, analysi
             ]
         )
         
+        log_to_database("info", f"Successfully stored analysis for tweet {tweet_id} in Qdrant collection {COLLECTION_NAME}", {"topics": topics, "sentiment": sentiment})
         return {
-            "result": f"Successfully stored analysis for tweet {tweet_id} in Qdrant"
+            "result": f"Successfully stored analysis for tweet {tweet_id} in Qdrant collection {COLLECTION_NAME}"
         }
         
     except Exception as e:
         logger.error(f"Error storing analysis in Qdrant: {str(e)}")
+        log_to_database("error", f"Error storing analysis in Qdrant: {str(e)}")
         return {
             "error": f"Failed to store analysis in Qdrant: {str(e)}"
         }
@@ -461,6 +574,7 @@ def search_qdrant(query: str, limit: int = 5, filter_by: dict = None):
     try:
         # Generate embedding for the query
         query_embedding = embeddings.embed_query(query)
+        log_to_database("info", f"Searching Qdrant collection {COLLECTION_NAME} for: {query}", {"limit": limit, "filter_by": filter_by})
         
         # Prepare filter if provided
         search_filter = None
@@ -472,7 +586,7 @@ def search_qdrant(query: str, limit: int = 5, filter_by: dict = None):
                 topic = filter_by["topics"]
                 filter_conditions.append(
                     models.FieldCondition(
-                        key="topics",
+                        key="tags",  # working_knowledge uses "tags" for topics
                         match=models.MatchAny(any=[topic])
                     )
                 )
@@ -502,7 +616,7 @@ def search_qdrant(query: str, limit: int = 5, filter_by: dict = None):
                 date = filter_by["date"]
                 filter_conditions.append(
                     models.FieldCondition(
-                        key="date",
+                        key="timestamp",  # working_knowledge uses "timestamp" for date
                         match=models.MatchValue(value=date)
                     )
                 )
@@ -513,9 +627,23 @@ def search_qdrant(query: str, limit: int = 5, filter_by: dict = None):
                     must=filter_conditions
                 )
         
-        # Search in Qdrant with optional filter
+        # Always filter by user_id for multi-user support
+        user_filter = models.FieldCondition(
+            key="user_id",
+            match=models.MatchValue(value=user_id)
+        )
+        
+        # Add user filter to existing filter or create new filter
+        if search_filter:
+            search_filter.must.append(user_filter)
+        else:
+            search_filter = models.Filter(
+                must=[user_filter]
+            )
+        
+        # Search in Qdrant with user filter
         search_results = qdrant_client.search(
-            collection_name="tweet_insights",
+            collection_name=COLLECTION_NAME,
             query_vector=query_embedding,
             limit=limit,
             filter=search_filter
@@ -526,15 +654,16 @@ def search_qdrant(query: str, limit: int = 5, filter_by: dict = None):
         for result in search_results:
             results.append({
                 "tweet_id": result.payload.get("tweet_id"),
-                "tweet_text": result.payload.get("tweet_text"),
+                "tweet_text": result.payload.get("content", result.payload.get("tweet_text", "")),
                 "author": result.payload.get("author"),
-                "topics": result.payload.get("topics", []),
+                "topics": result.payload.get("tags", result.payload.get("topics", [])),
                 "sentiment": result.payload.get("sentiment"),
-                "date": result.payload.get("date"),
-                "analysis": result.payload.get("analysis"),
+                "date": result.payload.get("timestamp", result.payload.get("date", "")),
+                "analysis": result.payload.get("alignment_explanation", result.payload.get("analysis", "")),
                 "score": result.score
             })
         
+        log_to_database("info", f"Found {len(results)} results in Qdrant search")
         return {
             "result": results,
             "count": len(results)
@@ -542,6 +671,7 @@ def search_qdrant(query: str, limit: int = 5, filter_by: dict = None):
         
     except Exception as e:
         logger.error(f"Error searching in Qdrant: {str(e)}")
+        log_to_database("error", f"Error searching in Qdrant: {str(e)}")
         return {
             "error": f"Failed to search in Qdrant: {str(e)}",
             "count": 0
@@ -550,7 +680,7 @@ def search_qdrant(query: str, limit: int = 5, filter_by: dict = None):
 @tool
 def generate_research_question(tweet_text: str, persona: dict = None):
     """
-    Generate a single focused research question to understand the author's intent in a tweet.
+    Generate a single focused research question to understand the broader implications and context of the topic mentioned in a tweet.
     
     Args:
         tweet_text: The text of the tweet
@@ -565,6 +695,8 @@ def generate_research_question(tweet_text: str, persona: dict = None):
             persona_response = fetch_persona.invoke({})
             persona = persona_response.get("result", {})
         
+        log_to_database("info", f"Generating research question for tweet: {tweet_text[:50]}...")
+        
         # Customize prompt based on persona
         tone_descriptor = "formal" if persona.get("tone", 50) > 70 else "conversational" if persona.get("tone", 50) < 30 else "balanced"
         humor_descriptor = "serious" if persona.get("humor", 50) < 30 else "light-hearted" if persona.get("humor", 50) > 70 else "occasionally humorous"
@@ -576,33 +708,42 @@ def generate_research_question(tweet_text: str, persona: dict = None):
             model="gpt-4o-mini",
             model_provider="openai",
             api_key=os.getenv("OPENAI_API_KEY"),
-            temperature=0.7
+            temperature=0.9  # Higher temperature for more creative research questions
         )
         
         system_prompt = f"You are {persona.get('name', 'Content Reviewer')}, {persona.get('description', 'a meticulous and objective reviewer who prioritizes factual accuracy, logical consistency, and narrative flow in all content.')} Generate a research question in a {tone_descriptor} tone, with a {humor_descriptor} approach, maintaining a {enthusiasm_descriptor} energy level, and presenting your question in a {assertiveness_descriptor} manner."
         
         prompt = f"""
-        Given the following tweet, generate ONE focused research question that would help understand what the author is truly trying to communicate:
-        
+        Given the following tweet, generate ONE focused research question that would help understand the broader implications and context of the topic mentioned.
+
         Tweet: "{tweet_text}"
-        
-        Your question should aim to uncover:
-        - The author's underlying intent or message
-        - Any implicit assumptions or beliefs
-        - The broader context that gives this tweet meaning
-        
-        Focus on generating a single, thoughtful question that gets to the heart of what this tweet is really about.
-        
+
+        Your research question should:
+        1. Focus on the underlying topic rather than the tweet itself
+        2. Aim for depth and comprehensive understanding
+        3. Explore potential connections to related fields and broader implications
+        4. Be specific enough to guide detailed research
+        5. Be open-ended enough to allow for multiple perspectives
+        6. Encourage data-driven analysis and evidence-based exploration
+        7. Consider historical context and future implications
+
+        The ideal research question should lead to a comprehensive analysis that could include:
+        - Multiple perspectives on the topic
+        - Supporting evidence and data points
+        - Connections to related fields
+        - Historical context and future implications
+        - Potential impacts on various sectors or domains
+
         Return ONLY the question text, with no additional formatting or explanation.
         """
         
         response = model.invoke(prompt)
         
         # Clean up the response to get just the question
-        question = response.content.strip().strip('"\'').strip()
+        question = response.content.strip()
         
-        # Log the generated question
         logger.info(f"Generated research question: {question}")
+        log_to_database("info", f"Generated research question: {question}")
         
         return {
             "result": question
@@ -610,131 +751,8 @@ def generate_research_question(tweet_text: str, persona: dict = None):
         
     except Exception as e:
         logger.error(f"Error generating research question: {str(e)}")
+        log_to_database("error", f"Error generating research question: {str(e)}")
         return {
             "error": f"Failed to generate research question: {str(e)}",
             "result": "What is the author of this tweet truly trying to communicate?"
         }
-
-async def create_tweet_research_agent(client, tools, agent_tools):
-    tools_description = get_tools_description(tools)
-    agent_tools_description = get_tools_description(agent_tools)
-    
-    prompt = ChatPromptTemplate.from_messages([
-        (
-            "system",
-            f"""You are tweet_research_agent, responsible for analyzing tweets, extracting insights, and storing them for future reference.
-            
-            Follow these steps in order:
-            1. Call wait_for_mentions from coral tools (timeoutMs: 8000) to receive instructions from other agents
-            2. If you receive a mention:
-               a. Process the instruction (e.g., analyze specific tweets, search for insights)
-               b. Execute the requested operation using your tools
-               c. Send a response back to the sender with the results
-            3. If no mentions are received (timeout):
-               a. Fetch ONE unanalyzed tweet from Supabase using fetch_tweets_from_supabase (limit=1)
-               b. If a tweet is found:
-                  i. Generate a single focused research question using generate_research_question and save the returned question
-                  ii. Use Perplexity to analyze the tweet by passing the tweet_text AND the question to analyze_tweet_perplexity
-                  iii. Store the analysis in Qdrant using store_analysis_qdrant with the tweet_id, tweet_text, question, and analysis result
-                  iv. Mark the tweet as analyzed using mark_tweet_as_analyzed
-               c. Wait for 5 minutes before processing the next tweet (to avoid API rate limits)
-            
-            Your goal is to understand what the author of each tweet is truly trying to communicate. Focus on:
-            - The author's underlying intent or message
-            - Any implicit assumptions or beliefs
-            - The broader context that gives the tweet meaning
-            
-            These are the list of all tools (Coral + your tools): {tools_description}
-            These are the list of your tools: {agent_tools_description}"""
-        ),
-        ("placeholder", "{agent_scratchpad}")
-    ])
-
-    model = init_chat_model(
-        model="gpt-4o-mini",
-        model_provider="openai",
-        api_key=os.getenv("OPENAI_API_KEY"),
-        temperature=0.3,
-        max_tokens=16000
-    )
-
-    agent = create_tool_calling_agent(model, tools, prompt)
-    return AgentExecutor(agent=agent, tools=tools, verbose=True)
-
-async def main():
-    max_retries = 3
-    for attempt in range(max_retries):
-        try:
-            async with MultiServerMCPClient(
-                connections={
-                    "coral": {
-                        "transport": "sse",
-                        "url": MCP_SERVER_URL,
-                        "timeout": 300,
-                        "sse_read_timeout": 300,
-                    }
-                }
-            ) as client:
-                logger.info(f"Connected to MCP server at {MCP_SERVER_URL}")
-                
-                # Define agent-specific tools
-                agent_tools = [
-                    fetch_persona,
-                    fetch_tweets_from_supabase,
-                    mark_tweet_as_analyzed,
-                    analyze_tweet_perplexity,
-                    store_analysis_qdrant,
-                    search_qdrant,
-                    generate_research_question
-                ]
-                
-                # Combine Coral tools with agent-specific tools
-                tools = client.get_tools() + agent_tools
-                
-                # Create and run the agent
-                agent_executor = await create_tweet_research_agent(client, tools, agent_tools)
-                
-                while True:
-                    try:
-                        logger.info("Starting new agent invocation")
-                        await agent_executor.ainvoke({"agent_scratchpad": []})
-                        logger.info("Completed agent invocation, waiting 5 minutes before next tweet")
-                        await asyncio.sleep(300)  # Wait 5 minutes between processing tweets
-                    except Exception as e:
-                        logger.error(f"Error in agent loop: {str(e)}")
-                        await asyncio.sleep(5)
-                        
-        except ClosedResourceError as e:
-            logger.error(f"ClosedResourceError on attempt {attempt + 1}: {e}")
-            if attempt < max_retries - 1:
-                logger.info("Retrying in 5 seconds...")
-                await asyncio.sleep(5)
-                continue
-            else:
-                logger.error("Max retries reached. Exiting.")
-                raise
-        except Exception as e:
-            logger.error(f"Unexpected error on attempt {attempt + 1}: {e}")
-            if attempt < max_retries - 1:
-                logger.info("Retrying in 5 seconds...")
-                await asyncio.sleep(5)
-                continue
-            else:
-                logger.error("Max retries reached. Exiting.")
-                raise
-
-if __name__ == "__main__":
-    # Mark agent as started
-    asu.mark_agent_started(AGENT_NAME)
-    
-    try:
-        asyncio.run(main())
-    except Exception as e:
-        # Report error in status
-        asu.report_error(AGENT_NAME, f"Fatal error: {str(e)}")
-        
-        # Re-raise the exception
-        raise
-    finally:
-        # Mark agent as stopped
-        asu.mark_agent_stopped(AGENT_NAME)

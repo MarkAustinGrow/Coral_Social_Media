@@ -36,11 +36,6 @@ load_dotenv()
 # Get user context for user-specific MCP server
 user_id = amu.get_user_context()
 
-# Handle case where user_id is None (direct command line execution)
-if user_id is None:
-    user_id = "3b55275a-d666-4724-ae39-26a58fda3aff"  # Default test user
-    print(f"⚠️  No user context found, using default test user: {user_id}")
-
 # Use centralized multi-user Coral server
 base_url = "http://coral.8interns.com/devmode/exampleApplication/privkey/session1/sse"
 params = {
@@ -52,13 +47,6 @@ query_string = urllib.parse.urlencode(params)
 MCP_SERVER_URL = f"{base_url}?{query_string}"
 
 print(f"🔗 Using centralized MCP server: {MCP_SERVER_URL}")
-
-# Create a user-specific collection name for Qdrant (shortened to avoid length limits)
-import hashlib
-user_hash = hashlib.md5(user_id.encode()).hexdigest()[:8]
-COLLECTION_NAME = f"research_{user_hash}"
-print(f"🔍 Using user-specific Qdrant collection: {COLLECTION_NAME}")
-print(f"📝 Collection name length: {len(COLLECTION_NAME)} characters (user: {user_id})")
 
 # Initialize API clients
 try:
@@ -81,14 +69,15 @@ try:
         api_key=os.getenv("OPENAI_API_KEY")
     )
     
-    # Ensure user-specific Qdrant collection exists
+    # Ensure Qdrant collection exists
+    collection_name = "working_knowledge"
     collection_exists = False
     
     # First, try to check if collection exists using list_collections
     try:
         collections = qdrant_client.list_collections()
-        if COLLECTION_NAME in [collection.name for collection in collections.collections]:
-            logger.info(f"Qdrant collection '{COLLECTION_NAME}' already exists")
+        if collection_name in [collection.name for collection in collections.collections]:
+            logger.info(f"Qdrant collection '{collection_name}' already exists")
             collection_exists = True
     except Exception as e:
         logger.warning(f"Error checking collections list: {str(e)}")
@@ -96,19 +85,19 @@ try:
     # If we couldn't confirm from list_collections, try to create it
     if not collection_exists:
         try:
-            logger.info(f"Creating user-specific Qdrant collection '{COLLECTION_NAME}'")
+            logger.info(f"Creating Qdrant collection '{collection_name}'")
             qdrant_client.create_collection(
-                collection_name=COLLECTION_NAME,
+                collection_name=collection_name,
                 vectors_config=models.VectorParams(
                     size=1536,  # OpenAI embeddings dimension
                     distance=models.Distance.COSINE
                 )
             )
-            logger.info(f"Successfully created Qdrant collection '{COLLECTION_NAME}'")
+            logger.info(f"Successfully created Qdrant collection '{collection_name}'")
         except Exception as e:
             # Check if the error is because collection already exists
             if "already exists" in str(e):
-                logger.info(f"Qdrant collection '{COLLECTION_NAME}' already exists (from error message)")
+                logger.info(f"Qdrant collection '{collection_name}' already exists (from error message)")
                 collection_exists = True
             else:
                 logger.warning(f"Error creating Qdrant collection: {str(e)}")
@@ -231,11 +220,8 @@ def fetch_tweets_from_supabase(limit: int = 1, analyzed: bool = False):
     log_to_database("info", f"Fetching {limit} tweets with analyzed={analyzed}")
     
     try:
-        # Fetch tweets from Supabase for the current user
+        # Fetch tweets from Supabase
         query = supabase_client.table("tweets_cache").select("*")
-        
-        # Filter by user_id
-        query = query.eq("user_id", user_id)
         
         if not analyzed:
             query = query.eq("analyzed", False)
@@ -279,13 +265,13 @@ def mark_tweet_as_analyzed(tweet_ids: list):
                 # It's a database ID, use the 'id' column
                 supabase_client.table("tweets_cache").update(
                     {"analyzed": True}
-                ).eq("id", tweet_id).eq("user_id", user_id).execute()
+                ).eq("id", tweet_id).execute()
                 logger.info(f"Marked tweet with database ID {tweet_id} as analyzed")
             else:
                 # It's a tweet_id, use the 'tweet_id' column
                 supabase_client.table("tweets_cache").update(
                     {"analyzed": True}
-                ).eq("tweet_id", tweet_id).eq("user_id", user_id).execute()
+                ).eq("tweet_id", tweet_id).execute()
                 logger.info(f"Marked tweet with tweet_id {tweet_id} as analyzed")
         
         log_to_database("info", f"Marked {len(tweet_ids)} tweets as analyzed", {"tweet_ids": tweet_ids})
@@ -450,7 +436,7 @@ def store_analysis_qdrant(tweet_id: str, tweet_text: str, question: str, analysi
     try:
         # Prepare the text for embedding
         analysis_text = f"{tweet_text}\n\nQuestion: {question}\n\nAnswer: {analysis_result}"
-        log_to_database("info", f"Storing analysis for tweet {tweet_id} in Qdrant collection {COLLECTION_NAME}", {"question": question})
+        log_to_database("info", f"Storing analysis for tweet {tweet_id} in Qdrant", {"question": question})
         
         # Generate embedding
         embedding = embeddings.embed_query(analysis_text)
@@ -518,9 +504,6 @@ def store_analysis_qdrant(tweet_id: str, tweet_text: str, question: str, analysi
             "character_version": 1,  # Or parse from metadata if dynamic
             "alignment_bypassed": False,
             
-            # Add user_id to the payload for multi-user support
-            "user_id": user_id,
-            
             # Keep original fields for backward compatibility
             "tweet_id": tweet_id,
             "author": author,
@@ -541,9 +524,9 @@ def store_analysis_qdrant(tweet_id: str, tweet_text: str, question: str, analysi
         # Get the first 8 bytes of the MD5 hash and convert to integer
         point_id = int(hashlib.md5(tweet_id.encode()).hexdigest()[:16], 16)
         
-        # Store in user-specific Qdrant collection
+        # Store in Qdrant
         qdrant_client.upsert(
-            collection_name=COLLECTION_NAME,
+            collection_name="working_knowledge",
             points=[
                 models.PointStruct(
                     id=point_id,
@@ -553,9 +536,9 @@ def store_analysis_qdrant(tweet_id: str, tweet_text: str, question: str, analysi
             ]
         )
         
-        log_to_database("info", f"Successfully stored analysis for tweet {tweet_id} in Qdrant collection {COLLECTION_NAME}", {"topics": topics, "sentiment": sentiment})
+        log_to_database("info", f"Successfully stored analysis for tweet {tweet_id} in Qdrant", {"topics": topics, "sentiment": sentiment})
         return {
-            "result": f"Successfully stored analysis for tweet {tweet_id} in Qdrant collection {COLLECTION_NAME}"
+            "result": f"Successfully stored analysis for tweet {tweet_id} in Qdrant"
         }
         
     except Exception as e:
@@ -582,7 +565,7 @@ def search_qdrant(query: str, limit: int = 5, filter_by: dict = None):
     try:
         # Generate embedding for the query
         query_embedding = embeddings.embed_query(query)
-        log_to_database("info", f"Searching Qdrant collection {COLLECTION_NAME} for: {query}", {"limit": limit, "filter_by": filter_by})
+        log_to_database("info", f"Searching Qdrant for: {query}", {"limit": limit, "filter_by": filter_by})
         
         # Prepare filter if provided
         search_filter = None
@@ -635,23 +618,9 @@ def search_qdrant(query: str, limit: int = 5, filter_by: dict = None):
                     must=filter_conditions
                 )
         
-        # Always filter by user_id for multi-user support
-        user_filter = models.FieldCondition(
-            key="user_id",
-            match=models.MatchValue(value=user_id)
-        )
-        
-        # Add user filter to existing filter or create new filter
-        if search_filter:
-            search_filter.must.append(user_filter)
-        else:
-            search_filter = models.Filter(
-                must=[user_filter]
-            )
-        
-        # Search in Qdrant with user filter
+        # Search in Qdrant with optional filter
         search_results = qdrant_client.search(
-            collection_name=COLLECTION_NAME,
+            collection_name="working_knowledge",
             query_vector=query_embedding,
             limit=limit,
             filter=search_filter
@@ -748,8 +717,9 @@ def generate_research_question(tweet_text: str, persona: dict = None):
         response = model.invoke(prompt)
         
         # Clean up the response to get just the question
-        question = response.content.strip()
+        question = response.content.strip().strip('"\'').strip()
         
+        # Log the generated question
         logger.info(f"Generated research question: {question}")
         log_to_database("info", f"Generated research question: {question}")
         
@@ -765,107 +735,126 @@ def generate_research_question(tweet_text: str, persona: dict = None):
             "result": "What is the author of this tweet truly trying to communicate?"
         }
 
-# Main agent execution
+async def create_tweet_research_agent(client, tools, agent_tools):
+    tools_description = get_tools_description(tools)
+    agent_tools_description = get_tools_description(agent_tools)
+    
+    # Use a simpler prompt similar to the World News Agent
+    prompt = ChatPromptTemplate.from_messages([
+        (
+            "system",
+            f"""You are an agent interacting with the tools from Coral Server and having your own tools. Your task is to perform any instructions coming from any agent.
+            
+            Follow these steps in order:
+            1. Call wait_for_mentions from coral tools (timeoutMs: 8000) to receive mentions from other agents.
+            2. When you receive a mention, keep the thread ID and the sender ID.
+            3. Take 2 seconds to think about the content (instruction) of the message and check only from the list of your tools available for you to action.
+            4. Check the tool schema and make a plan in steps for the task you want to perform.
+            5. Only call the tools you need to perform for each step of the plan to complete the instruction in the content.
+            6. Take 3 seconds and think about the content and see if you have executed the instruction to the best of your ability and the tools. Make this your response as "answer".
+            7. Use `send_message` from coral tools to send a message in the same thread ID to the sender Id you received the mention from, with content: "answer".
+            8. If any error occurs, use `send_message` to send a message in the same thread ID to the sender Id you received the mention from, with content: "error".
+            9. Always respond back to the sender agent even if you have no answer or error.
+            10. Wait for 2 seconds and repeat the process from step 1.
+            
+            If no mentions are received (timeout), you should:
+            1. Fetch ONE unanalyzed tweet from Supabase using fetch_tweets_from_supabase (limit=1)
+            2. If a tweet is found:
+               a. Generate a single focused research question using generate_research_question and save the returned question
+               b. Use Perplexity to analyze the tweet by passing the tweet_text AND the question to analyze_tweet_perplexity
+               c. Store the analysis in Qdrant using store_analysis_qdrant with the tweet_id, tweet_text, question, analysis result, AND the full tweet_data object to include author and engagement metrics
+               d. Mark the tweet as analyzed using mark_tweet_as_analyzed
+            3. Wait for 5 minutes before processing the next tweet (to avoid API rate limits)
+            
+            Your goal is to understand what the author of each tweet is truly trying to communicate. Focus on:
+            - The author's underlying intent or message
+            - Any implicit assumptions or beliefs
+            - The broader context that gives the tweet meaning
+            
+            These are the list of all tools (Coral + your tools): {tools_description}
+            These are the list of your tools: {agent_tools_description}"""
+        ),
+        ("placeholder", "{agent_scratchpad}")
+    ])
+
+    model = init_chat_model(
+        model="gpt-4o-mini",
+        model_provider="openai",
+        api_key=os.getenv("OPENAI_API_KEY"),
+        temperature=0.3,
+        max_tokens=16000
+    )
+
+    agent = create_tool_calling_agent(model, tools, prompt)
+    return AgentExecutor(agent=agent, tools=tools, verbose=True)
+
 async def main():
-    """Main agent execution loop"""
-    try:
-        # Mark agent as started
-        asu.mark_agent_started(AGENT_NAME)
-        amu.mark_agent_started_with_user(AGENT_NAME)
-        log_to_database("info", "Tweet Research Agent started with user context")
-        
-        # Initialize MCP client
-        client = MultiServerMCPClient(
-            connections={
-                "coral": {
-                    "transport": "sse",
-                    "url": MCP_SERVER_URL,
-                    "timeout": 300,
-                    "sse_read_timeout": 300,
-                }
+    # Use the new MCP client pattern (langchain-mcp-adapters 0.1.0+)
+    client = MultiServerMCPClient(
+        connections={
+            "coral": {
+                "transport": "sse",
+                "url": MCP_SERVER_URL,
+                "headers": {"X-User-ID": user_id},  # CRITICAL: User isolation header
+                "timeout": 300,
+                "sse_read_timeout": 300,
             }
-        )
-        
-        # Get Coral tools
-        coral_tools = client.get_tools()
-        
-        # Define agent tools
-        agent_tools = [
-            fetch_persona,
-            fetch_tweets_from_supabase,
-            mark_tweet_as_analyzed,
-            analyze_tweet_perplexity,
-            store_analysis_qdrant,
-            search_qdrant,
-            generate_research_question
-        ]
-        
-        # Combine Coral tools with agent-specific tools
-        tools = coral_tools + agent_tools
-        
-        # Initialize the chat model
-        model = init_chat_model(
-            model="gpt-4o-mini",
-            model_provider="openai",
-            api_key=os.getenv("OPENAI_API_KEY"),
-            temperature=0.7
-        )
-        
-        # Create the prompt template
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", """You are the Tweet Research Agent for user {user_id}. Your role is to analyze tweets and extract deep insights using research tools.
-
-Your workflow:
-1. Fetch unanalyzed tweets from the database
-2. For each tweet, generate a focused research question
-3. Use Perplexity to conduct in-depth analysis
-4. Store the analysis in Qdrant vector database
-5. Mark tweets as analyzed
-
-Available tools:
-{tools}
-
-Always maintain user context and ensure all operations are user-specific."""),
-            ("human", "{input}"),
-            ("placeholder", "{agent_scratchpad}")
-        ])
-        
-        # Create the agent
-        agent = create_tool_calling_agent(model, tools, prompt)
-        agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
-        
-        # Main execution loop
-        while True:
-            try:
-                log_to_database("info", "Starting new agent invocation cycle")
-                
-                # Execute the agent
-                result = agent_executor.invoke({
-                    "input": f"Analyze unanalyzed tweets for user {user_id}. Fetch tweets, generate research questions, analyze with Perplexity, store in Qdrant, and mark as analyzed.",
-                    "user_id": user_id,
-                    "tools": get_tools_description(tools)
-                })
-                
-                logger.info("Agent execution completed successfully")
-                log_to_database("info", "Completed agent invocation cycle")
-                
-                # Wait before next execution
-                await asyncio.sleep(300)  # 5 minutes
-                
-            except Exception as e:
-                logger.error(f"Error in agent execution: {str(e)}")
-                log_to_database("error", f"Error in agent execution: {str(e)}")
-                await asyncio.sleep(60)  # Wait 1 minute before retrying
-                
-    except Exception as e:
-        logger.error(f"Fatal error in Tweet Research Agent: {str(e)}")
-        log_to_database("error", f"Fatal error in Tweet Research Agent: {str(e)}")
-        raise
-    finally:
-        # Mark agent as stopped
-        asu.mark_agent_stopped(AGENT_NAME)
-        amu.mark_agent_stopped_with_user(AGENT_NAME)
-        log_to_database("info", "Tweet Research Agent stopped with user context")
+        }
+    )
+    
+    logger.info(f"Connected to MCP server at {MCP_SERVER_URL}")
+    log_to_database("info", f"Tweet Research Agent started and connected to MCP server")
+    
+    # Define agent-specific tools
+    agent_tools = [
+        fetch_persona,
+        fetch_tweets_from_supabase,
+        mark_tweet_as_analyzed,
+        analyze_tweet_perplexity,
+        store_analysis_qdrant,
+        search_qdrant,
+        generate_research_question
+    ]
+    
+    # Get Coral tools using the new pattern
+    coral_tools = client.get_tools()
+    
+    # Combine Coral tools with agent-specific tools
+    tools = coral_tools + agent_tools
+    
+    # Create and run the agent
+    agent_executor = await create_tweet_research_agent(client, tools, agent_tools)
+    
+    # Use the same main loop as the World News Agent
+    while True:
+        try:
+            logger.info("Starting new agent invocation")
+            log_to_database("info", "Starting new agent invocation cycle")
+            await agent_executor.ainvoke({"agent_scratchpad": []})
+            logger.info("Completed agent invocation, restarting loop")
+            log_to_database("info", "Completed agent invocation cycle")
+            await asyncio.sleep(1)
+        except Exception as e:
+            logger.error(f"Error in agent loop: {str(e)}")
+            log_to_database("error", f"Error in agent loop: {str(e)}")
+            await asyncio.sleep(5)
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    # Mark agent as started (use both old and new for compatibility)
+    asu.mark_agent_started(AGENT_NAME)
+    amu.mark_agent_started_with_user(AGENT_NAME)
+    log_to_database("info", "Tweet Research Agent started")
+    
+    try:
+        asyncio.run(main())
+    except Exception as e:
+        # Report error in status (use both old and new for compatibility)
+        asu.report_error(AGENT_NAME, f"Fatal error: {str(e)}")
+        amu.report_error_with_user(AGENT_NAME, f"Fatal error: {str(e)}")
+        
+        # Re-raise the exception
+        raise
+    finally:
+        # Mark agent as stopped (use both old and new for compatibility)
+        asu.mark_agent_stopped(AGENT_NAME)
+        amu.mark_agent_stopped_with_user(AGENT_NAME)
