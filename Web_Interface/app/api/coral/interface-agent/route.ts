@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { spawn } from 'child_process'
 import path from 'path'
+import fs from 'fs'
+import os from 'os'
 
 // Store active agent sessions
 const activeSessions = new Map<string, {
@@ -74,31 +76,88 @@ async function startPythonInterfaceAgent(userId: string, session: any) {
 
     // Get the project root directory (go up from Web_Interface)
     const projectRoot = path.resolve(process.cwd(), '..')
-    const scriptPath = path.join(projectRoot, '0_langchain_interface_web.py')
-    const venvPath = path.join(projectRoot, 'coral_env')
+    const agentFilePath = '0_langchain_interface_web.py'
+    const scriptPath = path.join(projectRoot, agentFilePath)
     
-    // Use the virtual environment Python
-    const pythonPath = process.platform === 'win32' 
-      ? path.join(venvPath, 'Scripts', 'python.exe')
-      : path.join(venvPath, 'bin', 'python')
+    // Check if the agent file exists
+    if (!fs.existsSync(scriptPath)) {
+      const errorMsg = `Interface Agent script not found: ${scriptPath}`
+      console.error(errorMsg)
+      await writer.write(`data: ${JSON.stringify({
+        type: 'error',
+        message: errorMsg,
+        timestamp: new Date().toISOString()
+      })}\n\n`)
+      return
+    }
 
-    console.log(`Starting Python Interface Agent: ${pythonPath} ${scriptPath} ${userId}`)
+    // Use the virtual environment wrapper script for production (same as other agents)
+    const wrapperScript = path.join(projectRoot, 'run_agent_with_venv.sh')
+    const useVirtualEnv = fs.existsSync(wrapperScript) && fs.existsSync(path.join(projectRoot, 'coral_env'))
     
-    // Spawn the Python process with virtual environment
-    const pythonProcess = spawn(pythonPath, [scriptPath, userId], {
-      cwd: projectRoot,
-      stdio: ['pipe', 'pipe', 'pipe'],
-      env: {
-        ...process.env,
-        PYTHONPATH: projectRoot,
-        VIRTUAL_ENV: venvPath
-      }
-    })
+    let pythonProcess: any
+    
+    if (useVirtualEnv) {
+      // Use virtual environment wrapper with user context (same as other agents)
+      console.log(`Using virtual environment wrapper for Interface Agent with user ${userId}`)
+      await writer.write(`data: ${JSON.stringify({
+        type: 'status',
+        message: 'Using virtual environment...',
+        timestamp: new Date().toISOString()
+      })}\n\n`)
+      
+      pythonProcess = spawn('bash', [wrapperScript, userId, agentFilePath], {
+        cwd: projectRoot,
+        stdio: ['pipe', 'pipe', 'pipe'],
+        detached: true,
+        shell: false
+      })
+    } else {
+      // Fallback to direct Python execution
+      const pythonExecutable = os.platform() === 'win32' ? 'python' : 'python3'
+      
+      console.log(`Fallback to direct Python execution for Interface Agent with user ${userId}`)
+      await writer.write(`data: ${JSON.stringify({
+        type: 'status',
+        message: 'Using system Python...',
+        timestamp: new Date().toISOString()
+      })}\n\n`)
+      
+      // Prepare environment variables with user context
+      const env = { ...process.env }
+      env.AGENT_USER_ID = userId
+      
+      pythonProcess = spawn(pythonExecutable, [agentFilePath], {
+        cwd: projectRoot,
+        stdio: ['pipe', 'pipe', 'pipe'],
+        detached: true,
+        shell: true,
+        env: env
+      })
+    }
+
+    if (!pythonProcess) {
+      const errorMsg = 'Failed to spawn Python process'
+      console.error(errorMsg)
+      await writer.write(`data: ${JSON.stringify({
+        type: 'error',
+        message: errorMsg,
+        timestamp: new Date().toISOString()
+      })}\n\n`)
+      return
+    }
 
     session.process = pythonProcess
+    
+    console.log(`Started Interface Agent process with PID: ${pythonProcess.pid}`)
+    await writer.write(`data: ${JSON.stringify({
+      type: 'status',
+      message: `Interface Agent process started (PID: ${pythonProcess.pid})`,
+      timestamp: new Date().toISOString()
+    })}\n\n`)
 
     // Handle stdout (JSON messages from Python)
-    pythonProcess.stdout.on('data', async (data) => {
+    pythonProcess.stdout.on('data', async (data: any) => {
       const lines = data.toString().split('\n')
       for (const line of lines) {
         if (line.trim()) {
@@ -106,19 +165,27 @@ async function startPythonInterfaceAgent(userId: string, session: any) {
             const message = JSON.parse(line.trim())
             await handlePythonMessage(message, session)
           } catch (e) {
-            console.error('Error parsing Python message:', e, 'Line:', line)
+            // If it's not JSON, treat it as a regular log message
+            console.log(`[Interface Agent] ${line.trim()}`)
+            await writer.write(`data: ${JSON.stringify({
+              type: 'log',
+              message: line.trim(),
+              timestamp: new Date().toISOString()
+            })}\n\n`)
           }
         }
       }
     })
 
     // Handle stderr (logs from Python)
-    pythonProcess.stderr.on('data', (data) => {
-      console.log('Python stderr:', data.toString())
+    pythonProcess.stderr.on('data', (data: any) => {
+      const errorOutput = data.toString()
+      console.log(`[Interface Agent] ERROR: ${errorOutput}`)
+      // Don't send all stderr to web interface as it can be noisy
     })
 
     // Handle process exit
-    pythonProcess.on('exit', async (code) => {
+    pythonProcess.on('exit', async (code: any) => {
       console.log(`Python Interface Agent exited with code ${code}`)
       await writer.write(`data: ${JSON.stringify({
         type: 'status',
@@ -132,7 +199,7 @@ async function startPythonInterfaceAgent(userId: string, session: any) {
     })
 
     // Handle process errors
-    pythonProcess.on('error', async (error) => {
+    pythonProcess.on('error', async (error: any) => {
       console.error('Python Interface Agent error:', error)
       await writer.write(`data: ${JSON.stringify({
         type: 'error',
@@ -141,11 +208,11 @@ async function startPythonInterfaceAgent(userId: string, session: any) {
       })}\n\n`)
     })
 
-  } catch (error) {
+  } catch (error: any) {
     console.error('Failed to start Python Interface Agent:', error)
     await session.writer.write(`data: ${JSON.stringify({
       type: 'error',
-      message: `Failed to start Interface Agent: ${error}`,
+      message: `Failed to start Interface Agent: ${error.message || error}`,
       timestamp: new Date().toISOString()
     })}\n\n`)
   }
