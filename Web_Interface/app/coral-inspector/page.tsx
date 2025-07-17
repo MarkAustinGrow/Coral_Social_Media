@@ -308,19 +308,17 @@ export default function CoralInspectorPage() {
   }
 
   const handleSendMessage = async () => {
-    if (!toAgent || !messageContent) return
+    if (!messageContent) return
 
     try {
-      // Interface Agent is always the sender
+      // Send message directly to Interface Agent - no agent selection needed
       const response = await fetch('/api/coral/send-message', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          toAgentId: toAgent,
           content: messageContent,
-          threadId: threadId || undefined,
           userId: user?.id
         })
       })
@@ -330,7 +328,6 @@ export default function CoralInspectorPage() {
       
       // Clear form
       setMessageContent("")
-      setThreadId("")
     } catch (error) {
       setToolResponse(`Error: ${error}`)
     }
@@ -722,36 +719,36 @@ export default function CoralInspectorPage() {
           </Card>
         </TabsContent>
 
-        {/* Tools Tab */}
+        {/* Tools Tab - Now a Simple Chat Interface */}
         <TabsContent value="tools" className="space-y-4">
           <div>
-            <h2 className="text-2xl font-semibold mb-4">Agent Testing Tools</h2>
+            <h2 className="text-2xl font-semibold mb-4">Chat with Interface Agent</h2>
             <p className="text-muted-foreground mb-6">
-              Send instructions through the Interface Agent to test agent responses
+              Send messages directly to your Interface Agent - it will automatically route them to the right agents
             </p>
           </div>
 
           {/* Architecture Info */}
-          <Card className="border-yellow-200 bg-yellow-50">
+          <Card className="border-green-200 bg-green-50">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-yellow-800">
+              <CardTitle className="flex items-center gap-2 text-green-800">
                 <MessageCircle className="h-5 w-5" />
-                Coral Protocol Architecture
+                Coral Protocol - Automatic Routing
               </CardTitle>
-              <CardDescription className="text-yellow-700">
-                All agent communication flows through the Interface Agent
+              <CardDescription className="text-green-700">
+                No need to select agents - the Interface Agent decides automatically
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="text-sm text-yellow-800">
+              <div className="text-sm text-green-800">
                 <p className="mb-2">
-                  <strong>How it works:</strong> The Interface Agent acts as the central hub for all communications.
+                  <strong>How it works:</strong> Just ask what you want - "Are there any new tweets?" or "Write a blog about AI"
                 </p>
                 <p className="mb-2">
-                  <strong>Message Flow:</strong> Interface Agent → Target Agent → Interface Agent → Response
+                  <strong>Message Flow:</strong> You → Interface Agent → Interface Agent chooses best agent → Response
                 </p>
                 <p>
-                  <strong>Your Role:</strong> Send instructions to the Interface Agent, which will route them to the appropriate agent.
+                  <strong>Your Role:</strong> Simply describe what you want done, like talking to a smart assistant
                 </p>
               </div>
             </CardContent>
@@ -761,71 +758,35 @@ export default function CoralInspectorPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Send className="h-5 w-5" />
-                Send Instruction via Interface Agent
+                Chat Interface
               </CardTitle>
               <CardDescription>
-                Send an instruction through the Interface Agent to a target agent
+                Send a message to your Interface Agent
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {/* Interface Agent is always the sender */}
-              <div className="grid gap-4 md:grid-cols-2">
-                <div>
-                  <Label htmlFor="from-agent">From Agent (Fixed)</Label>
-                  <div className="flex items-center gap-2 p-3 border rounded-md bg-muted">
-                    <div className={`w-3 h-3 rounded-full ${INTERFACE_AGENT.color}`} />
-                    <span className="font-medium">{INTERFACE_AGENT.name}</span>
-                    <Badge variant="outline" className="ml-auto">Central Hub</Badge>
-                  </div>
-                </div>
-                <div>
-                  <Label htmlFor="to-agent">Target Agent</Label>
-                  <Select value={toAgent} onValueChange={setToAgent}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select target agent" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {USER_AGENTS.map((agent) => (
-                        <SelectItem key={agent.key} value={getUserAgentId(agent.key)}>
-                          {agent.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
+              {/* Simple message input - no agent selection */}
               <div>
-                <Label htmlFor="thread-id">Thread ID (Optional)</Label>
-                <Input
-                  id="thread-id"
-                  placeholder="Leave empty to create new thread"
-                  value={threadId}
-                  onChange={(e) => setThreadId(e.target.value)}
-                />
-              </div>
-
-              <div>
-                <Label htmlFor="message-content">Instruction for Target Agent</Label>
+                <Label htmlFor="message-content">What would you like me to help you with?</Label>
                 <Textarea
                   id="message-content"
-                  placeholder="Enter the instruction you want the Interface Agent to send to the target agent..."
+                  placeholder="Type your request here... e.g., 'Are there any new tweets to scrape?' or 'Write a blog about the latest tech trends'"
                   value={messageContent}
                   onChange={(e) => setMessageContent(e.target.value)}
                   rows={4}
                 />
                 <p className="text-xs text-muted-foreground mt-1">
-                  Example: "Please analyze the latest tweets about cryptocurrency and provide a summary"
+                  Examples: "Check for new tweets", "Write a blog about AI", "What's trending on social media?"
                 </p>
               </div>
 
               <Button 
                 onClick={handleSendMessage} 
-                disabled={!toAgent || !messageContent}
+                disabled={!messageContent}
                 className="w-full"
               >
-                <Play className="h-4 w-4 mr-2" />
-                Send Instruction via Interface Agent
+                <Send className="h-4 w-4 mr-2" />
+                Send Message
               </Button>
 
               {toolResponse && (
@@ -854,22 +815,22 @@ export default function CoralInspectorPage() {
                 <div className="flex items-start gap-3">
                   <div className="w-6 h-6 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xs font-medium">1</div>
                   <div>
-                    <p className="font-medium">Select Target Agent</p>
-                    <p className="text-muted-foreground">Choose which agent should receive the instruction</p>
+                    <p className="font-medium">Type Your Request</p>
+                    <p className="text-muted-foreground">Just describe what you want - no need to select which agent</p>
                   </div>
                 </div>
                 <div className="flex items-start gap-3">
                   <div className="w-6 h-6 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xs font-medium">2</div>
                   <div>
-                    <p className="font-medium">Write Clear Instructions</p>
-                    <p className="text-muted-foreground">Provide specific instructions for what you want the agent to do</p>
+                    <p className="font-medium">Interface Agent Routes Automatically</p>
+                    <p className="text-muted-foreground">The Interface Agent will choose the best agent for your request</p>
                   </div>
                 </div>
                 <div className="flex items-start gap-3">
                   <div className="w-6 h-6 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xs font-medium">3</div>
                   <div>
-                    <p className="font-medium">Monitor Response</p>
-                    <p className="text-muted-foreground">Watch the Threads tab for real-time communication between agents</p>
+                    <p className="font-medium">Watch the Threads Tab</p>
+                    <p className="text-muted-foreground">See real-time communication between agents as they work on your request</p>
                   </div>
                 </div>
               </div>
