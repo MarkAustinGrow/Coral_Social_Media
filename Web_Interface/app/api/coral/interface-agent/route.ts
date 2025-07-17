@@ -1,14 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
-
-const supabase = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_KEY!
-)
+import { spawn } from 'child_process'
+import path from 'path'
 
 // Store active agent sessions
 const activeSessions = new Map<string, {
-  controller: AbortController,
+  process: any,
   writer: WritableStreamDefaultWriter,
   messageQueue: string[],
   waitingForResponse: boolean
@@ -26,12 +22,11 @@ export async function POST(request: NextRequest) {
   
   if (!session) {
     // Start new Interface Agent session
-    const controller = new AbortController()
     const stream = new TransformStream()
     const writer = stream.writable.getWriter()
     
     session = {
-      controller,
+      process: null,
       writer,
       messageQueue: [],
       waitingForResponse: false
@@ -39,8 +34,8 @@ export async function POST(request: NextRequest) {
     
     activeSessions.set(userId, session)
     
-    // Start the Interface Agent in the background
-    startInterfaceAgent(userId, stream.readable, session)
+    // Start the Python Interface Agent in the background
+    startPythonInterfaceAgent(userId, session)
     
     // Return the stream for real-time communication
     return new Response(stream.readable, {
@@ -52,180 +47,127 @@ export async function POST(request: NextRequest) {
     })
   }
 
-  // Add message to queue if agent is running
-  if (session.waitingForResponse) {
-    session.messageQueue.push(message)
-    return NextResponse.json({ success: true, queued: true })
+  // Send message to Python process if agent is running
+  if (session.process && session.waitingForResponse) {
+    const userMessage = {
+      type: 'user_response',
+      content: message
+    }
+    session.process.stdin.write(JSON.stringify(userMessage) + '\n')
+    session.waitingForResponse = false
+    return NextResponse.json({ success: true, sent: true })
   }
 
   return NextResponse.json({ error: 'Agent not ready' }, { status: 503 })
 }
 
-async function startInterfaceAgent(userId: string, readable: ReadableStream, session: any) {
+async function startPythonInterfaceAgent(userId: string, session: any) {
   try {
-    // Import the required modules (these would need to be available in Node.js environment)
-    // For now, we'll simulate the Interface Agent behavior
-    
     const writer = session.writer
     
     // Send initial connection message
     await writer.write(`data: ${JSON.stringify({
       type: 'status',
-      message: 'Interface Agent starting...',
+      message: 'Starting Python Interface Agent...',
       timestamp: new Date().toISOString()
     })}\n\n`)
 
-    // Simulate the Interface Agent workflow
-    await simulateInterfaceAgent(userId, session)
+    // Get the project root directory (go up from Web_Interface)
+    const projectRoot = path.resolve(process.cwd(), '..')
+    const scriptPath = path.join(projectRoot, '0_langchain_interface_web.py')
+    const venvPath = path.join(projectRoot, 'coral_env')
     
+    // Use the virtual environment Python
+    const pythonPath = process.platform === 'win32' 
+      ? path.join(venvPath, 'Scripts', 'python.exe')
+      : path.join(venvPath, 'bin', 'python')
+
+    console.log(`Starting Python Interface Agent: ${pythonPath} ${scriptPath} ${userId}`)
+    
+    // Spawn the Python process with virtual environment
+    const pythonProcess = spawn(pythonPath, [scriptPath, userId], {
+      cwd: projectRoot,
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: {
+        ...process.env,
+        PYTHONPATH: projectRoot,
+        VIRTUAL_ENV: venvPath
+      }
+    })
+
+    session.process = pythonProcess
+
+    // Handle stdout (JSON messages from Python)
+    pythonProcess.stdout.on('data', async (data) => {
+      const lines = data.toString().split('\n')
+      for (const line of lines) {
+        if (line.trim()) {
+          try {
+            const message = JSON.parse(line.trim())
+            await handlePythonMessage(message, session)
+          } catch (e) {
+            console.error('Error parsing Python message:', e, 'Line:', line)
+          }
+        }
+      }
+    })
+
+    // Handle stderr (logs from Python)
+    pythonProcess.stderr.on('data', (data) => {
+      console.log('Python stderr:', data.toString())
+    })
+
+    // Handle process exit
+    pythonProcess.on('exit', async (code) => {
+      console.log(`Python Interface Agent exited with code ${code}`)
+      await writer.write(`data: ${JSON.stringify({
+        type: 'status',
+        message: `Interface Agent stopped (exit code: ${code})`,
+        timestamp: new Date().toISOString()
+      })}\n\n`)
+      
+      // Clean up session
+      activeSessions.delete(userId)
+      await writer.close()
+    })
+
+    // Handle process errors
+    pythonProcess.on('error', async (error) => {
+      console.error('Python Interface Agent error:', error)
+      await writer.write(`data: ${JSON.stringify({
+        type: 'error',
+        message: `Python process error: ${error.message}`,
+        timestamp: new Date().toISOString()
+      })}\n\n`)
+    })
+
   } catch (error) {
-    console.error('Interface Agent error:', error)
+    console.error('Failed to start Python Interface Agent:', error)
     await session.writer.write(`data: ${JSON.stringify({
       type: 'error',
-      message: `Interface Agent error: ${error}`,
+      message: `Failed to start Interface Agent: ${error}`,
       timestamp: new Date().toISOString()
     })}\n\n`)
   }
 }
 
-async function simulateInterfaceAgent(userId: string, session: any) {
+async function handlePythonMessage(message: any, session: any) {
   const writer = session.writer
   
   try {
-    // Step 1: List agents (simulated)
+    // Forward the message to the web interface via SSE
     await writer.write(`data: ${JSON.stringify({
-      type: 'agent_action',
-      action: 'list_agents',
-      message: 'Listing available agents...',
+      ...message,
       timestamp: new Date().toISOString()
     })}\n\n`)
 
-    // Step 2: Ask user how to help
-    await writer.write(`data: ${JSON.stringify({
-      type: 'agent_question',
-      question: 'How can I assist you today?',
-      timestamp: new Date().toISOString()
-    })}\n\n`)
-
-    // Mark as waiting for response
-    session.waitingForResponse = true
-
-    // Wait for user response
-    const userResponse = await waitForUserResponse(session)
-    
-    await writer.write(`data: ${JSON.stringify({
-      type: 'user_response',
-      message: userResponse,
-      timestamp: new Date().toISOString()
-    })}\n\n`)
-
-    // Step 3: Process user intent
-    await writer.write(`data: ${JSON.stringify({
-      type: 'agent_thinking',
-      message: 'Analyzing your request and selecting the best agent...',
-      timestamp: new Date().toISOString()
-    })}\n\n`)
-
-    // Step 4: Route to appropriate agent
-    const selectedAgent = determineAgent(userResponse)
-    
-    await writer.write(`data: ${JSON.stringify({
-      type: 'agent_selection',
-      agent: selectedAgent,
-      message: `Routing your request to ${selectedAgent}...`,
-      timestamp: new Date().toISOString()
-    })}\n\n`)
-
-    // Step 5: Create thread and send message
-    await writer.write(`data: ${JSON.stringify({
-      type: 'thread_creation',
-      message: 'Creating communication thread...',
-      timestamp: new Date().toISOString()
-    })}\n\n`)
-
-    // Step 6: Wait for agent response
-    await writer.write(`data: ${JSON.stringify({
-      type: 'waiting_response',
-      message: 'Waiting for agent response...',
-      timestamp: new Date().toISOString()
-    })}\n\n`)
-
-    // Simulate agent response
-    await new Promise(resolve => setTimeout(resolve, 2000))
-    
-    await writer.write(`data: ${JSON.stringify({
-      type: 'agent_response',
-      agent: selectedAgent,
-      response: generateAgentResponse(selectedAgent, userResponse),
-      timestamp: new Date().toISOString()
-    })}\n\n`)
-
-    // Step 7: Ask if user needs anything else
-    await writer.write(`data: ${JSON.stringify({
-      type: 'agent_question',
-      question: 'Do you need anything else?',
-      timestamp: new Date().toISOString()
-    })}\n\n`)
-
-    // Continue the conversation loop
-    session.waitingForResponse = true
+    // Check if we need to wait for user response
+    if (message.type === 'agent_question') {
+      session.waitingForResponse = true
+    }
 
   } catch (error) {
-    await writer.write(`data: ${JSON.stringify({
-      type: 'error',
-      message: `Error in Interface Agent: ${error}`,
-      timestamp: new Date().toISOString()
-    })}\n\n`)
-  }
-}
-
-async function waitForUserResponse(session: any): Promise<string> {
-  return new Promise((resolve) => {
-    const checkQueue = () => {
-      if (session.messageQueue.length > 0) {
-        const message = session.messageQueue.shift()
-        session.waitingForResponse = false
-        resolve(message)
-      } else {
-        setTimeout(checkQueue, 100)
-      }
-    }
-    checkQueue()
-  })
-}
-
-function determineAgent(userMessage: string): string {
-  const message = userMessage.toLowerCase()
-  
-  if (message.includes('tweet') || message.includes('twitter') || message.includes('scrape')) {
-    return 'Tweet Scraping Agent'
-  } else if (message.includes('blog') || message.includes('write') || message.includes('article')) {
-    return 'Blog Writing Agent'
-  } else if (message.includes('research') || message.includes('analyze')) {
-    return 'Tweet Research Agent'
-  } else if (message.includes('trending') || message.includes('hot') || message.includes('topic')) {
-    return 'Hot Topic Agent'
-  } else if (message.includes('post') || message.includes('publish')) {
-    return 'Twitter Posting Agent'
-  } else {
-    return 'Tweet Scraping Agent' // Default
-  }
-}
-
-function generateAgentResponse(agent: string, userMessage: string): string {
-  switch (agent) {
-    case 'Tweet Scraping Agent':
-      return 'I found 12 new tweets from your monitored accounts. The latest tweets cover topics about AI, cryptocurrency, and market trends. Would you like me to analyze any specific tweets?'
-    case 'Blog Writing Agent':
-      return 'I can help you write a blog post. What topic would you like me to focus on? I can create content based on recent tweets, trending topics, or any specific subject you have in mind.'
-    case 'Tweet Research Agent':
-      return 'I\'ve analyzed the recent tweets and found several interesting patterns. The main topics trending are AI developments, market predictions, and policy changes. Would you like a detailed analysis of any specific topic?'
-    case 'Hot Topic Agent':
-      return 'Current trending topics include: AI regulation discussions, cryptocurrency market movements, and geopolitical developments. These topics are generating high engagement across social media.'
-    case 'Twitter Posting Agent':
-      return 'I\'m ready to help you post content to Twitter. Do you have specific content you\'d like to post, or would you like me to create posts based on recent research and trends?'
-    default:
-      return 'I\'m ready to assist you with your request. Please let me know what specific task you\'d like me to perform.'
+    console.error('Error handling Python message:', error)
   }
 }
 
@@ -257,7 +199,10 @@ export async function DELETE(request: NextRequest) {
   // Stop the Interface Agent session
   const session = activeSessions.get(userId)
   if (session) {
-    session.controller.abort()
+    // Kill the Python process
+    if (session.process) {
+      session.process.kill('SIGTERM')
+    }
     await session.writer.close()
     activeSessions.delete(userId)
   }
