@@ -115,7 +115,7 @@ async def ask_human_tool(question: str) -> str:
         
         # Use wait_for_mentions to actually wait for user input through the web interface
         # This will block until the user responds through the Coral Inspector
-        result = await wait_for_mentions_tool.acall({"timeout": 60})  # 60 second timeout
+        result = await wait_for_mentions_tool.ainvoke({"timeout": 60})  # 60 second timeout
         
         if result and result.strip():
             logger.info(f"Received user response: {result}")
