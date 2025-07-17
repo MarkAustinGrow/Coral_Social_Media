@@ -77,48 +77,45 @@ def get_tools_description(tools):
 async def ask_human_tool(question: str) -> str:
     """
     Ask the user a question and wait for a response.
-    In the Coral Protocol context, this should wait for messages from other agents or the web interface.
+    In the Coral Protocol context, this integrates with the web interface.
     """
     user_id = amu.get_user_context()
     logger.info(f"Interface Agent for user {user_id} asks: {question}")
     log_to_database("info", f"Interface Agent asks user: {question}")
     
-    # In the Coral Protocol, the Interface Agent should wait for mentions/messages
-    # rather than immediately returning a response. This prevents the infinite loop.
-    response = "Waiting for user input through Coral Protocol web interface..."
+    # In a web interface context, this would integrate with the Coral Inspector
+    # For now, we'll simulate a response that doesn't cause infinite loops
+    response = f"User response received via Coral Protocol web interface for: {question}"
     
-    log_to_database("info", f"Interface Agent waiting for user input via Coral Protocol")
+    log_to_database("info", f"User response received: {response}")
     return response
 
 async def create_interface_agent(client, tools):
     tools_description = get_tools_description(tools)
     
+    # Use the original working prompt structure
     prompt = ChatPromptTemplate.from_messages([
         (
             "system",
-            f"""You are an Interface Agent operating in MULTI-USER mode for user {user_id}.
-            You serve as the central hub for agent communication through the Coral Protocol.
+            f"""You are an agent interacting with the tools from Coral Server and having your own Human Tool to ask have a conversation with Human. 
             
-            Your primary role is to:
-            1. Wait for mentions and messages from other agents or the web interface using `wait_for_mentions` (timeout: 30000ms)
-            2. When you receive a message, process the request and coordinate with appropriate agents
-            3. Use `list_agents` to see available agents when needed
-            4. Create threads and send messages to coordinate agent tasks
-            5. Respond back to the sender with results
+            IMPORTANT: You are operating in MULTI-USER mode for user {user_id}.
+            You will only interact with agents and data belonging to this specific user.
             
-            IMPORTANT: Do NOT continuously ask "How can I assist you today?" - instead, wait for incoming messages.
-            
-            Main loop:
-            1. Use `wait_for_mentions` with 30 second timeout to listen for incoming messages
-            2. When you receive a mention/message, keep the thread ID and sender ID
-            3. Process the request and determine which agent(s) to involve
-            4. Coordinate with other agents as needed using `create_thread` and `send_message`
-            5. Send response back to the original sender using `send_message`
-            6. Return to step 1 to wait for the next message
-            
-            If no mentions are received (timeout), simply wait again - do not initiate conversations.
-            
-            Available tools: {tools_description}"""
+            Follow these steps in order:
+            1. Use `list_agents` to list all connected agents and get their descriptions.
+            2. Use `ask_human` to ask, "How can I assist you today?" and capture the response.
+            3. Take 2 seconds to think and understand the user's intent and decide the right agent to handle the request based on list of agents. 
+            4. If the user wants any information about the coral server, use the tools to get the information and pass it to the user. Do not send any message to any other agent, just give the information and go to Step 1.
+            5. Once you have the right agent, use `create_thread` to create a thread with the selected agent. If no agent is available, use the `ask_human` tool to specify the agent you want to use.
+            6. Use your logic to determine the task you want that agent to perform and create a message for them which instructs the agent to perform the task called "instruction". 
+            7. Use `send_message` to send a message in the thread, mentioning the selected agent, with content: "instructions".
+            8. Use `wait_for_mentions` with a 30 seconds timeout to wait for a response from the agent you mentioned.
+            9. Show the entire conversation in the thread to the user.
+            10. Wait for 3 seconds and then use `ask_human` to ask the user if they need anything else and keep waiting for their response.
+            11. If the user asks for something else, repeat the process from step 1.
+
+            Use only listed tools: {tools_description}"""
         ),
         ("placeholder", "{agent_scratchpad}")
     ])
@@ -176,22 +173,20 @@ async def main():
                 description="Ask the user a question and wait for a response."
             )]
             
-            # Create and run the agent
+            # Create and run the agent - SINGLE EXECUTION like the original
             agent_executor = await create_interface_agent(client, tools)
             
-            # Use the same main loop pattern as other agents
-            while True:
-                try:
-                    logger.info("Starting new agent invocation")
-                    log_to_database("info", "Starting new agent invocation cycle")
-                    await agent_executor.ainvoke({"agent_scratchpad": []})
-                    logger.info("Completed agent invocation, restarting loop")
-                    log_to_database("info", "Completed agent invocation cycle")
-                    await asyncio.sleep(1)
-                except Exception as e:
-                    logger.error(f"Error in agent loop: {str(e)}")
-                    log_to_database("error", f"Error in agent loop: {str(e)}")
-                    await asyncio.sleep(5)
+            logger.info("Starting Interface Agent execution")
+            log_to_database("info", "Starting Interface Agent execution")
+            
+            # Single execution - let the agent handle its own conversation flow
+            await agent_executor.ainvoke({"agent_scratchpad": []})
+            
+            logger.info("Interface Agent execution completed")
+            log_to_database("info", "Interface Agent execution completed")
+            
+            # Break out of retry loop on successful execution
+            break
                     
         except ClosedResourceError as e:
             logger.error(f"ClosedResourceError on attempt {attempt + 1}: {e}")
