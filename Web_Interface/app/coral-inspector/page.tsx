@@ -308,28 +308,114 @@ export default function CoralInspectorPage() {
   }
 
   const handleSendMessage = async () => {
-    if (!messageContent) return
+    if (!messageContent || !user?.id) return
 
     try {
-      // Send message directly to Interface Agent - no agent selection needed
-      const response = await fetch('/api/coral/send-message', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          content: messageContent,
-          userId: user?.id
-        })
-      })
+      // Check if we have an active Interface Agent session
+      const statusResponse = await fetch(`/api/coral/interface-agent?userId=${user.id}`)
+      const status = await statusResponse.json()
 
-      const result = await response.json()
-      setToolResponse(JSON.stringify(result, null, 2))
+      if (!status.hasActiveSession) {
+        // Start new Interface Agent session with SSE
+        startInterfaceAgentSession()
+      } else {
+        // Send message to existing session
+        await fetch('/api/coral/interface-agent', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            message: messageContent,
+            userId: user.id
+          })
+        })
+      }
       
       // Clear form
       setMessageContent("")
     } catch (error) {
       setToolResponse(`Error: ${error}`)
+    }
+  }
+
+  const startInterfaceAgentSession = async () => {
+    if (!user?.id) return
+
+    try {
+      setToolResponse("Starting Interface Agent session...")
+      
+      // Start SSE connection to Interface Agent
+      const response = await fetch('/api/coral/interface-agent', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          message: messageContent,
+          userId: user.id
+        })
+      })
+
+      if (!response.body) {
+        throw new Error('No response stream')
+      }
+
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+
+      // Read the SSE stream
+      while (true) {
+        const { done, value } = await reader.read()
+        
+        if (done) break
+
+        const chunk = decoder.decode(value)
+        const lines = chunk.split('\n')
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6))
+              handleInterfaceAgentMessage(data)
+            } catch (e) {
+              console.error('Error parsing SSE data:', e)
+            }
+          }
+        }
+      }
+    } catch (error) {
+      setToolResponse(`Error starting Interface Agent: ${error}`)
+    }
+  }
+
+  const handleInterfaceAgentMessage = (data: any) => {
+    const timestamp = new Date(data.timestamp).toLocaleTimeString()
+    
+    switch (data.type) {
+      case 'status':
+        setToolResponse(prev => `${prev}\n[${timestamp}] ${data.message}`)
+        break
+      case 'agent_question':
+        setToolResponse(prev => `${prev}\n[${timestamp}] Agent: ${data.question}`)
+        break
+      case 'user_response':
+        setToolResponse(prev => `${prev}\n[${timestamp}] You: ${data.message}`)
+        break
+      case 'agent_thinking':
+        setToolResponse(prev => `${prev}\n[${timestamp}] ${data.message}`)
+        break
+      case 'agent_selection':
+        setToolResponse(prev => `${prev}\n[${timestamp}] Selected: ${data.agent}`)
+        break
+      case 'agent_response':
+        setToolResponse(prev => `${prev}\n[${timestamp}] ${data.agent}: ${data.response}`)
+        break
+      case 'error':
+        setToolResponse(prev => `${prev}\n[${timestamp}] ERROR: ${data.message}`)
+        break
+      default:
+        setToolResponse(prev => `${prev}\n[${timestamp}] ${data.message || JSON.stringify(data)}`)
     }
   }
 
