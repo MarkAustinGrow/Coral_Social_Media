@@ -74,21 +74,58 @@ def get_tools_description(tools):
         for tool in tools
     )
 
+# Global variable to store the client for use in ask_human_tool
+_global_client = None
+
 async def ask_human_tool(question: str) -> str:
     """
-    Ask the user a question and wait for a response.
-    In the Coral Protocol context, this integrates with the web interface.
+    Ask the user a question and wait for a response through the Coral Protocol.
+    This function will actually wait for user input via the web interface.
     """
+    global _global_client
     user_id = amu.get_user_context()
+    
     logger.info(f"Interface Agent for user {user_id} asks: {question}")
     log_to_database("info", f"Interface Agent asks user: {question}")
     
-    # In a web interface context, this would integrate with the Coral Inspector
-    # For now, we'll simulate a response that doesn't cause infinite loops
-    response = f"User response received via Coral Protocol web interface for: {question}"
+    if not _global_client:
+        logger.error("No Coral client available for ask_human_tool")
+        return "Error: No connection to Coral Protocol available"
     
-    log_to_database("info", f"User response received: {response}")
-    return response
+    try:
+        # Get the wait_for_mentions tool from the Coral client
+        coral_tools = _global_client.get_tools()
+        wait_for_mentions_tool = None
+        
+        for tool in coral_tools:
+            if tool.name == "wait_for_mentions":
+                wait_for_mentions_tool = tool
+                break
+        
+        if not wait_for_mentions_tool:
+            logger.error("wait_for_mentions tool not available")
+            return "Error: Cannot wait for user response - wait_for_mentions tool not available"
+        
+        logger.info(f"Waiting for user response to: {question}")
+        log_to_database("info", f"Waiting for user response via Coral Protocol")
+        
+        # Use wait_for_mentions to actually wait for user input
+        # This will block until the user responds through the Coral Inspector
+        result = await wait_for_mentions_tool.acall({"timeout": 60})  # 60 second timeout
+        
+        if result and result.strip():
+            logger.info(f"Received user response: {result}")
+            log_to_database("info", f"User response received: {result}")
+            return result
+        else:
+            logger.warning("No response received from user within timeout")
+            log_to_database("warning", "No response received from user within timeout")
+            return "No response received within timeout. Please try again."
+            
+    except Exception as e:
+        logger.error(f"Error in ask_human_tool: {e}")
+        log_to_database("error", f"Error in ask_human_tool: {e}")
+        return f"Error waiting for user response: {str(e)}"
 
 async def create_interface_agent(client, tools):
     tools_description = get_tools_description(tools)
@@ -132,6 +169,8 @@ async def create_interface_agent(client, tools):
     return AgentExecutor(agent=agent, tools=tools, verbose=True)
 
 async def main():
+    global _global_client
+    
     # Check if user context is available
     if not user_id:
         logger.error("No user context available. Cannot start Interface Agent.")
@@ -158,6 +197,9 @@ async def main():
                     }
                 }
             )
+            
+            # Store client globally for use in ask_human_tool
+            _global_client = client
             
             logger.info(f"Connected to MCP server at {MCP_SERVER_URL}")
             log_to_database("info", f"Interface Agent connected to MCP server for user {user_id}")
