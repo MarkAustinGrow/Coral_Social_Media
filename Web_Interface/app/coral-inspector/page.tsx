@@ -41,8 +41,15 @@ const INTERFACE_AGENT = {
   color: "bg-yellow-500"
 }
 
-// User's 8 agents configuration
+// User's agents configuration including Interface Agent
 const USER_AGENTS = [
+  {
+    name: "Interface Agent",
+    key: "interface_agent",
+    description: "Central hub for all agent communications",
+    color: "bg-yellow-500",
+    isSpecial: true
+  },
   {
     name: "World News Agent",
     key: "world_news_agent",
@@ -329,6 +336,54 @@ export default function CoralInspectorPage() {
     }
   }
 
+  const handleStartAgent = async (agentName: string) => {
+    try {
+      const response = await fetch('/api/agents/start', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          agentName: agentName
+        })
+      })
+
+      const result = await response.json()
+      if (result.success) {
+        // Refresh agent statuses
+        fetchAgentStatuses()
+      } else {
+        console.error('Failed to start agent:', result.error)
+      }
+    } catch (error) {
+      console.error('Error starting agent:', error)
+    }
+  }
+
+  const handleStopAgent = async (agentName: string) => {
+    try {
+      const response = await fetch('/api/agents/stop', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          agentName: agentName
+        })
+      })
+
+      const result = await response.json()
+      if (result.success) {
+        // Refresh agent statuses
+        fetchAgentStatuses()
+      } else {
+        console.error('Failed to stop agent:', result.error)
+      }
+    } catch (error) {
+      console.error('Error stopping agent:', error)
+    }
+  }
+
   const exportMessages = () => {
     const filteredMessages = messages.filter(msg => {
       const matchesThread = !threadFilter || msg.threadId.includes(threadFilter)
@@ -484,19 +539,58 @@ export default function CoralInspectorPage() {
                           </span>
                         </div>
 
-                        {status?.sessionId && (
-                          <div className="pt-2">
-                            <Button 
-                              variant="outline" 
-                              size="sm" 
-                              className="w-full"
-                              onClick={() => setActiveTab('threads')}
-                            >
-                              <Eye className="h-3 w-3 mr-1" />
-                              Inspect
-                            </Button>
-                          </div>
-                        )}
+                        <div className="pt-2">
+                          {agent.isSpecial ? (
+                            // Interface Agent gets start/stop buttons
+                            <div className="space-y-2">
+                              {status?.status === 'online' ? (
+                                <Button 
+                                  variant="outline" 
+                                  size="sm" 
+                                  className="w-full"
+                                  onClick={() => handleStopAgent(agent.name)}
+                                >
+                                  <XCircle className="h-3 w-3 mr-1" />
+                                  Stop Agent
+                                </Button>
+                              ) : (
+                                <Button 
+                                  variant="outline" 
+                                  size="sm" 
+                                  className="w-full"
+                                  onClick={() => handleStartAgent(agent.name)}
+                                >
+                                  <Play className="h-3 w-3 mr-1" />
+                                  Start Agent
+                                </Button>
+                              )}
+                              {status?.sessionId && (
+                                <Button 
+                                  variant="outline" 
+                                  size="sm" 
+                                  className="w-full"
+                                  onClick={() => setActiveTab('threads')}
+                                >
+                                  <Eye className="h-3 w-3 mr-1" />
+                                  Inspect
+                                </Button>
+                              )}
+                            </div>
+                          ) : (
+                            // Other agents get inspect button
+                            status?.sessionId && (
+                              <Button 
+                                variant="outline" 
+                                size="sm" 
+                                className="w-full"
+                                onClick={() => setActiveTab('threads')}
+                              >
+                                <Eye className="h-3 w-3 mr-1" />
+                                Inspect
+                              </Button>
+                            )
+                          )}
+                        </div>
                       </div>
                     </CardContent>
                   </Card>
