@@ -33,6 +33,14 @@ import {
 } from "lucide-react"
 import { useState, useEffect, useRef } from "react"
 
+// Interface Agent - Central hub for all communications
+const INTERFACE_AGENT = {
+  name: "Interface Agent",
+  key: "user_interaction_agent",
+  description: "Central hub for all agent communications",
+  color: "bg-yellow-500"
+}
+
 // User's 8 agents configuration
 const USER_AGENTS = [
   {
@@ -293,16 +301,16 @@ export default function CoralInspectorPage() {
   }
 
   const handleSendMessage = async () => {
-    if (!fromAgent || !toAgent || !messageContent) return
+    if (!toAgent || !messageContent) return
 
     try {
+      // Interface Agent is always the sender
       const response = await fetch('/api/coral/send-message', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          fromAgentId: fromAgent,
           toAgentId: toAgent,
           content: messageContent,
           threadId: threadId || undefined,
@@ -625,39 +633,59 @@ export default function CoralInspectorPage() {
           <div>
             <h2 className="text-2xl font-semibold mb-4">Agent Testing Tools</h2>
             <p className="text-muted-foreground mb-6">
-              Send manual messages to agents and test their responses
+              Send instructions through the Interface Agent to test agent responses
             </p>
           </div>
+
+          {/* Architecture Info */}
+          <Card className="border-yellow-200 bg-yellow-50">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-yellow-800">
+                <MessageCircle className="h-5 w-5" />
+                Coral Protocol Architecture
+              </CardTitle>
+              <CardDescription className="text-yellow-700">
+                All agent communication flows through the Interface Agent
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="text-sm text-yellow-800">
+                <p className="mb-2">
+                  <strong>How it works:</strong> The Interface Agent acts as the central hub for all communications.
+                </p>
+                <p className="mb-2">
+                  <strong>Message Flow:</strong> Interface Agent → Target Agent → Interface Agent → Response
+                </p>
+                <p>
+                  <strong>Your Role:</strong> Send instructions to the Interface Agent, which will route them to the appropriate agent.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
 
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Send className="h-5 w-5" />
-                Send Message
+                Send Instruction via Interface Agent
               </CardTitle>
               <CardDescription>
-                Send a message between agents for testing
+                Send an instruction through the Interface Agent to a target agent
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              {/* Interface Agent is always the sender */}
               <div className="grid gap-4 md:grid-cols-2">
                 <div>
-                  <Label htmlFor="from-agent">From Agent</Label>
-                  <Select value={fromAgent} onValueChange={setFromAgent}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select source agent" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {USER_AGENTS.map((agent) => (
-                        <SelectItem key={agent.key} value={getUserAgentId(agent.key)}>
-                          {agent.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Label htmlFor="from-agent">From Agent (Fixed)</Label>
+                  <div className="flex items-center gap-2 p-3 border rounded-md bg-muted">
+                    <div className={`w-3 h-3 rounded-full ${INTERFACE_AGENT.color}`} />
+                    <span className="font-medium">{INTERFACE_AGENT.name}</span>
+                    <Badge variant="outline" className="ml-auto">Central Hub</Badge>
+                  </div>
                 </div>
                 <div>
-                  <Label htmlFor="to-agent">To Agent</Label>
+                  <Label htmlFor="to-agent">Target Agent</Label>
                   <Select value={toAgent} onValueChange={setToAgent}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select target agent" />
@@ -684,19 +712,26 @@ export default function CoralInspectorPage() {
               </div>
 
               <div>
-                <Label htmlFor="message-content">Message Content</Label>
+                <Label htmlFor="message-content">Instruction for Target Agent</Label>
                 <Textarea
                   id="message-content"
-                  placeholder="Enter your message..."
+                  placeholder="Enter the instruction you want the Interface Agent to send to the target agent..."
                   value={messageContent}
                   onChange={(e) => setMessageContent(e.target.value)}
                   rows={4}
                 />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Example: "Please analyze the latest tweets about cryptocurrency and provide a summary"
+                </p>
               </div>
 
-              <Button onClick={handleSendMessage} disabled={!fromAgent || !toAgent || !messageContent}>
+              <Button 
+                onClick={handleSendMessage} 
+                disabled={!toAgent || !messageContent}
+                className="w-full"
+              >
                 <Play className="h-4 w-4 mr-2" />
-                Send Message
+                Send Instruction via Interface Agent
               </Button>
 
               {toolResponse && (
@@ -709,6 +744,41 @@ export default function CoralInspectorPage() {
                   </ScrollArea>
                 </div>
               )}
+            </CardContent>
+          </Card>
+
+          {/* Instructions Card */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <MessageCircle className="h-5 w-5" />
+                How to Use
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3 text-sm">
+                <div className="flex items-start gap-3">
+                  <div className="w-6 h-6 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xs font-medium">1</div>
+                  <div>
+                    <p className="font-medium">Select Target Agent</p>
+                    <p className="text-muted-foreground">Choose which agent should receive the instruction</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3">
+                  <div className="w-6 h-6 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xs font-medium">2</div>
+                  <div>
+                    <p className="font-medium">Write Clear Instructions</p>
+                    <p className="text-muted-foreground">Provide specific instructions for what you want the agent to do</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3">
+                  <div className="w-6 h-6 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xs font-medium">3</div>
+                  <div>
+                    <p className="font-medium">Monitor Response</p>
+                    <p className="text-muted-foreground">Watch the Threads tab for real-time communication between agents</p>
+                  </div>
+                </div>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>

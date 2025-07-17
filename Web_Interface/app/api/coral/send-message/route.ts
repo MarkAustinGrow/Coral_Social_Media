@@ -11,11 +11,14 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const { fromAgentId, toAgentId, content, threadId, userId } = body
 
-    if (!fromAgentId || !toAgentId || !content || !userId) {
+    if (!toAgentId || !content || !userId) {
       return NextResponse.json({ 
-        error: 'fromAgentId, toAgentId, content, and userId are required' 
+        error: 'toAgentId, content, and userId are required' 
       }, { status: 400 })
     }
+
+    // Always use Interface Agent as the sender in Coral Protocol
+    const interfaceAgentId = `user_interaction_agent_${userId}`
 
     // For now, we'll simulate sending a message to the Coral server
     // In a real implementation, this would make an HTTP request to the Coral server
@@ -24,11 +27,11 @@ export async function POST(request: NextRequest) {
     const messageData = {
       id: `msg_${Date.now()}`,
       threadId: threadId || `thread_${Date.now()}`,
-      fromAgentId,
+      fromAgentId: interfaceAgentId,
       toAgentId,
       content,
       timestamp: new Date().toISOString(),
-      type: 'manual_message',
+      type: 'interface_instruction',
       userId
     }
 
@@ -37,12 +40,12 @@ export async function POST(request: NextRequest) {
       .from('coral_messages')
       .insert({
         user_id: userId,
-        agent_id: fromAgentId,
+        agent_id: interfaceAgentId,
         thread_id: messageData.threadId,
-        from_agent_id: fromAgentId,
+        from_agent_id: interfaceAgentId,
         to_agent_id: toAgentId,
         content,
-        message_type: 'manual_message',
+        message_type: 'interface_instruction',
         timestamp: messageData.timestamp,
         raw_data: messageData
       })
