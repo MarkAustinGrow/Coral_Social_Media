@@ -358,7 +358,8 @@ export default function CoralInspectorPage() {
       })
 
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+        const errorText = await response.text()
+        throw new Error(`HTTP ${response.status}: ${response.statusText} - ${errorText}`)
       }
 
       if (!response.body) {
@@ -369,39 +370,52 @@ export default function CoralInspectorPage() {
       const decoder = new TextDecoder()
       let buffer = ''
 
-      // Read the SSE stream
-      while (true) {
-        const { done, value } = await reader.read()
-        
-        if (done) break
+      try {
+        // Read the SSE stream
+        while (true) {
+          const { done, value } = await reader.read()
+          
+          if (done) {
+            console.log('SSE stream completed')
+            break
+          }
 
-        // Decode the chunk and add to buffer
-        buffer += decoder.decode(value, { stream: true })
-        
-        // Process complete lines
-        const lines = buffer.split('\n')
-        buffer = lines.pop() || '' // Keep incomplete line in buffer
+          // Decode the chunk and add to buffer
+          const chunk = decoder.decode(value, { stream: true })
+          buffer += chunk
+          
+          // Process complete lines
+          const lines = buffer.split('\n')
+          buffer = lines.pop() || '' // Keep incomplete line in buffer
 
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            try {
-              const jsonStr = line.slice(6).trim()
-              if (jsonStr) {
-                const data = JSON.parse(jsonStr)
-                handleInterfaceAgentMessage(data)
+          for (const line of lines) {
+            if (line.trim() === '') continue // Skip empty lines
+            
+            if (line.startsWith('data: ')) {
+              try {
+                const jsonStr = line.slice(6).trim()
+                if (jsonStr && jsonStr !== '') {
+                  const data = JSON.parse(jsonStr)
+                  console.log('Received SSE data:', data)
+                  handleInterfaceAgentMessage(data)
+                }
+              } catch (e) {
+                console.error('Error parsing SSE data:', e, 'Line:', line)
+                setToolResponse(prev => `${prev}[ERROR] Failed to parse: ${line}\n`)
               }
-            } catch (e) {
-              console.error('Error parsing SSE data:', e, 'Line:', line)
-              setToolResponse(prev => `${prev}[ERROR] Failed to parse: ${line}\n`)
+            } else if (line.trim() !== '') {
+              console.log('Non-SSE line received:', line)
             }
           }
         }
+      } finally {
+        reader.releaseLock()
       }
       
       setToolResponse(prev => `${prev}✅ Interface Agent session completed.\n`)
     } catch (error) {
       console.error('Interface Agent error:', error)
-      setToolResponse(prev => `${prev}❌ Error: ${error}\n`)
+      setToolResponse(prev => `${prev}❌ Error: ${error.message || error}\n`)
     }
   }
 
