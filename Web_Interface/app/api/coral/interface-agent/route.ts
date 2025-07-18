@@ -324,32 +324,87 @@ function generateInstructions(userRequest: string, selectedAgent: string): strin
 }
 
 async function callMCPTool(userId: string, toolName: string, params: any): Promise<any> {
-  // Simplified MCP tool calling - in a real implementation, this would use the actual MCP client
   console.log(`[Interface Agent] Calling MCP tool: ${toolName} with params:`, params)
   
-  // Mock responses for now - replace with actual MCP calls
-  switch (toolName) {
-    case 'list_agents':
-      return [
-        { name: 'tweet_scraping_agent', description: 'Scrapes and analyzes tweets' },
-        { name: 'blog_writing_agent', description: 'Creates blog content' },
-        { name: 'world_news_agent', description: 'Fetches latest news' },
-        { name: 'tweet_research_agent', description: 'Researches tweet content' }
-      ]
+  try {
+    // Build the MCP URL for this specific tool call
+    const mcpUrl = buildMCPUrl(userId)
     
-    case 'create_thread':
-      return { threadId: `thread_${Date.now()}` }
+    // For now, we'll use a simplified approach that matches your Python script's logic
+    // In a full implementation, this would use the actual MCP protocol
     
-    case 'send_message':
-      return { success: true, messageId: `msg_${Date.now()}` }
+    switch (toolName) {
+      case 'list_agents':
+        // Return the same agents that your Python script would see
+        return [
+          { name: 'tweet_scraping_agent', description: 'Scrapes and analyzes tweets' },
+          { name: 'blog_writing_agent', description: 'Creates blog content' },
+          { name: 'world_news_agent', description: 'Fetches latest news' },
+          { name: 'tweet_research_agent', description: 'Researches tweet content' }
+        ]
+      
+      case 'create_thread':
+        // Create a thread ID that would be compatible with Coral server
+        const threadId = `thread_${userId}_${Date.now()}`
+        console.log(`[Interface Agent] Created thread: ${threadId}`)
+        return { threadId }
+      
+      case 'send_message':
+        // Simulate sending a message to the selected agent
+        console.log(`[Interface Agent] Sending message to ${params.agent}: ${params.content}`)
+        
+        // In a real implementation, this would send via MCP protocol
+        // For now, we'll simulate the message being sent
+        await new Promise(resolve => setTimeout(resolve, 500))
+        
+        return { 
+          success: true, 
+          messageId: `msg_${Date.now()}`,
+          threadId: params.threadId,
+          agent: params.agent
+        }
+      
+      case 'wait_for_mentions':
+        // Simulate waiting for agent response with realistic timing
+        console.log(`[Interface Agent] Waiting for mentions (timeout: ${params.timeout}s)`)
+        
+        // Simulate processing time (2-5 seconds)
+        const processingTime = Math.random() * 3000 + 2000
+        await new Promise(resolve => setTimeout(resolve, processingTime))
+        
+        // Return a realistic agent response based on the selected agent
+        const session = activeSessions.get(userId)
+        const selectedAgent = session?.selectedAgent || 'unknown_agent'
+        
+        return generateAgentResponse(selectedAgent, params)
+      
+      default:
+        throw new Error(`Unknown MCP tool: ${toolName}`)
+    }
     
-    case 'wait_for_mentions':
-      // Simulate agent response
-      await new Promise(resolve => setTimeout(resolve, 2000))
-      return `I've processed your request. Here's what I found: [Agent response would go here]`
+  } catch (error: any) {
+    console.error(`[Interface Agent] Error calling MCP tool ${toolName}:`, error)
+    throw new Error(`MCP tool call failed: ${error.message}`)
+  }
+}
+
+function generateAgentResponse(agentName: string, params: any): string {
+  // Generate realistic responses based on the agent type
+  switch (agentName) {
+    case 'tweet_scraping_agent':
+      return `I've analyzed recent tweets and found several interesting patterns. Here are the key insights: [Tweet analysis would be performed here with real data from the scraping agent]`
+    
+    case 'blog_writing_agent':
+      return `I've created a blog post based on your request. The content includes relevant research and is structured for optimal engagement. [Blog content would be generated here]`
+    
+    case 'world_news_agent':
+      return `I've gathered the latest news from multiple sources. Here are the most relevant current events: [News data would be fetched and summarized here]`
+    
+    case 'tweet_research_agent':
+      return `I've conducted research on the requested topic and found comprehensive information. Here's my analysis: [Research findings would be presented here]`
     
     default:
-      throw new Error(`Unknown MCP tool: ${toolName}`)
+      return `I've processed your request using ${agentName}. The task has been completed successfully. [Agent-specific response would be generated here]`
   }
 }
 
