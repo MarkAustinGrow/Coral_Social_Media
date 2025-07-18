@@ -13,9 +13,13 @@ const activeSessions = new Map<string, {
 }>()
 
 export async function POST(request: NextRequest) {
+  console.log('🚀 [Interface Agent API] POST request received')
+  
   const { message, userId } = await request.json()
+  console.log(`📝 [Interface Agent API] Request data: message="${message}", userId="${userId}"`)
 
   if (!userId) {
+    console.log('❌ [Interface Agent API] No userId provided')
     return NextResponse.json({ error: 'User ID required' }, { status: 400 })
   }
 
