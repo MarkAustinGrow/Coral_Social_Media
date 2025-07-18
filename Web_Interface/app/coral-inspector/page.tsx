@@ -343,7 +343,7 @@ export default function CoralInspectorPage() {
     if (!user?.id) return
 
     try {
-      setToolResponse("Starting Interface Agent session...")
+      setToolResponse("🚀 Starting Interface Agent session...\n")
       
       // Start SSE connection to Interface Agent
       const response = await fetch('/api/coral/interface-agent', {
@@ -357,12 +357,17 @@ export default function CoralInspectorPage() {
         })
       })
 
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+      }
+
       if (!response.body) {
-        throw new Error('No response stream')
+        throw new Error('No response stream received')
       }
 
       const reader = response.body.getReader()
       const decoder = new TextDecoder()
+      let buffer = ''
 
       // Read the SSE stream
       while (true) {
@@ -370,22 +375,33 @@ export default function CoralInspectorPage() {
         
         if (done) break
 
-        const chunk = decoder.decode(value)
-        const lines = chunk.split('\n')
+        // Decode the chunk and add to buffer
+        buffer += decoder.decode(value, { stream: true })
+        
+        // Process complete lines
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || '' // Keep incomplete line in buffer
 
         for (const line of lines) {
           if (line.startsWith('data: ')) {
             try {
-              const data = JSON.parse(line.slice(6))
-              handleInterfaceAgentMessage(data)
+              const jsonStr = line.slice(6).trim()
+              if (jsonStr) {
+                const data = JSON.parse(jsonStr)
+                handleInterfaceAgentMessage(data)
+              }
             } catch (e) {
-              console.error('Error parsing SSE data:', e)
+              console.error('Error parsing SSE data:', e, 'Line:', line)
+              setToolResponse(prev => `${prev}[ERROR] Failed to parse: ${line}\n`)
             }
           }
         }
       }
+      
+      setToolResponse(prev => `${prev}✅ Interface Agent session completed.\n`)
     } catch (error) {
-      setToolResponse(`Error starting Interface Agent: ${error}`)
+      console.error('Interface Agent error:', error)
+      setToolResponse(prev => `${prev}❌ Error: ${error}\n`)
     }
   }
 
