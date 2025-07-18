@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server'
-import WebSocket from 'ws'
 
 // BASIC ROUTE TEST - This should appear in logs if route is called
 console.log('🔥 [ROUTE TEST] Interface Agent route file loaded at:', new Date().toISOString())
@@ -98,19 +97,19 @@ async function startMCPInterfaceAgent(userId: string, session: any, initialMessa
         timestamp: new Date().toISOString()
       })}\n\n`)
 
-      // Create WebSocket connection like Coral Studio
-      const wsUrl = CORAL_SERVER_CONFIG.getWebSocketUrl()
-      console.log(`[Interface Agent] Connecting to Coral server via WebSocket: ${wsUrl}`)
+      // Create HTTP SSE connection to proven working endpoint
+      const sseUrl = CORAL_SERVER_CONFIG.getHttpUrl()
+      console.log(`[Interface Agent] Connecting to Coral server via HTTP SSE: ${sseUrl}`)
       
       await writer.write(`data: ${JSON.stringify({
         type: 'status',
-        message: `Connecting to Coral server at ${wsUrl}...`,
+        message: `Connecting to Coral server at ${sseUrl}...`,
         timestamp: new Date().toISOString()
       })}\n\n`)
 
-      // Create WebSocket connection
-      const wsClient = await createWebSocketConnection(userId, session, wsUrl)
-      session.mcpClient = wsClient
+      // Create HTTP SSE connection
+      const sseClient = await createSSEConnection(userId, session, sseUrl)
+      session.mcpClient = sseClient
       
       // Start the conversation flow - Step 1: List agents
       await executeConversationFlow(userId, session, initialMessage)
@@ -153,160 +152,176 @@ function buildMCPUrl(userId: string): string {
   return CORAL_SERVER_CONFIG.getWebSocketUrl()
 }
 
-async function createWebSocketConnection(userId: string, session: any, wsUrl: string): Promise<any> {
+async function createSSEConnection(userId: string, session: any, sseUrl: string): Promise<any> {
   const writer = session.writer
   
   return new Promise((resolve, reject) => {
     try {
-      console.log(`[WebSocket] Attempting real connection to: ${wsUrl}`)
+      console.log(`[HTTP SSE] Attempting connection to: ${sseUrl}`)
       
-      // Create real WebSocket connection using the ws library
-      const ws = new WebSocket(wsUrl, {
-        handshakeTimeout: CORAL_SERVER_CONFIG.timeout,
-        headers: {
-          'User-Agent': 'Coral-Interface-Agent/1.0'
-        }
-      })
-      
-      // Create client wrapper that follows Coral Studio's pattern
-      const wsClient = {
-        ws,
+      // Create client wrapper that follows the same pattern
+      const sseClient = {
         connected: false,
-        url: wsUrl,
+        url: sseUrl,
         agentId: null,
         agents: {} as Record<string, any>,
         threads: {} as Record<string, any>,
         messages: {} as Record<string, any[]>,
+        abortController: new AbortController(),
         
         close: () => {
-          if (ws.readyState === WebSocket.OPEN) {
-            ws.close()
-          }
+          sseClient.abortController.abort()
+          sseClient.connected = false
         }
       }
       
       // Set up connection timeout
       const connectionTimeout = setTimeout(() => {
-        if (!wsClient.connected) {
-          console.error('[WebSocket] Connection timeout')
-          ws.close()
-          reject(new Error('WebSocket connection timeout'))
+        if (!sseClient.connected) {
+          console.error('[HTTP SSE] Connection timeout')
+          sseClient.abortController.abort()
+          reject(new Error('HTTP SSE connection timeout'))
         }
       }, CORAL_SERVER_CONFIG.timeout)
       
-      // Handle connection open
-      ws.on('open', () => {
+      // Create HTTP SSE connection using fetch
+      fetch(sseUrl, {
+        method: 'GET',
+        headers: {
+          'Accept': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          'User-Agent': 'Coral-Interface-Agent/1.0'
+        },
+        signal: sseClient.abortController.signal
+      })
+      .then(async (response) => {
         clearTimeout(connectionTimeout)
-        console.log('[WebSocket] Successfully connected to Coral server')
-        wsClient.connected = true
+        
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+        }
+        
+        console.log('[HTTP SSE] Successfully connected to Coral server')
+        sseClient.connected = true
         
         writer.write(`data: ${JSON.stringify({
           type: 'status',
-          message: 'Connected to Coral server successfully!',
+          message: 'Connected to Coral server successfully via HTTP SSE!',
           timestamp: new Date().toISOString()
         })}\n\n`)
         
-        resolve(wsClient)
-      })
-      
-      // Handle incoming messages
-      ws.on('message', (data: Buffer) => {
-        try {
-          const message = JSON.parse(data.toString())
-          console.log('[WebSocket] Received message:', message)
+        resolve(sseClient)
+        
+        // Process the SSE stream
+        const reader = response.body?.getReader()
+        const decoder = new TextDecoder()
+        
+        if (!reader) {
+          throw new Error('No response body reader available')
+        }
+        
+        // Read the stream
+        while (true) {
+          const { done, value } = await reader.read()
           
-          // Forward message to SSE stream
-          writer.write(`data: ${JSON.stringify({
-            type: 'coral_message',
-            message,
-            timestamp: new Date().toISOString()
-          })}\n\n`)
-          
-          // Handle different message types like Coral Studio
-          switch (message.type) {
-            case 'DebugAgentRegistered':
-              wsClient.agentId = message.id
-              console.log(`[WebSocket] Agent registered: ${message.id}`)
-              break
-              
-            case 'ThreadList':
-              for (const thread of message.threads || []) {
-                wsClient.messages[thread.id] = thread.messages || []
-                wsClient.threads[thread.id] = { ...thread, messages: undefined, unread: 0 }
-              }
-              console.log(`[WebSocket] Received thread list: ${message.threads?.length || 0} threads`)
-              break
-              
-            case 'AgentList':
-              for (const agent of message.agents || []) {
-                wsClient.agents[agent.id] = agent
-              }
-              console.log(`[WebSocket] Received agent list: ${message.agents?.length || 0} agents`)
-              break
-              
-            case 'org.coralprotocol.coralserver.session.Event.ThreadCreated':
-              wsClient.threads[message.id] = {
-                id: message.id,
-                name: message.name,
-                participants: message.participants,
-                summary: message.summary,
-                creatorId: message.creatorId,
-                isClosed: message.isClosed,
-                unread: 0
-              }
-              wsClient.messages[message.id] = message.messages || []
-              console.log(`[WebSocket] Thread created: ${message.id}`)
-              break
-              
-            case 'org.coralprotocol.coralserver.session.Event.MessageSent':
-              if (message.threadId in wsClient.messages) {
-                wsClient.messages[message.threadId].push(message.message)
-                wsClient.threads[message.threadId].unread += 1
-              }
-              console.log(`[WebSocket] Message sent to thread: ${message.threadId}`)
-              break
-              
-            default:
-              console.log(`[WebSocket] Unknown message type: ${message.type}`)
+          if (done) {
+            console.log('[HTTP SSE] Stream ended')
+            break
           }
           
-        } catch (error) {
-          console.error('[WebSocket] Error parsing message:', error)
+          const chunk = decoder.decode(value, { stream: true })
+          const lines = chunk.split('\n')
+          
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              try {
+                const data = line.slice(6) // Remove 'data: ' prefix
+                if (data.trim() === '') continue // Skip empty data
+                
+                const message = JSON.parse(data)
+                console.log('[HTTP SSE] Received message:', message)
+                
+                // Forward message to SSE stream
+                writer.write(`data: ${JSON.stringify({
+                  type: 'coral_message',
+                  message,
+                  timestamp: new Date().toISOString()
+                })}\n\n`)
+                
+                // Handle different message types like Coral Studio
+                switch (message.type) {
+                  case 'DebugAgentRegistered':
+                    sseClient.agentId = message.id
+                    console.log(`[HTTP SSE] Agent registered: ${message.id}`)
+                    break
+                    
+                  case 'ThreadList':
+                    for (const thread of message.threads || []) {
+                      sseClient.messages[thread.id] = thread.messages || []
+                      sseClient.threads[thread.id] = { ...thread, messages: undefined, unread: 0 }
+                    }
+                    console.log(`[HTTP SSE] Received thread list: ${message.threads?.length || 0} threads`)
+                    break
+                    
+                  case 'AgentList':
+                    for (const agent of message.agents || []) {
+                      sseClient.agents[agent.id] = agent
+                    }
+                    console.log(`[HTTP SSE] Received agent list: ${message.agents?.length || 0} agents`)
+                    break
+                    
+                  case 'org.coralprotocol.coralserver.session.Event.ThreadCreated':
+                    sseClient.threads[message.id] = {
+                      id: message.id,
+                      name: message.name,
+                      participants: message.participants,
+                      summary: message.summary,
+                      creatorId: message.creatorId,
+                      isClosed: message.isClosed,
+                      unread: 0
+                    }
+                    sseClient.messages[message.id] = message.messages || []
+                    console.log(`[HTTP SSE] Thread created: ${message.id}`)
+                    break
+                    
+                  case 'org.coralprotocol.coralserver.session.Event.MessageSent':
+                    if (message.threadId in sseClient.messages) {
+                      sseClient.messages[message.threadId].push(message.message)
+                      sseClient.threads[message.threadId].unread += 1
+                    }
+                    console.log(`[HTTP SSE] Message sent to thread: ${message.threadId}`)
+                    break
+                    
+                  default:
+                    console.log(`[HTTP SSE] Unknown message type: ${message.type}`)
+                }
+                
+              } catch (error) {
+                console.error('[HTTP SSE] Error parsing message:', error)
+              }
+            }
+          }
         }
+        
       })
-      
-      // Handle connection errors
-      ws.on('error', (error: Error) => {
+      .catch((error) => {
         clearTimeout(connectionTimeout)
-        console.error('[WebSocket] Connection error:', error)
-        wsClient.connected = false
+        console.error('[HTTP SSE] Connection error:', error)
+        sseClient.connected = false
         
         writer.write(`data: ${JSON.stringify({
           type: 'error',
-          message: `WebSocket connection error: ${error.message}`,
+          message: `HTTP SSE connection error: ${error.message}`,
           timestamp: new Date().toISOString()
         })}\n\n`)
         
-        if (!wsClient.connected) {
+        if (!sseClient.connected) {
           reject(error)
         }
       })
       
-      // Handle connection close
-      ws.on('close', (code: number, reason: Buffer) => {
-        clearTimeout(connectionTimeout)
-        console.log(`[WebSocket] Connection closed: ${code} - ${reason.toString()}`)
-        wsClient.connected = false
-        
-        writer.write(`data: ${JSON.stringify({
-          type: 'status',
-          message: `WebSocket connection closed (${code})`,
-          timestamp: new Date().toISOString()
-        })}\n\n`)
-      })
-      
     } catch (error) {
-      console.error(`[WebSocket] Error creating connection:`, error)
+      console.error(`[HTTP SSE] Error creating connection:`, error)
       reject(error)
     }
   })
