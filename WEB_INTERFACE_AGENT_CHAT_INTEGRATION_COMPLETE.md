@@ -185,7 +185,31 @@ Users can now have natural conversations with the Interface Agent through the we
 The changes are ready for deployment:
 1. **Python agent** updated for persistent sessions
 2. **API routes** enhanced for proper message handling
-3. **Web interface** already supports the new communication pattern
-4. **No database changes** required
+3. **Wrapper script** fixed to pass user_id argument correctly
+4. **Web interface** already supports the new communication pattern
+5. **No database changes** required
 
-Simply rebuild and restart the web interface to activate the new chat functionality! 🌟
+## 📋 **Final Fix Applied**
+
+**Issue**: The `run_agent_with_venv.sh` wrapper script wasn't passing the user_id argument to the Python script.
+
+**Solution**: Updated the script to call:
+```bash
+# Before (causing "Usage" error)
+python "$AGENT_SCRIPT"
+
+# After (working correctly)
+python "$AGENT_SCRIPT" "$USER_ID"
+```
+
+**Result**: Interface Agent now receives proper user context and stays running for persistent chat sessions!
+
+## 🚀 **Deployment Commands**
+
+On your Linode server:
+```bash
+cd /home/coraluser/Coral_Social_Media
+git pull origin multi-user
+```
+
+The fix is now complete and ready for testing! 🌟

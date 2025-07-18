@@ -77,6 +77,8 @@ async function startPythonInterfaceAgent(userId: string, session: any) {
   try {
     const writer = session.writer
     
+    console.log(`[Interface Agent] Starting for user: ${userId}`)
+    
     // Send initial connection message
     await writer.write(`data: ${JSON.stringify({
       type: 'status',
@@ -250,6 +252,8 @@ async function handlePythonMessage(message: any, session: any) {
   const writer = session.writer
   
   try {
+    console.log(`[Interface Agent] Received message: ${JSON.stringify(message)}`)
+    
     // Forward the message to the web interface via SSE
     await writer.write(`data: ${JSON.stringify({
       ...message,
@@ -259,10 +263,21 @@ async function handlePythonMessage(message: any, session: any) {
     // Check if we need to wait for user response
     if (message.type === 'agent_question') {
       session.waitingForResponse = true
+      console.log(`[Interface Agent] Waiting for user response`)
     }
 
   } catch (error) {
     console.error('Error handling Python message:', error)
+    // Try to send error message to client
+    try {
+      await writer.write(`data: ${JSON.stringify({
+        type: 'error',
+        message: `Stream error: ${error.message}`,
+        timestamp: new Date().toISOString()
+      })}\n\n`)
+    } catch (writeError) {
+      console.error('Failed to write error to stream:', writeError)
+    }
   }
 }
 
