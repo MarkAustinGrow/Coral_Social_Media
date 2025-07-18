@@ -3,12 +3,17 @@ import { NextRequest, NextResponse } from 'next/server'
 // BASIC ROUTE TEST - This should appear in logs if route is called
 console.log('🔥 [ROUTE TEST] Interface Agent route file loaded at:', new Date().toISOString())
 
-// Configuration - matching your Python script
+// Configuration - matching Coral Studio's approach
 const CORAL_SERVER_CONFIG = {
-  baseUrl: "http://coral.8interns.com/devmode/exampleApplication/privkey/session1/sse",
-  waitForAgents: 2,
-  timeout: 300,
-  sseReadTimeout: 300
+  host: "coral.8interns.com",
+  appId: "exampleApplication", 
+  privKey: "privkey",
+  session: "session1",
+  timeout: 10000,
+  // Build WebSocket URL like Coral Studio
+  getWebSocketUrl: () => `ws://coral.8interns.com/debug/exampleApplication/privkey/session1/?timeout=10000`,
+  // Build HTTP URL for compatibility
+  getHttpUrl: () => `http://coral.8interns.com/devmode/exampleApplication/privkey/session1/sse`
 }
 
 // Store active agent sessions
@@ -98,7 +103,7 @@ async function startMCPInterfaceAgent(userId: string, session: any, initialMessa
       
       await writer.write(`data: ${JSON.stringify({
         type: 'status',
-        message: `Connecting to Coral server at ${CORAL_SERVER_CONFIG.baseUrl}...`,
+        message: `Connecting to Coral server at ${CORAL_SERVER_CONFIG.getHttpUrl()}...`,
         timestamp: new Date().toISOString()
       })}\n\n`)
 
@@ -139,13 +144,8 @@ async function startMCPInterfaceAgent(userId: string, session: any, initialMessa
 }
 
 function buildMCPUrl(userId: string): string {
-  const params = new URLSearchParams({
-    waitForAgents: CORAL_SERVER_CONFIG.waitForAgents.toString(),
-    agentId: `user_interface_agent_${userId}`,
-    agentDescription: "You are user_interaction_agent, responsible for engaging with users, processing instructions, and coordinating with other agents"
-  })
-  
-  return `${CORAL_SERVER_CONFIG.baseUrl}?${params.toString()}`
+  // Use the WebSocket URL from Coral Studio's approach
+  return CORAL_SERVER_CONFIG.getWebSocketUrl()
 }
 
 async function executeConversationFlow(userId: string, session: any, initialMessage: string) {
