@@ -86,7 +86,7 @@ export async function POST(request: NextRequest) {
 
 async function startMCPInterfaceAgent(userId: string, session: any, initialMessage: string) {
   const writer = session.writer
-  const maxRetries = 3
+  const maxRetries = 5
   
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
