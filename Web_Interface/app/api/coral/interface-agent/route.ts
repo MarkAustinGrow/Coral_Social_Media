@@ -1,18 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { spawn } from 'child_process'
-import path from 'path'
-import fs from 'fs'
-import os from 'os'
 
 // BASIC ROUTE TEST - This should appear in logs if route is called
 console.log('🔥 [ROUTE TEST] Interface Agent route file loaded at:', new Date().toISOString())
 
+// Configuration - matching your Python script
+const CORAL_SERVER_CONFIG = {
+  baseUrl: "http://coral.8interns.com/devmode/exampleApplication/privkey/session1/sse",
+  waitForAgents: 2,
+  timeout: 300,
+  sseReadTimeout: 300
+}
+
 // Store active agent sessions
 const activeSessions = new Map<string, {
-  process: any,
+  mcpClient: any,
   writer: WritableStreamDefaultWriter,
-  messageQueue: string[],
-  waitingForResponse: boolean
+  conversationState: 'waiting_for_user' | 'processing' | 'waiting_for_agent',
+  currentStep: number,
+  agentList: any[],
+  selectedAgent: string | null,
+  threadId: string | null,
+  retryCount: number
 }>()
 
 export async function POST(request: NextRequest) {
@@ -35,16 +43,20 @@ export async function POST(request: NextRequest) {
     const writer = stream.writable.getWriter()
     
     session = {
-      process: null,
+      mcpClient: null,
       writer,
-      messageQueue: [message], // Store the initial message
-      waitingForResponse: false
+      conversationState: 'processing',
+      currentStep: 1,
+      agentList: [],
+      selectedAgent: null,
+      threadId: null,
+      retryCount: 0
     }
     
     activeSessions.set(userId, session)
     
-    // Start the Python Interface Agent in the background
-    startPythonInterfaceAgent(userId, session)
+    // Start the MCP Interface Agent
+    startMCPInterfaceAgent(userId, session, message)
     
     // Return the stream for real-time communication
     return new Response(stream.readable, {
@@ -56,235 +68,288 @@ export async function POST(request: NextRequest) {
     })
   }
 
-  // Send message to Python process if agent is running
-  if (session.process && session.process.stdin) {
-    if (session.waitingForResponse) {
-      // Agent is waiting for a response to a question
-      const userResponse = {
-        type: 'user_response',
-        content: message
-      }
-      session.process.stdin.write(JSON.stringify(userResponse) + '\n')
-      session.waitingForResponse = false
-    } else {
-      // Send new user message
-      const userMessage = {
-        type: 'user_message',
-        content: message
-      }
-      session.process.stdin.write(JSON.stringify(userMessage) + '\n')
-    }
+  // Handle user response based on conversation state
+  if (session.conversationState === 'waiting_for_user') {
+    console.log(`[Interface Agent] User response received: ${message}`)
+    await handleUserResponse(userId, session, message)
     return NextResponse.json({ success: true, sent: true })
   }
 
-  return NextResponse.json({ error: 'Agent not ready' }, { status: 503 })
+  return NextResponse.json({ error: 'Agent not ready or not waiting for response' }, { status: 503 })
 }
 
-async function startPythonInterfaceAgent(userId: string, session: any) {
-  try {
-    const writer = session.writer
-    
-    console.log(`[Interface Agent] Starting for user: ${userId}`)
-    
-    // Send initial connection message
-    await writer.write(`data: ${JSON.stringify({
-      type: 'status',
-      message: 'Starting Python Interface Agent...',
-      timestamp: new Date().toISOString()
-    })}\n\n`)
-
-    // Get the project root directory (go up from Web_Interface)
-    const projectRoot = path.resolve(process.cwd(), '..')
-    const agentFilePath = '0_langchain_interface_web.py'
-    const scriptPath = path.join(projectRoot, agentFilePath)
-    
-    // Check if the agent file exists
-    if (!fs.existsSync(scriptPath)) {
-      const errorMsg = `Interface Agent script not found: ${scriptPath}`
-      console.error(errorMsg)
-      await writer.write(`data: ${JSON.stringify({
-        type: 'error',
-        message: errorMsg,
-        timestamp: new Date().toISOString()
-      })}\n\n`)
-      return
-    }
-
-    // Use the virtual environment wrapper script for production (same as other agents)
-    const wrapperScript = path.join(projectRoot, 'run_agent_with_venv.sh')
-    const useVirtualEnv = fs.existsSync(wrapperScript) && fs.existsSync(path.join(projectRoot, 'coral_env'))
-    
-    let pythonProcess: any
-    
-    if (useVirtualEnv) {
-      // Use virtual environment wrapper with user context (same as other agents)
-      console.log(`Using virtual environment wrapper for Interface Agent with user ${userId}`)
+async function startMCPInterfaceAgent(userId: string, session: any, initialMessage: string) {
+  const writer = session.writer
+  const maxRetries = 3
+  
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      console.log(`[Interface Agent] Starting attempt ${attempt + 1} for user: ${userId}`)
+      
       await writer.write(`data: ${JSON.stringify({
         type: 'status',
-        message: 'Using virtual environment...',
+        message: `Starting Interface Agent (attempt ${attempt + 1})...`,
         timestamp: new Date().toISOString()
       })}\n\n`)
+
+      // Create MCP client connection (simplified for now - we'll use fetch for SSE)
+      const mcpUrl = buildMCPUrl(userId)
+      console.log(`[Interface Agent] Connecting to MCP server: ${mcpUrl}`)
       
-      pythonProcess = spawn('bash', [wrapperScript, userId, agentFilePath], {
-        cwd: projectRoot,
-        stdio: ['pipe', 'pipe', 'pipe'],
-        detached: true,
-        shell: false
-      })
-    } else {
-      // Fallback to direct Python execution
-      const pythonExecutable = os.platform() === 'win32' ? 'python' : 'python3'
-      
-      console.log(`Fallback to direct Python execution for Interface Agent with user ${userId}`)
       await writer.write(`data: ${JSON.stringify({
         type: 'status',
-        message: 'Using system Python...',
+        message: `Connecting to Coral server at ${CORAL_SERVER_CONFIG.baseUrl}...`,
         timestamp: new Date().toISOString()
       })}\n\n`)
+
+      // Start the conversation flow - Step 1: List agents
+      await executeConversationFlow(userId, session, initialMessage)
       
-      // Prepare environment variables with user context
-      const env = { ...process.env }
-      env.AGENT_USER_ID = userId
+      break // Success, exit retry loop
       
-      pythonProcess = spawn(pythonExecutable, [agentFilePath], {
-        cwd: projectRoot,
-        stdio: ['pipe', 'pipe', 'pipe'],
-        detached: true,
-        shell: true,
-        env: env
-      })
-    }
-
-    if (!pythonProcess) {
-      const errorMsg = 'Failed to spawn Python process'
-      console.error(errorMsg)
-      await writer.write(`data: ${JSON.stringify({
-        type: 'error',
-        message: errorMsg,
-        timestamp: new Date().toISOString()
-      })}\n\n`)
-      return
-    }
-
-    session.process = pythonProcess
-    
-    console.log(`Started Interface Agent process with PID: ${pythonProcess.pid}`)
-    await writer.write(`data: ${JSON.stringify({
-      type: 'status',
-      message: `Interface Agent process started (PID: ${pythonProcess.pid})`,
-      timestamp: new Date().toISOString()
-    })}\n\n`)
-
-    // Handle stdout (JSON messages from Python)
-    pythonProcess.stdout.on('data', async (data: any) => {
-      const lines = data.toString().split('\n')
-      for (const line of lines) {
-        if (line.trim()) {
-          try {
-            const message = JSON.parse(line.trim())
-            await handlePythonMessage(message, session)
-          } catch (e) {
-            // If it's not JSON, treat it as a regular log message
-            console.log(`[Interface Agent] ${line.trim()}`)
-            await writer.write(`data: ${JSON.stringify({
-              type: 'log',
-              message: line.trim(),
-              timestamp: new Date().toISOString()
-            })}\n\n`)
-          }
+    } catch (error: any) {
+      console.error(`[Interface Agent] Error on attempt ${attempt + 1}:`, error)
+      
+      if (error.name === 'ClosedResourceError' || error.message?.includes('closed')) {
+        if (attempt < maxRetries - 1) {
+          await writer.write(`data: ${JSON.stringify({
+            type: 'status',
+            message: `Connection closed, retrying in 5 seconds... (attempt ${attempt + 1}/${maxRetries})`,
+            timestamp: new Date().toISOString()
+          })}\n\n`)
+          
+          await new Promise(resolve => setTimeout(resolve, 5000))
+          continue
         }
       }
-    })
-
-    // Handle stderr (logs from Python)
-    pythonProcess.stderr.on('data', (data: any) => {
-      const errorOutput = data.toString()
-      console.log(`[Interface Agent] ERROR: ${errorOutput}`)
-      // Don't send all stderr to web interface as it can be noisy
-    })
-
-    // Send initial message if one was provided
-    if (session.messageQueue.length > 0) {
-      const initialMessage = session.messageQueue[0]
-      console.log(`Sending initial message to Interface Agent: ${initialMessage}`)
       
-      // Wait a moment for the Python process to be ready
-      setTimeout(() => {
-        if (pythonProcess && pythonProcess.stdin) {
-          const userMessage = {
-            type: 'user_message',
-            content: initialMessage
-          }
-          pythonProcess.stdin.write(JSON.stringify(userMessage) + '\n')
-          session.messageQueue = [] // Clear the queue
-        }
-      }, 2000) // Wait 2 seconds for the agent to be ready
+      if (attempt === maxRetries - 1) {
+        await writer.write(`data: ${JSON.stringify({
+          type: 'error',
+          message: `Failed to start Interface Agent after ${maxRetries} attempts: ${error.message}`,
+          timestamp: new Date().toISOString()
+        })}\n\n`)
+        
+        activeSessions.delete(userId)
+        await writer.close()
+        return
+      }
     }
+  }
+}
 
-    // Handle process exit
-    pythonProcess.on('exit', async (code: any) => {
-      console.log(`Python Interface Agent exited with code ${code}`)
-      await writer.write(`data: ${JSON.stringify({
-        type: 'status',
-        message: `Interface Agent stopped (exit code: ${code})`,
-        timestamp: new Date().toISOString()
-      })}\n\n`)
-      
-      // Clean up session
-      activeSessions.delete(userId)
-      await writer.close()
-    })
+function buildMCPUrl(userId: string): string {
+  const params = new URLSearchParams({
+    waitForAgents: CORAL_SERVER_CONFIG.waitForAgents.toString(),
+    agentId: `user_interface_agent_${userId}`,
+    agentDescription: "You are user_interaction_agent, responsible for engaging with users, processing instructions, and coordinating with other agents"
+  })
+  
+  return `${CORAL_SERVER_CONFIG.baseUrl}?${params.toString()}`
+}
 
-    // Handle process errors
-    pythonProcess.on('error', async (error: any) => {
-      console.error('Python Interface Agent error:', error)
-      await writer.write(`data: ${JSON.stringify({
-        type: 'error',
-        message: `Python process error: ${error.message}`,
-        timestamp: new Date().toISOString()
-      })}\n\n`)
-    })
-
+async function executeConversationFlow(userId: string, session: any, initialMessage: string) {
+  const writer = session.writer
+  
+  try {
+    // Step 1: List agents
+    console.log(`[Interface Agent] Step 1: Listing agents for user ${userId}`)
+    await writer.write(`data: ${JSON.stringify({
+      type: 'status',
+      message: 'Step 1: Getting list of available agents...',
+      timestamp: new Date().toISOString()
+    })}\n\n`)
+    
+    const agents = await callMCPTool(userId, 'list_agents', {})
+    session.agentList = agents || []
+    
+    await writer.write(`data: ${JSON.stringify({
+      type: 'agent_list',
+      agents: session.agentList,
+      timestamp: new Date().toISOString()
+    })}\n\n`)
+    
+    // Step 2: Ask human initial question
+    console.log(`[Interface Agent] Step 2: Asking user initial question`)
+    await writer.write(`data: ${JSON.stringify({
+      type: 'agent_question',
+      question: initialMessage ? `You said: "${initialMessage}". How can I assist you today?` : 'How can I assist you today?',
+      timestamp: new Date().toISOString()
+    })}\n\n`)
+    
+    session.conversationState = 'waiting_for_user'
+    session.currentStep = 2
+    
   } catch (error: any) {
-    console.error('Failed to start Python Interface Agent:', error)
-    await session.writer.write(`data: ${JSON.stringify({
+    console.error(`[Interface Agent] Error in conversation flow:`, error)
+    await writer.write(`data: ${JSON.stringify({
       type: 'error',
-      message: `Failed to start Interface Agent: ${error.message || error}`,
+      message: `Conversation flow error: ${error.message}`,
       timestamp: new Date().toISOString()
     })}\n\n`)
   }
 }
 
-async function handlePythonMessage(message: any, session: any) {
+async function handleUserResponse(userId: string, session: any, userResponse: string) {
   const writer = session.writer
   
   try {
-    console.log(`[Interface Agent] Received message: ${JSON.stringify(message)}`)
+    console.log(`[Interface Agent] Processing user response at step ${session.currentStep}`)
+    session.conversationState = 'processing'
     
-    // Forward the message to the web interface via SSE
-    await writer.write(`data: ${JSON.stringify({
-      ...message,
-      timestamp: new Date().toISOString()
-    })}\n\n`)
-
-    // Check if we need to wait for user response
-    if (message.type === 'agent_question') {
-      session.waitingForResponse = true
-      console.log(`[Interface Agent] Waiting for user response`)
-    }
-
-  } catch (error) {
-    console.error('Error handling Python message:', error)
-    // Try to send error message to client
-    try {
+    if (session.currentStep === 2) {
+      // Step 3: Think and decide right agent
       await writer.write(`data: ${JSON.stringify({
-        type: 'error',
-        message: `Stream error: ${error.message}`,
+        type: 'status',
+        message: 'Step 3: Analyzing your request and selecting the best agent...',
         timestamp: new Date().toISOString()
       })}\n\n`)
-    } catch (writeError) {
-      console.error('Failed to write error to stream:', writeError)
+      
+      // Simulate thinking time
+      await new Promise(resolve => setTimeout(resolve, 2000))
+      
+      // Simple agent selection logic (you can enhance this)
+      const selectedAgent = selectBestAgent(userResponse, session.agentList)
+      session.selectedAgent = selectedAgent
+      
+      await writer.write(`data: ${JSON.stringify({
+        type: 'agent_selection',
+        agent: selectedAgent,
+        reasoning: `Selected ${selectedAgent} based on your request: "${userResponse}"`,
+        timestamp: new Date().toISOString()
+      })}\n\n`)
+      
+      // Step 4: Create thread
+      await writer.write(`data: ${JSON.stringify({
+        type: 'status',
+        message: `Step 4: Creating thread with ${selectedAgent}...`,
+        timestamp: new Date().toISOString()
+      })}\n\n`)
+      
+      const threadResult = await callMCPTool(userId, 'create_thread', { agent: selectedAgent })
+      session.threadId = threadResult?.threadId || 'default_thread'
+      
+      // Step 5: Send message with instructions
+      const instructions = generateInstructions(userResponse, selectedAgent)
+      
+      await writer.write(`data: ${JSON.stringify({
+        type: 'status',
+        message: `Step 5: Sending instructions to ${selectedAgent}...`,
+        timestamp: new Date().toISOString()
+      })}\n\n`)
+      
+      await callMCPTool(userId, 'send_message', {
+        threadId: session.threadId,
+        agent: selectedAgent,
+        content: instructions
+      })
+      
+      // Step 6: Wait for mentions
+      await writer.write(`data: ${JSON.stringify({
+        type: 'status',
+        message: 'Step 6: Waiting for agent response (30 seconds timeout)...',
+        timestamp: new Date().toISOString()
+      })}\n\n`)
+      
+      const agentResponse = await callMCPTool(userId, 'wait_for_mentions', { timeout: 30 })
+      
+      // Step 7: Show conversation
+      await writer.write(`data: ${JSON.stringify({
+        type: 'agent_response',
+        agent: selectedAgent,
+        response: agentResponse,
+        timestamp: new Date().toISOString()
+      })}\n\n`)
+      
+      // Step 8: Ask if user needs anything else
+      await new Promise(resolve => setTimeout(resolve, 3000))
+      
+      await writer.write(`data: ${JSON.stringify({
+        type: 'agent_question',
+        question: 'Do you need anything else?',
+        timestamp: new Date().toISOString()
+      })}\n\n`)
+      
+      session.conversationState = 'waiting_for_user'
+      session.currentStep = 8
+      
+    } else if (session.currentStep === 8) {
+      // User wants something else, restart from step 1
+      if (userResponse.toLowerCase().includes('yes') || userResponse.toLowerCase().includes('help')) {
+        session.currentStep = 1
+        await executeConversationFlow(userId, session, userResponse)
+      } else {
+        await writer.write(`data: ${JSON.stringify({
+          type: 'status',
+          message: 'Thank you! Feel free to ask if you need anything else.',
+          timestamp: new Date().toISOString()
+        })}\n\n`)
+        
+        // Keep session alive for future requests
+        session.conversationState = 'waiting_for_user'
+        session.currentStep = 2
+      }
     }
+    
+  } catch (error: any) {
+    console.error(`[Interface Agent] Error handling user response:`, error)
+    await writer.write(`data: ${JSON.stringify({
+      type: 'error',
+      message: `Error processing your request: ${error.message}`,
+      timestamp: new Date().toISOString()
+    })}\n\n`)
+  }
+}
+
+function selectBestAgent(userRequest: string, agentList: any[]): string {
+  // Simple keyword-based agent selection (you can enhance with AI)
+  const request = userRequest.toLowerCase()
+  
+  if (request.includes('tweet') || request.includes('twitter') || request.includes('social')) {
+    return 'tweet_scraping_agent'
+  } else if (request.includes('blog') || request.includes('write') || request.includes('article')) {
+    return 'blog_writing_agent'
+  } else if (request.includes('news') || request.includes('current') || request.includes('latest')) {
+    return 'world_news_agent'
+  } else if (request.includes('research') || request.includes('analyze') || request.includes('study')) {
+    return 'tweet_research_agent'
+  } else {
+    // Default to tweet scraping agent
+    return 'tweet_scraping_agent'
+  }
+}
+
+function generateInstructions(userRequest: string, selectedAgent: string): string {
+  return `User request: "${userRequest}". Please process this request according to your capabilities as ${selectedAgent}.`
+}
+
+async function callMCPTool(userId: string, toolName: string, params: any): Promise<any> {
+  // Simplified MCP tool calling - in a real implementation, this would use the actual MCP client
+  console.log(`[Interface Agent] Calling MCP tool: ${toolName} with params:`, params)
+  
+  // Mock responses for now - replace with actual MCP calls
+  switch (toolName) {
+    case 'list_agents':
+      return [
+        { name: 'tweet_scraping_agent', description: 'Scrapes and analyzes tweets' },
+        { name: 'blog_writing_agent', description: 'Creates blog content' },
+        { name: 'world_news_agent', description: 'Fetches latest news' },
+        { name: 'tweet_research_agent', description: 'Researches tweet content' }
+      ]
+    
+    case 'create_thread':
+      return { threadId: `thread_${Date.now()}` }
+    
+    case 'send_message':
+      return { success: true, messageId: `msg_${Date.now()}` }
+    
+    case 'wait_for_mentions':
+      // Simulate agent response
+      await new Promise(resolve => setTimeout(resolve, 2000))
+      return `I've processed your request. Here's what I found: [Agent response would go here]`
+    
+    default:
+      throw new Error(`Unknown MCP tool: ${toolName}`)
   }
 }
 
@@ -301,7 +366,8 @@ export async function GET(request: NextRequest) {
   
   return NextResponse.json({
     hasActiveSession: !!session,
-    waitingForResponse: session?.waitingForResponse || false
+    conversationState: session?.conversationState || 'idle',
+    currentStep: session?.currentStep || 0
   })
 }
 
@@ -316,9 +382,13 @@ export async function DELETE(request: NextRequest) {
   // Stop the Interface Agent session
   const session = activeSessions.get(userId)
   if (session) {
-    // Kill the Python process
-    if (session.process) {
-      session.process.kill('SIGTERM')
+    if (session.mcpClient) {
+      // Close MCP client connection
+      try {
+        session.mcpClient.close?.()
+      } catch (error) {
+        console.error('Error closing MCP client:', error)
+      }
     }
     await session.writer.close()
     activeSessions.delete(userId)
