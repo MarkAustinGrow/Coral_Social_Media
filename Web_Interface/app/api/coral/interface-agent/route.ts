@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import WebSocket from 'ws'
 
 // BASIC ROUTE TEST - This should appear in logs if route is called
 console.log('🔥 [ROUTE TEST] Interface Agent route file loaded at:', new Date().toISOString())
@@ -157,112 +158,152 @@ async function createWebSocketConnection(userId: string, session: any, wsUrl: st
   
   return new Promise((resolve, reject) => {
     try {
-      // Since we're in a Node.js environment, we need to use a different approach
-      // For now, we'll simulate the WebSocket connection and test the URL
-      console.log(`[WebSocket] Attempting to connect to: ${wsUrl}`)
+      console.log(`[WebSocket] Attempting real connection to: ${wsUrl}`)
       
-      // Create a mock WebSocket client that follows Coral Studio's pattern
-      // Skip the HTTP test for now to avoid connection issues
-      console.log(`[WebSocket] Creating mock WebSocket client for: ${wsUrl}`)
+      // Create real WebSocket connection using the ws library
+      const ws = new WebSocket(wsUrl, {
+        handshakeTimeout: CORAL_SERVER_CONFIG.timeout,
+        headers: {
+          'User-Agent': 'Coral-Interface-Agent/1.0'
+        }
+      })
       
-      const mockWsClient = {
-            connected: false,
-            url: wsUrl,
-            agentId: null,
-            agents: {},
-            threads: {},
-            messages: {},
-            
-            // Simulate connection events like Coral Studio
-            onopen: () => {
-              console.log('[WebSocket] Connected to Coral server')
-              mockWsClient.connected = true
+      // Create client wrapper that follows Coral Studio's pattern
+      const wsClient = {
+        ws,
+        connected: false,
+        url: wsUrl,
+        agentId: null,
+        agents: {} as Record<string, any>,
+        threads: {} as Record<string, any>,
+        messages: {} as Record<string, any[]>,
+        
+        close: () => {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.close()
+          }
+        }
+      }
+      
+      // Set up connection timeout
+      const connectionTimeout = setTimeout(() => {
+        if (!wsClient.connected) {
+          console.error('[WebSocket] Connection timeout')
+          ws.close()
+          reject(new Error('WebSocket connection timeout'))
+        }
+      }, CORAL_SERVER_CONFIG.timeout)
+      
+      // Handle connection open
+      ws.on('open', () => {
+        clearTimeout(connectionTimeout)
+        console.log('[WebSocket] Successfully connected to Coral server')
+        wsClient.connected = true
+        
+        writer.write(`data: ${JSON.stringify({
+          type: 'status',
+          message: 'Connected to Coral server successfully!',
+          timestamp: new Date().toISOString()
+        })}\n\n`)
+        
+        resolve(wsClient)
+      })
+      
+      // Handle incoming messages
+      ws.on('message', (data: Buffer) => {
+        try {
+          const message = JSON.parse(data.toString())
+          console.log('[WebSocket] Received message:', message)
+          
+          // Forward message to SSE stream
+          writer.write(`data: ${JSON.stringify({
+            type: 'coral_message',
+            message,
+            timestamp: new Date().toISOString()
+          })}\n\n`)
+          
+          // Handle different message types like Coral Studio
+          switch (message.type) {
+            case 'DebugAgentRegistered':
+              wsClient.agentId = message.id
+              console.log(`[WebSocket] Agent registered: ${message.id}`)
+              break
               
-              writer.write(`data: ${JSON.stringify({
-                type: 'status',
-                message: 'Connected to Coral server successfully!',
-                timestamp: new Date().toISOString()
-              })}\n\n`)
-            },
-            
-            onerror: (error: any) => {
-              console.error('[WebSocket] Connection error:', error)
-              mockWsClient.connected = false
-              
-              writer.write(`data: ${JSON.stringify({
-                type: 'error',
-                message: `WebSocket connection error: ${error.message || 'Unknown error'}`,
-                timestamp: new Date().toISOString()
-              })}\n\n`)
-            },
-            
-            onclose: (event: any) => {
-              console.log('[WebSocket] Connection closed:', event)
-              mockWsClient.connected = false
-              
-              writer.write(`data: ${JSON.stringify({
-                type: 'status',
-                message: 'WebSocket connection closed',
-                timestamp: new Date().toISOString()
-              })}\n\n`)
-            },
-            
-            onmessage: (event: any) => {
-              try {
-                const data = JSON.parse(event.data)
-                console.log('[WebSocket] Received message:', data)
-                
-                // Handle different message types like Coral Studio
-                switch (data.type) {
-                  case 'DebugAgentRegistered':
-                    mockWsClient.agentId = data.id
-                    break
-                  case 'ThreadList':
-                    for (const thread of data.threads) {
-                      mockWsClient.messages[thread.id] = thread.messages || []
-                      mockWsClient.threads[thread.id] = { ...thread, messages: undefined, unread: 0 }
-                    }
-                    break
-                  case 'AgentList':
-                    for (const agent of data.agents) {
-                      mockWsClient.agents[agent.id] = agent
-                    }
-                    break
-                  case 'org.coralprotocol.coralserver.session.Event.ThreadCreated':
-                    mockWsClient.threads[data.id] = {
-                      id: data.id,
-                      name: data.name,
-                      participants: data.participants,
-                      summary: data.summary,
-                      creatorId: data.creatorId,
-                      isClosed: data.isClosed,
-                      unread: 0
-                    }
-                    mockWsClient.messages[data.id] = data.messages || []
-                    break
-                  case 'org.coralprotocol.coralserver.session.Event.MessageSent':
-                    if (data.threadId in mockWsClient.messages) {
-                      mockWsClient.messages[data.threadId].push(data.message)
-                      mockWsClient.threads[data.threadId].unread += 1
-                    }
-                    break
-                }
-              } catch (error) {
-                console.error('[WebSocket] Error parsing message:', error)
+            case 'ThreadList':
+              for (const thread of message.threads || []) {
+                wsClient.messages[thread.id] = thread.messages || []
+                wsClient.threads[thread.id] = { ...thread, messages: undefined, unread: 0 }
               }
-            },
-            
-            close: () => {
-              mockWsClient.connected = false
-              console.log('[WebSocket] Manually closed connection')
-            }
+              console.log(`[WebSocket] Received thread list: ${message.threads?.length || 0} threads`)
+              break
+              
+            case 'AgentList':
+              for (const agent of message.agents || []) {
+                wsClient.agents[agent.id] = agent
+              }
+              console.log(`[WebSocket] Received agent list: ${message.agents?.length || 0} agents`)
+              break
+              
+            case 'org.coralprotocol.coralserver.session.Event.ThreadCreated':
+              wsClient.threads[message.id] = {
+                id: message.id,
+                name: message.name,
+                participants: message.participants,
+                summary: message.summary,
+                creatorId: message.creatorId,
+                isClosed: message.isClosed,
+                unread: 0
+              }
+              wsClient.messages[message.id] = message.messages || []
+              console.log(`[WebSocket] Thread created: ${message.id}`)
+              break
+              
+            case 'org.coralprotocol.coralserver.session.Event.MessageSent':
+              if (message.threadId in wsClient.messages) {
+                wsClient.messages[message.threadId].push(message.message)
+                wsClient.threads[message.threadId].unread += 1
+              }
+              console.log(`[WebSocket] Message sent to thread: ${message.threadId}`)
+              break
+              
+            default:
+              console.log(`[WebSocket] Unknown message type: ${message.type}`)
           }
           
-      // Simulate successful connection
-      setTimeout(() => {
-        mockWsClient.onopen()
-        resolve(mockWsClient)
-      }, 1000)
+        } catch (error) {
+          console.error('[WebSocket] Error parsing message:', error)
+        }
+      })
+      
+      // Handle connection errors
+      ws.on('error', (error: Error) => {
+        clearTimeout(connectionTimeout)
+        console.error('[WebSocket] Connection error:', error)
+        wsClient.connected = false
+        
+        writer.write(`data: ${JSON.stringify({
+          type: 'error',
+          message: `WebSocket connection error: ${error.message}`,
+          timestamp: new Date().toISOString()
+        })}\n\n`)
+        
+        if (!wsClient.connected) {
+          reject(error)
+        }
+      })
+      
+      // Handle connection close
+      ws.on('close', (code: number, reason: Buffer) => {
+        clearTimeout(connectionTimeout)
+        console.log(`[WebSocket] Connection closed: ${code} - ${reason.toString()}`)
+        wsClient.connected = false
+        
+        writer.write(`data: ${JSON.stringify({
+          type: 'status',
+          message: `WebSocket connection closed (${code})`,
+          timestamp: new Date().toISOString()
+        })}\n\n`)
+      })
       
     } catch (error) {
       console.error(`[WebSocket] Error creating connection:`, error)
