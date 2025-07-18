@@ -147,13 +147,13 @@ async function createWebSocketConnection(userId: string, session: any, attempt: 
   const writer = session.writer
   
   // Try different WebSocket URL patterns based on attempt
-  const wsUrls = [
-    `ws://coral.8interns.com/devmode/exampleApplication/privkey/session1/ws`,
-    `ws://coral.8interns.com/devmode/exampleApplication/privkey/session1/`,
-    `ws://coral.8interns.com/devmode/exampleApplication/privkey/session1/websocket`,
-    `ws://coral.8interns.com/ws/devmode/exampleApplication/privkey/session1/`,
-    `ws://coral.8interns.com/debug/exampleApplication/privkey/session1/?timeout=10000`
-  ]
+const wsUrls = [
+  `ws://coral.8interns.com/debug/exampleApplication/privkey/session1/?timeout=10000`,
+  `ws://coral.8interns.com/debug/exampleApplication/privkey/${userId}/?timeout=10000`,
+  `ws://coral.8interns.com/debug/${userId}/privkey/session1/?timeout=10000`,
+  `ws://coral.8interns.com/debug/8interns/privkey/${userId}/?timeout=10000`,
+  `ws://coral.8interns.com/debug/coral-social-media/privkey/${userId}/?timeout=10000`
+]
   
   const wsUrl = wsUrls[attempt] || wsUrls[0]
   
