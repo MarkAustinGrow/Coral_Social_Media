@@ -56,7 +56,7 @@ fi
 echo "✅ Environment ready, starting agent..."
 echo "📊 Agent will log to database with user context"
 
-# Run the agent
-python "$AGENT_SCRIPT"
+# Run the agent with user_id argument
+python "$AGENT_SCRIPT" "$USER_ID"
 
 echo "🏁 Agent execution completed"
