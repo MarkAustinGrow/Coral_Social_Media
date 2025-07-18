@@ -4,16 +4,16 @@ import WebSocket from 'ws'
 // BASIC ROUTE TEST - This should appear in logs if route is called
 console.log('🔥 [ROUTE TEST] Interface Agent route file loaded at:', new Date().toISOString())
 
-// Configuration - matching Coral Studio's approach
+// Configuration - matching your working agents' endpoint pattern
 const CORAL_SERVER_CONFIG = {
   host: "coral.8interns.com",
   appId: "exampleApplication", 
   privKey: "privkey",
   session: "session1",
   timeout: 10000,
-  // Build WebSocket URL like Coral Studio
-  getWebSocketUrl: () => `ws://coral.8interns.com/debug/exampleApplication/privkey/session1/?timeout=10000`,
-  // Build HTTP URL for compatibility
+  // Build WebSocket URL matching the working /devmode/ pattern
+  getWebSocketUrl: () => `ws://coral.8interns.com/devmode/exampleApplication/privkey/session1/ws`,
+  // Build HTTP URL for compatibility (this is what your other agents use)
   getHttpUrl: () => `http://coral.8interns.com/devmode/exampleApplication/privkey/session1/sse`
 }
 
