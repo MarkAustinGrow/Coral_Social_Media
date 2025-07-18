@@ -4,6 +4,9 @@ import path from 'path'
 import fs from 'fs'
 import os from 'os'
 
+// BASIC ROUTE TEST - This should appear in logs if route is called
+console.log('🔥 [ROUTE TEST] Interface Agent route file loaded at:', new Date().toISOString())
+
 // Store active agent sessions
 const activeSessions = new Map<string, {
   process: any,
