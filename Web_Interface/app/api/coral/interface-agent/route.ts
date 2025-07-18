@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
     session = {
       process: null,
       writer,
-      messageQueue: [],
+      messageQueue: [message], // Store the initial message
       waitingForResponse: false
     }
     
@@ -50,13 +50,23 @@ export async function POST(request: NextRequest) {
   }
 
   // Send message to Python process if agent is running
-  if (session.process && session.waitingForResponse) {
-    const userMessage = {
-      type: 'user_response',
-      content: message
+  if (session.process && session.process.stdin) {
+    if (session.waitingForResponse) {
+      // Agent is waiting for a response to a question
+      const userResponse = {
+        type: 'user_response',
+        content: message
+      }
+      session.process.stdin.write(JSON.stringify(userResponse) + '\n')
+      session.waitingForResponse = false
+    } else {
+      // Send new user message
+      const userMessage = {
+        type: 'user_message',
+        content: message
+      }
+      session.process.stdin.write(JSON.stringify(userMessage) + '\n')
     }
-    session.process.stdin.write(JSON.stringify(userMessage) + '\n')
-    session.waitingForResponse = false
     return NextResponse.json({ success: true, sent: true })
   }
 
@@ -183,6 +193,24 @@ async function startPythonInterfaceAgent(userId: string, session: any) {
       console.log(`[Interface Agent] ERROR: ${errorOutput}`)
       // Don't send all stderr to web interface as it can be noisy
     })
+
+    // Send initial message if one was provided
+    if (session.messageQueue.length > 0) {
+      const initialMessage = session.messageQueue[0]
+      console.log(`Sending initial message to Interface Agent: ${initialMessage}`)
+      
+      // Wait a moment for the Python process to be ready
+      setTimeout(() => {
+        if (pythonProcess && pythonProcess.stdin) {
+          const userMessage = {
+            type: 'user_message',
+            content: initialMessage
+          }
+          pythonProcess.stdin.write(JSON.stringify(userMessage) + '\n')
+          session.messageQueue = [] // Clear the queue
+        }
+      }, 2000) // Wait 2 seconds for the agent to be ready
+    }
 
     // Handle process exit
     pythonProcess.on('exit', async (code: any) => {

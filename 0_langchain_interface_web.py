@@ -169,6 +169,34 @@ async def create_interface_agent(client, tools):
     agent = create_tool_calling_agent(model, tools, prompt)
     return AgentExecutor(agent=agent, tools=tools, verbose=True)
 
+async def handle_user_message(client, tools, user_message):
+    """Handle a single user message and return response"""
+    try:
+        # Create agent executor
+        agent_executor = await create_interface_agent(client, tools)
+        
+        # Process the user message
+        send_json_message("status", message="Processing your request...")
+        
+        # Create a custom prompt that includes the user's message
+        result = await agent_executor.ainvoke({
+            "input": user_message,
+            "chat_history": []
+        })
+        
+        # Send the result back
+        if result and "output" in result:
+            send_json_message("agent_response", response=result["output"])
+        else:
+            send_json_message("agent_response", response="Task completed successfully.")
+            
+        return True
+        
+    except Exception as e:
+        logger.error(f"Error handling user message: {e}")
+        send_json_message("error", message=f"Error processing message: {e}")
+        return False
+
 async def main():
     # Check if user context is available
     if not user_id:
@@ -216,16 +244,46 @@ async def main():
                     description="Ask the user a question and wait for a response."
                 )]
                 
-                logger.info("Starting Web Interface Agent execution")
-                log_to_database("info", "Starting Web Interface Agent execution")
+                logger.info("Web Interface Agent ready for messages")
+                log_to_database("info", "Web Interface Agent ready for messages")
                 send_json_message("status", message="Interface Agent ready")
                 
-                # Single execution like the original - let the agent handle its own conversation flow
-                await (await create_interface_agent(client, tools)).ainvoke({})
+                # Wait for messages from the web interface
+                while True:
+                    # Check for messages in the queue
+                    if message_queue:
+                        message = message_queue.pop(0)
+                        
+                        # Handle different message types
+                        if message.get("type") == "user_message":
+                            user_message = message.get("content", "")
+                            logger.info(f"Processing user message: {user_message}")
+                            
+                            # Handle the user message
+                            success = await handle_user_message(client, tools, user_message)
+                            
+                            if not success:
+                                break
+                        elif message.get("type") == "user_response":
+                            # This is handled by the ask_human_tool function
+                            pass
+                        else:
+                            # Handle initial message from web interface (string format)
+                            if isinstance(message, str):
+                                logger.info(f"Processing initial message: {message}")
+                                
+                                # Handle the initial message
+                                success = await handle_user_message(client, tools, message)
+                                
+                                if not success:
+                                    break
+                    
+                    # Small delay to prevent busy waiting
+                    await asyncio.sleep(0.1)
                 
-                logger.info("Web Interface Agent execution completed")
-                log_to_database("info", "Web Interface Agent execution completed")
-                send_json_message("status", message="Interface Agent completed")
+                logger.info("Web Interface Agent session ended")
+                log_to_database("info", "Web Interface Agent session ended")
+                send_json_message("status", message="Interface Agent session ended")
                 
                 # Break out of retry loop on successful execution
                 break
