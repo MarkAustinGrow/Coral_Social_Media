@@ -398,7 +398,18 @@ async function handleUserResponse(userId: string, session: any, userResponse: st
       })}\n\n`)
       
       const threadResult = await callMCPTool(userId, 'create_thread', { agent: selectedAgent })
-      session.threadId = threadResult?.threadId || 'default_thread'
+      
+      // Check if thread creation failed
+      if (threadResult?.error) {
+        await writer.write(`data: ${JSON.stringify({
+          type: 'error',
+          message: `Failed to create thread: ${threadResult.error}`,
+          timestamp: new Date().toISOString()
+        })}\n\n`)
+        session.threadId = 'fallback_thread'
+      } else {
+        session.threadId = threadResult?.threadId || 'default_thread'
+      }
       
       // Step 5: Send message with instructions
       const instructions = generateInstructions(userResponse, selectedAgent)
@@ -409,11 +420,20 @@ async function handleUserResponse(userId: string, session: any, userResponse: st
         timestamp: new Date().toISOString()
       })}\n\n`)
       
-      await callMCPTool(userId, 'send_message', {
+      const sendResult = await callMCPTool(userId, 'send_message', {
         threadId: session.threadId,
         agent: selectedAgent,
         content: instructions
       })
+      
+      // Check if message sending failed
+      if (sendResult?.error) {
+        await writer.write(`data: ${JSON.stringify({
+          type: 'warning',
+          message: `Message sending had issues: ${sendResult.error}`,
+          timestamp: new Date().toISOString()
+        })}\n\n`)
+      }
       
       // Step 6: Wait for mentions
       await writer.write(`data: ${JSON.stringify({
@@ -424,13 +444,23 @@ async function handleUserResponse(userId: string, session: any, userResponse: st
       
       const agentResponse = await callMCPTool(userId, 'wait_for_mentions', { timeout: 30 })
       
-      // Step 7: Show conversation
-      await writer.write(`data: ${JSON.stringify({
-        type: 'agent_response',
-        agent: selectedAgent,
-        response: agentResponse,
-        timestamp: new Date().toISOString()
-      })}\n\n`)
+      // Check if waiting for mentions failed
+      if (agentResponse?.error) {
+        await writer.write(`data: ${JSON.stringify({
+          type: 'agent_response',
+          agent: selectedAgent,
+          response: `I encountered an issue while processing your request: ${agentResponse.error}. However, I understand you're asking about "${userResponse}". Let me provide a helpful response based on what I know.`,
+          timestamp: new Date().toISOString()
+        })}\n\n`)
+      } else {
+        // Step 7: Show conversation
+        await writer.write(`data: ${JSON.stringify({
+          type: 'agent_response',
+          agent: selectedAgent,
+          response: agentResponse,
+          timestamp: new Date().toISOString()
+        })}\n\n`)
+      }
       
       // Step 8: Ask if user needs anything else
       await new Promise(resolve => setTimeout(resolve, 3000))
@@ -498,7 +528,7 @@ async function callMCPTool(userId: string, toolName: string, params: any): Promi
   console.log(`[Interface Agent] Calling MCP tool: ${toolName} with params:`, params)
   
   try {
-    // For now, simulate MCP tool calls
+    // For now, simulate MCP tool calls with enhanced error handling
     // In a full implementation, this would use the actual MCP protocol via HTTP POST
     
     switch (toolName) {
@@ -546,12 +576,23 @@ async function callMCPTool(userId: string, toolName: string, params: any): Promi
         return generateAgentResponse(selectedAgent, params)
       
       default:
-        throw new Error(`Unknown MCP tool: ${toolName}`)
+        console.warn(`[Interface Agent] Unknown MCP tool: ${toolName}, returning fallback response`)
+        return { 
+          error: `Unknown tool: ${toolName}`, 
+          fallback: true,
+          message: `Tool ${toolName} is not yet implemented in the MCP protocol`
+        }
     }
     
   } catch (error: any) {
     console.error(`[Interface Agent] Error calling MCP tool ${toolName}:`, error)
-    throw new Error(`MCP tool call failed: ${error.message}`)
+    // Return error object instead of throwing to prevent stream interruption
+    return {
+      error: `MCP tool call failed: ${error.message}`,
+      toolName,
+      params,
+      success: false
+    }
   }
 }
 
