@@ -34,56 +34,77 @@ const activeSessions = new Map<string, {
 export async function POST(request: NextRequest) {
   console.log('🚀 [Interface Agent API] POST request received')
   
-  const { message, userId } = await request.json()
-  console.log(`📝 [Interface Agent API] Request data: message="${message}", userId="${userId}"`)
+  try {
+    console.log('🔧 [Interface Agent API] Parsing request body...')
+    const { message, userId } = await request.json()
+    console.log(`📝 [Interface Agent API] Request data: message="${message}", userId="${userId}"`)
 
-  if (!userId) {
-    console.log('❌ [Interface Agent API] No userId provided')
-    return NextResponse.json({ error: 'User ID required' }, { status: 400 })
-  }
-
-  // Create or get existing session
-  let session = activeSessions.get(userId)
-  
-  if (!session) {
-    // Start new Interface Agent session
-    const stream = new TransformStream()
-    const writer = stream.writable.getWriter()
-    
-    session = {
-      sseClient: null,
-      writer,
-      conversationState: 'processing',
-      currentStep: 1,
-      agentList: [],
-      selectedAgent: null,
-      threadId: null,
-      retryCount: 0
+    if (!userId) {
+      console.log('❌ [Interface Agent API] No userId provided')
+      return NextResponse.json({ error: 'User ID required' }, { status: 400 })
     }
-    
-    activeSessions.set(userId, session)
-    
-    // Start the MCP Interface Agent
-    startMCPInterfaceAgent(userId, session, message)
-    
-    // Return the stream for real-time communication
-    return new Response(stream.readable, {
-      headers: {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive',
-      },
-    })
-  }
 
-  // Handle user response based on conversation state
-  if (session.conversationState === 'waiting_for_user') {
-    console.log(`[Interface Agent] User response received: ${message}`)
-    await handleUserResponse(userId, session, message)
-    return NextResponse.json({ success: true, sent: true })
-  }
+    console.log('🔍 [Interface Agent API] Checking for existing session...')
+    // Create or get existing session
+    let session = activeSessions.get(userId)
+    
+    if (!session) {
+      console.log('🆕 [Interface Agent API] Creating new session...')
+      // Start new Interface Agent session
+      const stream = new TransformStream()
+      const writer = stream.writable.getWriter()
+      
+      session = {
+        sseClient: null,
+        writer,
+        conversationState: 'processing',
+        currentStep: 1,
+        agentList: [],
+        selectedAgent: null,
+        threadId: null,
+        retryCount: 0
+      }
+      
+      console.log('💾 [Interface Agent API] Storing session in activeSessions...')
+      activeSessions.set(userId, session)
+      
+      console.log('🚀 [Interface Agent API] Starting MCP Interface Agent...')
+      // Start the MCP Interface Agent with timeout protection
+      setTimeout(() => {
+        startMCPInterfaceAgent(userId, session, message).catch(error => {
+          console.error('❌ [Interface Agent API] Error in startMCPInterfaceAgent:', error)
+        })
+      }, 0)
+      
+      console.log('📡 [Interface Agent API] Returning SSE stream...')
+      // Return the stream for real-time communication
+      return new Response(stream.readable, {
+        headers: {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          'Connection': 'keep-alive',
+        },
+      })
+    }
 
-  return NextResponse.json({ error: 'Agent not ready or not waiting for response' }, { status: 503 })
+    console.log('🔄 [Interface Agent API] Using existing session...')
+    // Handle user response based on conversation state
+    if (session.conversationState === 'waiting_for_user') {
+      console.log(`[Interface Agent] User response received: ${message}`)
+      await handleUserResponse(userId, session, message)
+      return NextResponse.json({ success: true, sent: true })
+    }
+
+    console.log('⚠️ [Interface Agent API] Agent not ready for user input')
+    return NextResponse.json({ error: 'Agent not ready or not waiting for response' }, { status: 503 })
+    
+  } catch (error: any) {
+    console.error('❌ [Interface Agent API] Critical error in POST handler:', error)
+    return NextResponse.json({ 
+      error: 'Internal server error', 
+      details: error.message 
+    }, { status: 500 })
+  }
 }
 
 async function startMCPInterfaceAgent(userId: string, session: any, initialMessage: string) {
