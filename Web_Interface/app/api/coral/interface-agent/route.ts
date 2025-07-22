@@ -13,7 +13,7 @@ const CORAL_SERVER_CONFIG = {
   timeout: 300000, // 5 minutes like original Python agent
   // Build SSE URL matching the original Python agent pattern
   getSseUrl: (userId: string, agentId: string) => 
-    `http://coral.8interns.com:5555/devmode/exampleApplication/privkey/session1/sse?waitForAgents=2&agentId=${agentId}&agentDescription=${encodeURIComponent('You are user_interaction_agent, responsible for engaging with users, processing instructions, and coordinating with other agents')}`,
+    `http://coral.8interns.com:5555/devmode/exampleApplication/privkey/session1/sse?waitForAgents=2&agentId=${agentId}&agentDescription=${encodeURIComponent(`You are user_interface_agent for user ${userId}, responsible for engaging with users, processing instructions, and coordinating with other agents`)}`,
   // Build MCP endpoints for real protocol communication
   getMcpEndpoints: () => ({
     base: `http://coral.8interns.com:5555/devmode/exampleApplication/privkey/session1`,
@@ -165,8 +165,8 @@ async function startMCPInterfaceAgent(userId: string, session: any, initialMessa
 async function createSseConnection(userId: string, session: any, attempt: number): Promise<any> {
   const writer = session.writer
   
-  // Generate unique agent ID for this interface agent instance
-  const agentId = `interface_agent_${userId}_${Date.now()}`
+  // Use consistent agent ID pattern matching command line interface agent
+  const agentId = `user_interface_agent_${userId}`
   
   // Build SSE URL with proper parameters
   const sseUrl = CORAL_SERVER_CONFIG.getSseUrl(userId, agentId)
