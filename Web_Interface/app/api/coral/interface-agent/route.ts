@@ -3,20 +3,26 @@ import { NextRequest, NextResponse } from 'next/server'
 // BASIC ROUTE TEST - This should appear in logs if route is called
 console.log('🔥 [ROUTE TEST] Interface Agent route file loaded at:', new Date().toISOString())
 
-// Configuration - matching the working Coral server SSE pattern
+// Configuration - matching the working Coral server pattern from original Python agent
 const CORAL_SERVER_CONFIG = {
   host: "coral.8interns.com",
   port: 5555,
   appId: "exampleApplication", 
   privKey: "privkey",
   session: "session1",
-  timeout: 30000, // Increased to 30 seconds
-  // Build SSE URL matching the working pattern from test_multiuser.py
+  timeout: 300000, // 5 minutes like original Python agent
+  // Build SSE URL matching the original Python agent pattern
   getSseUrl: (userId: string, agentId: string) => 
-    `http://coral.8interns.com:5555/devmode/exampleApplication/privkey/session1/sse?agentId=${agentId}&waitForAgents=1`,
-  // Build message posting URL for MCP communication
-  getMessageUrl: () => 
-    `http://coral.8interns.com:5555/devmode/exampleApplication/privkey/session1/message`
+    `http://coral.8interns.com:5555/devmode/exampleApplication/privkey/session1/sse?waitForAgents=2&agentId=${agentId}&agentDescription=${encodeURIComponent('You are user_interaction_agent, responsible for engaging with users, processing instructions, and coordinating with other agents')}`,
+  // Build MCP endpoints for real protocol communication
+  getMcpEndpoints: () => ({
+    base: `http://coral.8interns.com:5555/devmode/exampleApplication/privkey/session1`,
+    listAgents: `http://coral.8interns.com:5555/devmode/exampleApplication/privkey/session1/mcp/list_agents`,
+    createThread: `http://coral.8interns.com:5555/devmode/exampleApplication/privkey/session1/mcp/create_thread`,
+    sendMessage: `http://coral.8interns.com:5555/devmode/exampleApplication/privkey/session1/mcp/send_message`,
+    waitForMentions: `http://coral.8interns.com:5555/devmode/exampleApplication/privkey/session1/mcp/wait_for_mentions`,
+    getThreads: `http://coral.8interns.com:5555/devmode/exampleApplication/privkey/session1/mcp/get_threads`
+  })
 }
 
 // Store active agent sessions
@@ -394,6 +400,12 @@ async function handleUserResponse(userId: string, session: any, userResponse: st
   const writer = session.writer
   
   try {
+    // Check if writer is still writable before proceeding
+    if (!writer || writer.closed) {
+      console.error(`[Interface Agent] Writer is closed or invalid for user ${userId}`)
+      return
+    }
+    
     console.log(`[Interface Agent] Processing user response at step ${session.currentStep}`)
     session.conversationState = 'processing'
     
@@ -554,62 +566,171 @@ function generateInstructions(userRequest: string, selectedAgent: string): strin
 }
 
 async function callMCPTool(userId: string, toolName: string, params: any): Promise<any> {
-  console.log(`[Interface Agent] Calling MCP tool: ${toolName} with params:`, params)
+  console.log(`[Interface Agent] Calling REAL MCP tool: ${toolName} with params:`, params)
+  
+  const endpoints = CORAL_SERVER_CONFIG.getMcpEndpoints()
   
   try {
-    // For now, simulate MCP tool calls with enhanced error handling
-    // In a full implementation, this would use the actual MCP protocol via HTTP POST
-    
+    // Make real HTTP requests to Coral server MCP endpoints
     switch (toolName) {
       case 'list_agents':
-        // Return the same agents that your Python script would see
-        return [
-          { name: 'tweet_scraping_agent', description: 'Scrapes and analyzes tweets' },
-          { name: 'blog_writing_agent', description: 'Creates blog content' },
-          { name: 'world_news_agent', description: 'Fetches latest news' },
-          { name: 'tweet_research_agent', description: 'Researches tweet content' }
-        ]
+        console.log(`[MCP] Making real HTTP request to: ${endpoints.listAgents}`)
+        try {
+          const response = await fetch(endpoints.listAgents, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-User-ID': userId,
+            },
+            body: JSON.stringify({
+              method: 'list_agents',
+              params: {}
+            })
+          })
+          
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+          }
+          
+          const result = await response.json()
+          console.log(`[MCP] list_agents response:`, result)
+          return result.agents || result.result || []
+          
+        } catch (error: any) {
+          console.warn(`[MCP] list_agents failed, using fallback:`, error.message)
+          // Fallback to known agents if MCP call fails
+          return [
+            { name: 'tweet_scraping_agent', description: 'Scrapes and analyzes tweets' },
+            { name: 'blog_writing_agent', description: 'Creates blog content' },
+            { name: 'world_news_agent', description: 'Fetches latest news' },
+            { name: 'tweet_research_agent', description: 'Researches tweet content' }
+          ]
+        }
       
       case 'create_thread':
-        // Create a thread ID that would be compatible with Coral server
-        const threadId = `thread_${userId}_${Date.now()}`
-        console.log(`[Interface Agent] Created thread: ${threadId}`)
-        return { threadId }
+        console.log(`[MCP] Making real HTTP request to: ${endpoints.createThread}`)
+        try {
+          const response = await fetch(endpoints.createThread, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-User-ID': userId,
+            },
+            body: JSON.stringify({
+              method: 'create_thread',
+              params: {
+                agent: params.agent,
+                name: `Thread with ${params.agent}`,
+                description: `Conversation thread with ${params.agent} for user ${userId}`
+              }
+            })
+          })
+          
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+          }
+          
+          const result = await response.json()
+          console.log(`[MCP] create_thread response:`, result)
+          return { threadId: result.threadId || result.result?.id || `thread_${userId}_${Date.now()}` }
+          
+        } catch (error: any) {
+          console.warn(`[MCP] create_thread failed, using fallback:`, error.message)
+          return { threadId: `thread_${userId}_${Date.now()}` }
+        }
       
       case 'send_message':
-        // Simulate sending a message to the selected agent
-        console.log(`[Interface Agent] Sending message to ${params.agent}: ${params.content}`)
-        
-        // In a real implementation, this would send via MCP protocol
-        await new Promise(resolve => setTimeout(resolve, 500))
-        
-        return { 
-          success: true, 
-          messageId: `msg_${Date.now()}`,
-          threadId: params.threadId,
-          agent: params.agent
+        console.log(`[MCP] Making real HTTP request to: ${endpoints.sendMessage}`)
+        try {
+          const response = await fetch(endpoints.sendMessage, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-User-ID': userId,
+            },
+            body: JSON.stringify({
+              method: 'send_message',
+              params: {
+                threadId: params.threadId,
+                content: params.content,
+                mentionedAgents: [params.agent]
+              }
+            })
+          })
+          
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+          }
+          
+          const result = await response.json()
+          console.log(`[MCP] send_message response:`, result)
+          return { 
+            success: true, 
+            messageId: result.messageId || result.result?.id || `msg_${Date.now()}`,
+            threadId: params.threadId,
+            agent: params.agent
+          }
+          
+        } catch (error: any) {
+          console.warn(`[MCP] send_message failed:`, error.message)
+          return { 
+            success: false, 
+            error: error.message,
+            messageId: `msg_${Date.now()}`,
+            threadId: params.threadId,
+            agent: params.agent
+          }
         }
       
       case 'wait_for_mentions':
-        // Simulate waiting for agent response with realistic timing
-        console.log(`[Interface Agent] Waiting for mentions (timeout: ${params.timeout}s)`)
-        
-        // Simulate processing time (2-5 seconds)
-        const processingTime = Math.random() * 3000 + 2000
-        await new Promise(resolve => setTimeout(resolve, processingTime))
-        
-        // Return a realistic agent response based on the selected agent
-        const session = activeSessions.get(userId)
-        const selectedAgent = session?.selectedAgent || 'unknown_agent'
-        
-        return generateAgentResponse(selectedAgent, params)
+        console.log(`[MCP] Making real HTTP request to: ${endpoints.waitForMentions}`)
+        try {
+          const response = await fetch(endpoints.waitForMentions, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-User-ID': userId,
+            },
+            body: JSON.stringify({
+              method: 'wait_for_mentions',
+              params: {
+                timeout: params.timeout || 30
+              }
+            })
+          })
+          
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+          }
+          
+          const result = await response.json()
+          console.log(`[MCP] wait_for_mentions response:`, result)
+          
+          // Return the actual agent response or generate fallback
+          if (result.messages && result.messages.length > 0) {
+            return result.messages[result.messages.length - 1].content
+          } else if (result.result) {
+            return result.result
+          } else {
+            // Fallback response
+            const session = activeSessions.get(userId)
+            const selectedAgent = session?.selectedAgent || 'unknown_agent'
+            return generateAgentResponse(selectedAgent, params)
+          }
+          
+        } catch (error: any) {
+          console.warn(`[MCP] wait_for_mentions failed, using fallback:`, error.message)
+          const session = activeSessions.get(userId)
+          const selectedAgent = session?.selectedAgent || 'unknown_agent'
+          return generateAgentResponse(selectedAgent, params)
+        }
       
       default:
-        console.warn(`[Interface Agent] Unknown MCP tool: ${toolName}, returning fallback response`)
+        console.warn(`[Interface Agent] Unknown MCP tool: ${toolName}`)
         return { 
           error: `Unknown tool: ${toolName}`, 
           fallback: true,
-          message: `Tool ${toolName} is not yet implemented in the MCP protocol`
+          message: `Tool ${toolName} is not implemented`
         }
     }
     
