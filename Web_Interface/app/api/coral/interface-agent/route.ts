@@ -175,6 +175,7 @@ async function createSseConnection(userId: string, session: any, attempt: number
 
   try {
     // Create SSE connection using fetch with proper headers
+    // Note: No timeout on SSE connection - it should stay open for the entire conversation
     const response = await fetch(sseUrl, {
       method: 'GET',
       headers: {
@@ -182,8 +183,8 @@ async function createSseConnection(userId: string, session: any, attempt: number
         'Cache-Control': 'no-cache',
         'X-User-ID': userId,
         'User-Agent': 'Coral-Interface-Agent/1.0'
-      },
-      signal: AbortSignal.timeout(CORAL_SERVER_CONFIG.timeout)
+      }
+      // Removed timeout - SSE connections should stay open indefinitely
     })
 
     if (!response.ok) {
