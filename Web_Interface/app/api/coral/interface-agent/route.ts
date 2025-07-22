@@ -10,7 +10,7 @@ const CORAL_SERVER_CONFIG = {
   appId: "exampleApplication", 
   privKey: "privkey",
   session: "session1",
-  timeout: 10000,
+  timeout: 30000, // Increased to 30 seconds
   // Build SSE URL matching the working pattern from test_multiuser.py
   getSseUrl: (userId: string, agentId: string) => 
     `http://coral.8interns.com:5555/devmode/exampleApplication/privkey/session1/sse?agentId=${agentId}&waitForAgents=1`,
@@ -263,7 +263,13 @@ async function processSSEMessages(
         if (line.startsWith('data: ')) {
           try {
             const data = line.slice(6) // Remove 'data: ' prefix
-            if (data.trim() === '') continue
+            if (data.trim() === '' || data.trim() === '[DONE]') continue
+            
+            // Skip non-JSON data (like URLs or plain text)
+            if (!data.trim().startsWith('{') && !data.trim().startsWith('[')) {
+              console.log('[SSE] Skipping non-JSON data:', data.substring(0, 50) + '...')
+              continue
+            }
             
             const message = JSON.parse(data)
             console.log('[SSE] Received message:', message)
@@ -279,7 +285,8 @@ async function processSSEMessages(
             handleCoralMessage(message, sseClient)
             
           } catch (parseError) {
-            console.error('[SSE] Error parsing message:', parseError)
+            console.log('[SSE] Skipping unparseable message:', line.substring(0, 100) + '...')
+            // Don't log as error since this is expected for non-JSON SSE data
           }
         }
       }
