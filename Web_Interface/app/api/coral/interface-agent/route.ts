@@ -415,6 +415,8 @@ async function handleUserResponse(userId: string, session: any, userResponse: st
     // Check if writer is still writable before proceeding
     if (!writer || writer.closed) {
       console.error(`[Interface Agent] Writer is closed or invalid for user ${userId}`)
+      // Clean up the session
+      activeSessions.delete(userId)
       return
     }
     
@@ -469,14 +471,14 @@ async function handleUserResponse(userId: string, session: any, userResponse: st
           content: instructions
         })
         
-        // Step 6: Wait for mentions
+        // Step 6: Wait for mentions with reduced timeout for better UX
         await writer.write(`data: ${JSON.stringify({
           type: 'status',
-          message: 'Step 6: Waiting for agent response (30 seconds timeout)...',
+          message: 'Step 6: Waiting for agent response (15 seconds timeout)...',
           timestamp: new Date().toISOString()
         })}\n\n`)
         
-        const agentResponse = await callMCPTool(userId, 'wait_for_mentions', { timeout: 30 })
+        const agentResponse = await callMCPTool(userId, 'wait_for_mentions', { timeout: 15 })
         
         // Step 7: Show conversation
         await writer.write(`data: ${JSON.stringify({
@@ -491,27 +493,38 @@ async function handleUserResponse(userId: string, session: any, userResponse: st
         
         await writer.write(`data: ${JSON.stringify({
           type: 'error',
-          message: `Unable to communicate with ${selectedAgent}. This could be because:\n• The agent is not currently running\n• The Coral server is not available\n• Network connectivity issues\n\nError: ${error.message}`,
+          message: `Unable to communicate with ${selectedAgent}. This could be because:\n• The agent is not currently running\n• The Coral server is not available\n• Network connectivity issues\n\nError: ${error.message}\n\nYou can try again with a new message.`,
           timestamp: new Date().toISOString()
         })}\n\n`)
+        
+        // Reset session state for retry
+        session.conversationState = 'waiting_for_user'
+        session.currentStep = 2
+        session.selectedAgent = null
+        session.threadId = null
       }
       
-      // Step 8: Ask if user needs anything else
-      await new Promise(resolve => setTimeout(resolve, 3000))
-      
-      await writer.write(`data: ${JSON.stringify({
-        type: 'agent_question',
-        question: 'Do you need anything else?',
-        timestamp: new Date().toISOString()
-      })}\n\n`)
-      
-      session.conversationState = 'waiting_for_user'
-      session.currentStep = 8
+      // Step 8: Ask if user needs anything else (only if no error occurred)
+      if (session.currentStep !== 2) {
+        await new Promise(resolve => setTimeout(resolve, 3000))
+        
+        await writer.write(`data: ${JSON.stringify({
+          type: 'agent_question',
+          question: 'Do you need anything else?',
+          timestamp: new Date().toISOString()
+        })}\n\n`)
+        
+        session.conversationState = 'waiting_for_user'
+        session.currentStep = 8
+      }
       
     } else if (session.currentStep === 8) {
       // User wants something else, restart from step 1
       if (userResponse.toLowerCase().includes('yes') || userResponse.toLowerCase().includes('help')) {
+        // Reset session state for new conversation
         session.currentStep = 1
+        session.selectedAgent = null
+        session.threadId = null
         await executeConversationFlow(userId, session, userResponse)
       } else {
         await writer.write(`data: ${JSON.stringify({
@@ -520,19 +533,33 @@ async function handleUserResponse(userId: string, session: any, userResponse: st
           timestamp: new Date().toISOString()
         })}\n\n`)
         
-        // Keep session alive for future requests
+        // Reset session for new requests
         session.conversationState = 'waiting_for_user'
         session.currentStep = 2
+        session.selectedAgent = null
+        session.threadId = null
       }
     }
     
   } catch (error: any) {
     console.error(`[Interface Agent] Error handling user response:`, error)
-    await writer.write(`data: ${JSON.stringify({
-      type: 'error',
-      message: `Error processing your request: ${error.message}`,
-      timestamp: new Date().toISOString()
-    })}\n\n`)
+    
+    // Send error message if writer is still available
+    try {
+      await writer.write(`data: ${JSON.stringify({
+        type: 'error',
+        message: `Error processing your request: ${error.message}\n\nPlease try again with a new message.`,
+        timestamp: new Date().toISOString()
+      })}\n\n`)
+    } catch (writeError) {
+      console.error(`[Interface Agent] Failed to write error message:`, writeError)
+    }
+    
+    // Reset session state for recovery
+    session.conversationState = 'waiting_for_user'
+    session.currentStep = 2
+    session.selectedAgent = null
+    session.threadId = null
   }
 }
 

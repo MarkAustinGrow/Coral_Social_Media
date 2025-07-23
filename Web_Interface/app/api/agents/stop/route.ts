@@ -8,7 +8,7 @@ export async function POST(request: NextRequest) {
   try {
     console.log('🔧 Stop Agent API: Starting agent stop process...')
     
-    const { agentName } = await request.json()
+    const { agentName, mode = 'auto' } = await request.json()
     
     if (!agentName) {
       return NextResponse.json(
@@ -16,6 +16,8 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       )
     }
+    
+    console.log(`🔧 Stop Agent API: Stopping ${agentName} in ${mode} mode`)
     
     // Create Supabase client with authentication
     const supabase = createRouteHandlerClient<Database>({ cookies })
@@ -53,8 +55,8 @@ export async function POST(request: NextRequest) {
     
     console.log('🔧 Stop Agent API: Found agent:', agent.agent_name, 'Current status:', agent.status)
     
-    // Stop the agent process
-    const success = await stopAgent(agentName)
+    // Stop the agent process with mode
+    const success = await stopAgent(agentName, mode)
     
     if (!success) {
       console.error('❌ Stop Agent API: Failed to stop agent process')

@@ -33,6 +33,9 @@ import {
 } from "lucide-react"
 import { useState, useEffect, useRef } from "react"
 
+// Agent modes
+type AgentMode = 'auto' | 'coral'
+
 // Interface Agent - Central hub for all communications
 const INTERFACE_AGENT = {
   name: "Interface Agent",
@@ -136,6 +139,9 @@ export default function CoralInspectorPage() {
   })
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState("dashboard")
+  
+  // Mode Switch Architecture state
+  const [agentMode, setAgentMode] = useState<AgentMode>('auto')
   
   // Thread viewer state
   const [messages, setMessages] = useState<ThreadMessage[]>([])
@@ -457,7 +463,8 @@ export default function CoralInspectorPage() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          agentName: agentName
+          agentName: agentName,
+          mode: agentMode // Pass the selected mode to the process manager
         })
       })
 
@@ -465,6 +472,7 @@ export default function CoralInspectorPage() {
       if (result.success) {
         // Refresh agent statuses
         fetchAgentStatuses()
+        console.log(`Started ${agentName} in ${agentMode} mode`)
       } else {
         console.error('Failed to start agent:', result.error)
       }
@@ -481,7 +489,8 @@ export default function CoralInspectorPage() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          agentName: agentName
+          agentName: agentName,
+          mode: agentMode // Pass the selected mode to the process manager
         })
       })
 
@@ -489,6 +498,7 @@ export default function CoralInspectorPage() {
       if (result.success) {
         // Refresh agent statuses
         fetchAgentStatuses()
+        console.log(`Stopped ${agentName} in ${agentMode} mode`)
       } else {
         console.error('Failed to stop agent:', result.error)
       }
@@ -539,11 +549,73 @@ export default function CoralInspectorPage() {
             Monitor and inspect your agent communications on the Coral Protocol
           </p>
         </div>
-        <Button onClick={fetchAgentStatuses} disabled={loading}>
-          <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-          Refresh
-        </Button>
+        <div className="flex items-center gap-4">
+          {/* Mode Switch Architecture Toggle */}
+          <Card className="p-3">
+            <div className="flex items-center gap-3">
+              <Label htmlFor="agent-mode" className="text-sm font-medium">
+                Agent Mode:
+              </Label>
+              <Select value={agentMode} onValueChange={(value: AgentMode) => setAgentMode(value)}>
+                <SelectTrigger className="w-32">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="auto">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-blue-500" />
+                      Auto
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="coral">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-green-500" />
+                      Coral
+                    </div>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </Card>
+          <Button onClick={fetchAgentStatuses} disabled={loading}>
+            <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
+        </div>
       </div>
+
+      {/* Mode Switch Architecture Info */}
+      <Card className={agentMode === 'coral' ? 'border-green-200 bg-green-50' : 'border-blue-200 bg-blue-50'}>
+        <CardHeader>
+          <CardTitle className={`flex items-center gap-2 ${agentMode === 'coral' ? 'text-green-800' : 'text-blue-800'}`}>
+            <div className={`w-3 h-3 rounded-full ${agentMode === 'coral' ? 'bg-green-500' : 'bg-blue-500'}`} />
+            {agentMode === 'coral' ? 'Coral Mode - Multi-Agent Communication' : 'Auto Mode - Independent Agents'}
+          </CardTitle>
+          <CardDescription className={agentMode === 'coral' ? 'text-green-700' : 'text-blue-700'}>
+            {agentMode === 'coral' 
+              ? 'Agents communicate with each other through the Coral Protocol for coordinated tasks'
+              : 'Agents work independently without inter-agent communication'
+            }
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className={`text-sm ${agentMode === 'coral' ? 'text-green-800' : 'text-blue-800'}`}>
+            {agentMode === 'coral' ? (
+              <div className="space-y-2">
+                <p><strong>How it works:</strong> Interface Agent coordinates with other agents via Coral Protocol</p>
+                <p><strong>Best for:</strong> Complex tasks requiring multiple agents (research + writing + posting)</p>
+                <p><strong>Communication:</strong> Real-time agent-to-agent messaging and coordination</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <p><strong>How it works:</strong> Each agent operates independently based on its configuration</p>
+                <p><strong>Best for:</strong> Simple, single-purpose tasks (just scraping, just writing, etc.)</p>
+                <p><strong>Communication:</strong> No inter-agent communication, direct user interaction only</p>
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Server Status */}
       <Card>

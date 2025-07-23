@@ -8,7 +8,7 @@ export async function POST(request: NextRequest) {
   try {
     console.log('🔧 Start Agent API: Starting agent start process...')
     
-    const { agentName } = await request.json()
+    const { agentName, mode = 'auto' } = await request.json()
     
     if (!agentName) {
       return NextResponse.json(
@@ -16,6 +16,8 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       )
     }
+    
+    console.log(`🔧 Start Agent API: Starting ${agentName} in ${mode} mode`)
     
     // Create Supabase client with authentication
     const supabase = createRouteHandlerClient<Database>({ cookies })
@@ -53,8 +55,8 @@ export async function POST(request: NextRequest) {
     
     console.log('🔧 Start Agent API: Found agent:', agent.agent_name, 'Current status:', agent.status)
     
-    // Start the agent process with user context
-    const success = await startAgent(agentName, userId)
+    // Start the agent process with user context and mode
+    const success = await startAgent(agentName, userId, mode)
     
     if (!success) {
       console.error('❌ Start Agent API: Failed to start agent process')
