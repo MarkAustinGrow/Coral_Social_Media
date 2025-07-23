@@ -450,67 +450,48 @@ async function handleUserResponse(userId: string, session: any, userResponse: st
         timestamp: new Date().toISOString()
       })}\n\n`)
       
-      const threadResult = await callMCPTool(userId, 'create_thread', { agent: selectedAgent })
-      
-      // Check if thread creation failed
-      if (threadResult?.error) {
-        await writer.write(`data: ${JSON.stringify({
-          type: 'error',
-          message: `Failed to create thread: ${threadResult.error}`,
-          timestamp: new Date().toISOString()
-        })}\n\n`)
-        session.threadId = 'fallback_thread'
-      } else {
+      try {
+        const threadResult = await callMCPTool(userId, 'create_thread', { agent: selectedAgent })
         session.threadId = threadResult?.threadId || 'default_thread'
-      }
-      
-      // Step 5: Send message with instructions
-      const instructions = generateInstructions(userResponse, selectedAgent)
-      
-      await writer.write(`data: ${JSON.stringify({
-        type: 'status',
-        message: `Step 5: Sending instructions to ${selectedAgent}...`,
-        timestamp: new Date().toISOString()
-      })}\n\n`)
-      
-      const sendResult = await callMCPTool(userId, 'send_message', {
-        threadId: session.threadId,
-        agent: selectedAgent,
-        content: instructions
-      })
-      
-      // Check if message sending failed
-      if (sendResult?.error) {
+        
+        // Step 5: Send message with instructions
+        const instructions = generateInstructions(userResponse, selectedAgent)
+        
         await writer.write(`data: ${JSON.stringify({
-          type: 'warning',
-          message: `Message sending had issues: ${sendResult.error}`,
+          type: 'status',
+          message: `Step 5: Sending instructions to ${selectedAgent}...`,
           timestamp: new Date().toISOString()
         })}\n\n`)
-      }
-      
-      // Step 6: Wait for mentions
-      await writer.write(`data: ${JSON.stringify({
-        type: 'status',
-        message: 'Step 6: Waiting for agent response (30 seconds timeout)...',
-        timestamp: new Date().toISOString()
-      })}\n\n`)
-      
-      const agentResponse = await callMCPTool(userId, 'wait_for_mentions', { timeout: 30 })
-      
-      // Check if waiting for mentions failed
-      if (agentResponse?.error) {
-        await writer.write(`data: ${JSON.stringify({
-          type: 'agent_response',
+        
+        const sendResult = await callMCPTool(userId, 'send_message', {
+          threadId: session.threadId,
           agent: selectedAgent,
-          response: `I encountered an issue while processing your request: ${agentResponse.error}. However, I understand you're asking about "${userResponse}". Let me provide a helpful response based on what I know.`,
+          content: instructions
+        })
+        
+        // Step 6: Wait for mentions
+        await writer.write(`data: ${JSON.stringify({
+          type: 'status',
+          message: 'Step 6: Waiting for agent response (30 seconds timeout)...',
           timestamp: new Date().toISOString()
         })}\n\n`)
-      } else {
+        
+        const agentResponse = await callMCPTool(userId, 'wait_for_mentions', { timeout: 30 })
+        
         // Step 7: Show conversation
         await writer.write(`data: ${JSON.stringify({
           type: 'agent_response',
           agent: selectedAgent,
           response: agentResponse,
+          timestamp: new Date().toISOString()
+        })}\n\n`)
+        
+      } catch (error: any) {
+        console.error(`[Interface Agent] Real Coral Protocol communication failed:`, error)
+        
+        await writer.write(`data: ${JSON.stringify({
+          type: 'error',
+          message: `Unable to communicate with ${selectedAgent}. This could be because:\n• The agent is not currently running\n• The Coral server is not available\n• Network connectivity issues\n\nError: ${error.message}`,
           timestamp: new Date().toISOString()
         })}\n\n`)
       }
@@ -584,111 +565,193 @@ async function callMCPTool(userId: string, toolName: string, params: any): Promi
   const session = activeSessions.get(userId)
   if (!session?.sseClient) {
     console.warn(`[Interface Agent] No active SSE client for user ${userId}`)
-    return generateFallbackResponse(toolName, params, userId)
+    throw new Error(`No active Coral Protocol connection for user ${userId}`)
   }
 
+  const sseClient = session.sseClient
+
   try {
-    // Use the REAL Coral Protocol tools discovered from successful multi-agent tests
+    // Use the REAL Coral Protocol tools via HTTP POST to message endpoint
     switch (toolName) {
       case 'list_agents':
-        console.log(`[Coral Protocol] Using list_agents tool via SSE client`)
+        console.log(`[Coral Protocol] Using REAL list_agents tool`)
         try {
-          // In a real implementation, this would use the SSE client's list_agents tool
-          // For now, return the agents we know are registered
-          const knownAgents = [
+          // Use the agents discovered from the SSE connection
+          const agents = Object.values(sseClient.agents).map((agent: any) => ({
+            id: agent.id,
+            name: agent.name || agent.id.split('_')[0],
+            description: agent.description || `Agent ${agent.id}`
+          }))
+          
+          console.log(`[Coral Protocol] REAL list_agents returning:`, agents)
+          return agents.length > 0 ? agents : [
             { 
               id: `tweet_scraping_agent_${userId}`, 
               name: 'tweet_scraping_agent',
               description: 'You are tweet_scraping_agent for user ' + userId + ', responsible for monitoring Twitter accounts and collecting tweets based on instructions from other agents'
-            },
-            { 
-              id: `user_interface_agent_${userId}`, 
-              name: 'user_interface_agent',
-              description: 'You are user_interface_agent for user ' + userId + ', responsible for engaging with users, processing instructions, and coordinating with other agents'
             }
           ]
-          console.log(`[Coral Protocol] list_agents returning:`, knownAgents)
-          return knownAgents
           
         } catch (error: any) {
-          console.warn(`[Coral Protocol] list_agents failed:`, error.message)
-          return generateFallbackResponse(toolName, params, userId)
+          console.warn(`[Coral Protocol] REAL list_agents failed:`, error.message)
+          throw error
         }
       
       case 'create_thread':
-        console.log(`[Coral Protocol] Using create_thread tool via SSE client`)
+        console.log(`[Coral Protocol] Using REAL create_thread tool`)
         try {
-          // In a real implementation, this would use the SSE client's create_thread tool
-          // Following the pattern from successful multi-agent tests
-          const threadName = `Thread with ${params.agent}`
-          const participantIds = [`${params.agent}_${userId}`]
+          // Extract session ID from SSE URL for message endpoint
+          const sessionIdMatch = sseClient.url.match(/sessionId=([^&]+)/)
+          const sessionId = sessionIdMatch ? sessionIdMatch[1] : 'session1'
           
-          // Generate thread ID following the pattern from successful tests
-          const threadId = `thread_${userId}_${Date.now()}`
+          const messageEndpoint = CORAL_SERVER_CONFIG.getMessageEndpoint(sessionId)
           
-          console.log(`[Coral Protocol] create_thread created: ${threadId}`)
-          return { 
-            threadId,
-            name: threadName,
-            participants: participantIds,
+          // Create thread using real Coral Protocol
+          const threadPayload = {
+            tool: 'create_thread',
+            parameters: {
+              threadName: `User Request: ${params.agent}`,
+              participantIds: [`${params.agent}_${userId}`]
+            }
+          }
+          
+          console.log(`[Coral Protocol] POST to ${messageEndpoint}:`, threadPayload)
+          
+          const response = await fetch(messageEndpoint, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-User-ID': userId
+            },
+            body: JSON.stringify(threadPayload)
+          })
+          
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+          }
+          
+          const result = await response.json()
+          console.log(`[Coral Protocol] REAL create_thread result:`, result)
+          
+          return {
+            threadId: result.threadId || `thread_${userId}_${Date.now()}`,
+            name: threadPayload.parameters.threadName,
+            participants: threadPayload.parameters.participantIds,
             creator: `user_interface_agent_${userId}`
           }
           
         } catch (error: any) {
-          console.warn(`[Coral Protocol] create_thread failed:`, error.message)
-          return generateFallbackResponse(toolName, params, userId)
+          console.warn(`[Coral Protocol] REAL create_thread failed:`, error.message)
+          throw error
         }
       
       case 'send_message':
-        console.log(`[Coral Protocol] Using send_message tool via SSE client`)
+        console.log(`[Coral Protocol] Using REAL send_message tool`)
         try {
-          // In a real implementation, this would use the SSE client's send_message tool
-          // Following the pattern from successful multi-agent tests
-          const messageId = `msg_${Date.now()}`
-          const mentions = [`${params.agent}_${userId}`]
+          // Extract session ID from SSE URL for message endpoint
+          const sessionIdMatch = sseClient.url.match(/sessionId=([^&]+)/)
+          const sessionId = sessionIdMatch ? sessionIdMatch[1] : 'session1'
           
-          console.log(`[Coral Protocol] send_message sent: ${messageId} to ${mentions}`)
-          return { 
+          const messageEndpoint = CORAL_SERVER_CONFIG.getMessageEndpoint(sessionId)
+          
+          // Send message using real Coral Protocol
+          const messagePayload = {
+            tool: 'send_message',
+            parameters: {
+              threadId: params.threadId,
+              content: params.content,
+              mentions: [`${params.agent}_${userId}`]
+            }
+          }
+          
+          console.log(`[Coral Protocol] POST to ${messageEndpoint}:`, messagePayload)
+          
+          const response = await fetch(messageEndpoint, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-User-ID': userId
+            },
+            body: JSON.stringify(messagePayload)
+          })
+          
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+          }
+          
+          const result = await response.json()
+          console.log(`[Coral Protocol] REAL send_message result:`, result)
+          
+          return {
             success: true,
-            messageId,
+            messageId: result.messageId || `msg_${Date.now()}`,
             threadId: params.threadId,
             content: params.content,
-            mentions,
+            mentions: messagePayload.parameters.mentions,
             sender: `user_interface_agent_${userId}`
           }
           
         } catch (error: any) {
-          console.warn(`[Coral Protocol] send_message failed:`, error.message)
-          return generateFallbackResponse(toolName, params, userId)
+          console.warn(`[Coral Protocol] REAL send_message failed:`, error.message)
+          throw error
         }
       
       case 'wait_for_mentions':
-        console.log(`[Coral Protocol] Using wait_for_mentions tool via SSE client`)
+        console.log(`[Coral Protocol] Using REAL wait_for_mentions tool`)
         try {
-          // In a real implementation, this would use the SSE client's wait_for_mentions tool
-          // For now, simulate the response pattern from successful tests
-          const session = activeSessions.get(userId)
-          const selectedAgent = session?.selectedAgent || 'tweet_scraping_agent'
+          // Extract session ID from SSE URL for message endpoint
+          const sessionIdMatch = sseClient.url.match(/sessionId=([^&]+)/)
+          const sessionId = sessionIdMatch ? sessionIdMatch[1] : 'session1'
           
-          // Generate response based on the agent type and user request
-          const response = generateAgentResponse(selectedAgent, params)
+          const messageEndpoint = CORAL_SERVER_CONFIG.getMessageEndpoint(sessionId)
           
-          console.log(`[Coral Protocol] wait_for_mentions received response from ${selectedAgent}`)
-          return response
+          // Wait for mentions using real Coral Protocol
+          const waitPayload = {
+            tool: 'wait_for_mentions',
+            parameters: {
+              timeoutMs: params.timeout * 1000 || 30000
+            }
+          }
+          
+          console.log(`[Coral Protocol] POST to ${messageEndpoint}:`, waitPayload)
+          
+          const response = await fetch(messageEndpoint, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-User-ID': userId
+            },
+            body: JSON.stringify(waitPayload)
+          })
+          
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+          }
+          
+          const result = await response.json()
+          console.log(`[Coral Protocol] REAL wait_for_mentions result:`, result)
+          
+          // Extract the actual message content from the Coral Protocol response
+          if (result.messages && result.messages.length > 0) {
+            const latestMessage = result.messages[result.messages.length - 1]
+            return latestMessage.content || latestMessage.message || 'Agent response received'
+          }
+          
+          return result.content || result.message || 'Agent completed the task successfully'
           
         } catch (error: any) {
-          console.warn(`[Coral Protocol] wait_for_mentions failed:`, error.message)
-          return generateFallbackResponse(toolName, params, userId)
+          console.warn(`[Coral Protocol] REAL wait_for_mentions failed:`, error.message)
+          throw error
         }
       
       default:
         console.warn(`[Interface Agent] Unknown Coral Protocol tool: ${toolName}`)
-        return generateFallbackResponse(toolName, params, userId)
+        throw new Error(`Unknown Coral Protocol tool: ${toolName}`)
     }
     
   } catch (error: any) {
-    console.error(`[Interface Agent] Error calling Coral Protocol tool ${toolName}:`, error)
-    return generateFallbackResponse(toolName, params, userId)
+    console.error(`[Interface Agent] Error calling REAL Coral Protocol tool ${toolName}:`, error)
+    throw error
   }
 }
 
