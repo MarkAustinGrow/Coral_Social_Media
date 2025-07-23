@@ -1952,6 +1952,7 @@ If you encounter issues not covered in this troubleshooting guide:
 10. **✅ Centralized Agent Architecture**: All 8 agents migrated to centralized Coral server
 11. **✅ Multi-User Agent System**: Complete user isolation with agent_name_{user_id} pattern
 12. **✅ Professional UI Enhancement**: Updated branding to "8 Interns - Agentic Intelligence Powered by Coral Protocol"
+13. **✅ Mode Switch Architecture**: Revolutionary dual-mode agent system with Coral Protocol and Auto Mode support
 
 ### 🚧 Recent Deployments
 

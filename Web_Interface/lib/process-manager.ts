@@ -91,24 +91,39 @@ const runningProcesses: Record<string, ChildProcess> = {};
 // Map of user IDs to their Coral server processes
 const userCoralServers: Record<string, { port: number, process: ChildProcess }> = {};
 
-// Map of agent names to their file paths
-// Ordered according to the workflow
-const agentFilePaths: Record<string, string> = {
-  'Interface Agent': '0_langchain_interface.py',
-  'Tweet Scraping Agent': '2_langchain_tweet_scraping_agent.py',
-  'Hot Topic Agent': '3.5_langchain_hot_topic_agent_simple.py',
-  'Tweet Research Agent': '3_langchain_tweet_research_agent_multiuser.py',
-  'Blog Writing Agent': '4_langchain_blog_writing_agent.py',
-  'Blog Critique Agent': '4_langchain_blog_critique_agent.py',
-  'Blog to Tweet Agent': '5_langchain_blog_to_tweet_agent.py',
-  'Twitter Posting Agent': '7_langchain_twitter_posting_agent.py',
-  'X Reply Agent': '6_langchain_x_reply_agent_multiuser.py'
+// Agent execution modes
+export type AgentMode = 'coral' | 'auto';
+
+// Map of agent names to their file paths for different modes
+const agentFilePaths: Record<AgentMode, Record<string, string>> = {
+  coral: {
+    'Interface Agent': '0_langchain_interface.py', // Already Coral Protocol
+    'Tweet Scraping Agent': '2_langchain_tweet_scraping_agent_coral.py',
+    'Hot Topic Agent': '3.5_langchain_hot_topic_agent_coral.py',
+    'Tweet Research Agent': '3_langchain_tweet_research_agent_coral.py',
+    'Blog Writing Agent': '4_langchain_blog_writing_agent_coral.py',
+    'Blog Critique Agent': '4_langchain_blog_critique_agent_coral.py',
+    'Blog to Tweet Agent': '5_langchain_blog_to_tweet_agent_coral.py',
+    'Twitter Posting Agent': '7_langchain_twitter_posting_agent_coral.py',
+    'X Reply Agent': '6_langchain_x_reply_agent_coral.py'
+  },
+  auto: {
+    'Interface Agent': '0_langchain_interface.py', // Interface Agent stays the same
+    'Tweet Scraping Agent': '2_langchain_tweet_scraping_agent.py',
+    'Hot Topic Agent': '3.5_langchain_hot_topic_agent_simple.py',
+    'Tweet Research Agent': '3_langchain_tweet_research_agent_multiuser.py',
+    'Blog Writing Agent': '4_langchain_blog_writing_agent.py',
+    'Blog Critique Agent': '4_langchain_blog_critique_agent.py',
+    'Blog to Tweet Agent': '5_langchain_blog_to_tweet_agent.py',
+    'Twitter Posting Agent': '7_langchain_twitter_posting_agent.py',
+    'X Reply Agent': '6_langchain_x_reply_agent_multiuser.py'
+  }
 };
 
 /**
- * Start an agent process with user context
+ * Start an agent process with user context and mode
  */
-export async function startAgent(agentName: string, userId?: string): Promise<boolean> {
+export async function startAgent(agentName: string, userId?: string, mode: AgentMode = 'auto'): Promise<boolean> {
   try {
     // Check if the agent is already running
     if (runningProcesses[agentName]) {
@@ -116,12 +131,14 @@ export async function startAgent(agentName: string, userId?: string): Promise<bo
       return true;
     }
 
-    // Get the agent file path
-    const agentFilePath = agentFilePaths[agentName];
+    // Get the agent file path based on mode
+    const agentFilePath = agentFilePaths[mode][agentName];
     if (!agentFilePath) {
-      console.error(`Unknown agent: ${agentName}`);
+      console.error(`Unknown agent: ${agentName} in mode: ${mode}`);
       return false;
     }
+
+    console.log(`Starting ${agentName} in ${mode} mode using ${agentFilePath}`);
 
     // Get the root directory (where the Python scripts are located)
     const rootDir = path.resolve(process.cwd(), '..');
@@ -222,14 +239,14 @@ export async function startAgent(agentName: string, userId?: string): Promise<bo
 /**
  * Stop an agent process
  */
-export async function stopAgent(agentName: string): Promise<boolean> {
+export async function stopAgent(agentName: string, mode: AgentMode = 'auto'): Promise<boolean> {
   try {
     let processKilled = false;
     
-    // Get the agent file path
-    const agentFilePath = agentFilePaths[agentName];
+    // Get the agent file path based on mode
+    const agentFilePath = agentFilePaths[mode][agentName];
     if (!agentFilePath) {
-      console.error(`Unknown agent: ${agentName}`);
+      console.error(`Unknown agent: ${agentName} in mode: ${mode}`);
       return false;
     }
     
@@ -310,7 +327,7 @@ function delay(ms: number): Promise<void> {
 /**
  * Start all agents with a delay between each startup
  */
-export async function startAllAgents(userId?: string): Promise<boolean> {
+export async function startAllAgents(userId?: string, mode: AgentMode = 'auto'): Promise<boolean> {
   try {
     // Define the order in which agents should be started
     const agentOrder = [
@@ -328,15 +345,15 @@ export async function startAllAgents(userId?: string): Promise<boolean> {
     const results: boolean[] = [];
     
     for (const agentName of agentOrder) {
-      console.log(`Starting agent: ${agentName}${userId ? ` for user ${userId}` : ''}`);
-      const success = await startAgent(agentName, userId);
+      console.log(`Starting agent: ${agentName} in ${mode} mode${userId ? ` for user ${userId}` : ''}`);
+      const success = await startAgent(agentName, userId, mode);
       results.push(success);
       
       // Log the result
       if (success) {
-        console.log(`Successfully started ${agentName}`);
+        console.log(`Successfully started ${agentName} in ${mode} mode`);
       } else {
-        console.error(`Failed to start ${agentName}`);
+        console.error(`Failed to start ${agentName} in ${mode} mode`);
       }
       
       // Wait for 2 seconds before starting the next agent
