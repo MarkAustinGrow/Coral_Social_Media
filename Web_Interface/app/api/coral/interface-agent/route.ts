@@ -77,12 +77,17 @@ export async function POST(request: NextRequest) {
       }, 0)
       
       console.log('📡 [Interface Agent API] Returning SSE stream...')
-      // Return the stream for real-time communication
+      // Return the stream for real-time communication with proper headers
       return new Response(stream.readable, {
         headers: {
           'Content-Type': 'text/event-stream',
           'Cache-Control': 'no-cache',
           'Connection': 'keep-alive',
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+          'X-Accel-Buffering': 'no', // Disable nginx buffering
+          'Transfer-Encoding': 'chunked'
         },
       })
     }
@@ -91,7 +96,14 @@ export async function POST(request: NextRequest) {
     // Handle user response based on conversation state
     if (session.conversationState === 'waiting_for_user') {
       console.log(`[Interface Agent] User response received: ${message}`)
-      await handleUserResponse(userId, session, message)
+      
+      // Handle user response in background to avoid blocking the HTTP response
+      setTimeout(() => {
+        handleUserResponse(userId, session, message).catch(error => {
+          console.error('❌ [Interface Agent API] Error in handleUserResponse:', error)
+        })
+      }, 0)
+      
       return NextResponse.json({ success: true, sent: true })
     }
 
@@ -380,6 +392,9 @@ async function executeConversationFlow(userId: string, session: any, initialMess
     session.conversationState = 'waiting_for_user'
     session.currentStep = 2
     
+    // Keep the stream alive - don't close it here
+    console.log(`[Interface Agent] Conversation flow complete, stream staying open for user interaction`)
+    
   } catch (error: any) {
     console.error(`[Interface Agent] Error in conversation flow:`, error)
     await writer.write(`data: ${JSON.stringify({
@@ -387,6 +402,9 @@ async function executeConversationFlow(userId: string, session: any, initialMess
       message: `Conversation flow error: ${error.message}`,
       timestamp: new Date().toISOString()
     })}\n\n`)
+    
+    // Don't close the stream on error - keep it open for recovery
+    console.log(`[Interface Agent] Error occurred but keeping stream open for recovery`)
   }
 }
 
