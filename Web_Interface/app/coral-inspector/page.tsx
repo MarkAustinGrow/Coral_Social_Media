@@ -351,8 +351,8 @@ export default function CoralInspectorPage() {
     try {
       setToolResponse("🚀 Starting Interface Agent session...\n")
       
-      // Start SSE connection to Interface Agent
-      const response = await fetch('/api/coral/interface-agent', {
+      // Start Interface Agent session with POST request
+      const initResponse = await fetch('/api/coral/interface-agent', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -363,62 +363,78 @@ export default function CoralInspectorPage() {
         })
       })
 
-      if (!response.ok) {
-        const errorText = await response.text()
-        throw new Error(`HTTP ${response.status}: ${response.statusText} - ${errorText}`)
+      if (!initResponse.ok) {
+        const errorText = await initResponse.text()
+        throw new Error(`HTTP ${initResponse.status}: ${initResponse.statusText} - ${errorText}`)
       }
 
-      if (!response.body) {
-        throw new Error('No response stream received')
-      }
+      // Check if we got a stream response (new session) or JSON response (existing session)
+      const contentType = initResponse.headers.get('content-type')
+      
+      if (contentType?.includes('text/event-stream')) {
+        // New session - handle the SSE stream with proper EventSource-like behavior
+        setToolResponse(prev => `${prev}📡 Connected to Interface Agent stream...\n`)
+        
+        if (!initResponse.body) {
+          throw new Error('No response stream received')
+        }
 
-      const reader = response.body.getReader()
-      const decoder = new TextDecoder()
-      let buffer = ''
+        const reader = initResponse.body.getReader()
+        const decoder = new TextDecoder()
+        let buffer = ''
 
-      try {
-        // Read the SSE stream
-        while (true) {
-          const { done, value } = await reader.read()
-          
-          if (done) {
-            console.log('SSE stream completed')
-            break
-          }
-
-          // Decode the chunk and add to buffer
-          const chunk = decoder.decode(value, { stream: true })
-          buffer += chunk
-          
-          // Process complete lines
-          const lines = buffer.split('\n')
-          buffer = lines.pop() || '' // Keep incomplete line in buffer
-
-          for (const line of lines) {
-            if (line.trim() === '') continue // Skip empty lines
+        try {
+          // Read the SSE stream with no timeout - just like EventSource
+          while (true) {
+            const { done, value } = await reader.read()
             
-            if (line.startsWith('data: ')) {
-              try {
-                const jsonStr = line.slice(6).trim()
-                if (jsonStr && jsonStr !== '') {
-                  const data = JSON.parse(jsonStr)
-                  console.log('Received SSE data:', data)
-                  handleInterfaceAgentMessage(data)
+            if (done) {
+              console.log('SSE stream completed')
+              setToolResponse(prev => `${prev}✅ Interface Agent session completed.\n`)
+              break
+            }
+
+            // Decode the chunk and add to buffer
+            const chunk = decoder.decode(value, { stream: true })
+            buffer += chunk
+            
+            // Process complete lines
+            const lines = buffer.split('\n')
+            buffer = lines.pop() || '' // Keep incomplete line in buffer
+
+            for (const line of lines) {
+              if (line.trim() === '') continue // Skip empty lines
+              
+              if (line.startsWith('data: ')) {
+                try {
+                  const jsonStr = line.slice(6).trim()
+                  if (jsonStr && jsonStr !== '') {
+                    const data = JSON.parse(jsonStr)
+                    console.log('Received SSE data:', data)
+                    handleInterfaceAgentMessage(data)
+                  }
+                } catch (e) {
+                  console.error('Error parsing SSE data:', e, 'Line:', line)
+                  setToolResponse(prev => `${prev}[ERROR] Failed to parse: ${line}\n`)
                 }
-              } catch (e) {
-                console.error('Error parsing SSE data:', e, 'Line:', line)
-                setToolResponse(prev => `${prev}[ERROR] Failed to parse: ${line}\n`)
+              } else if (line.trim() !== '') {
+                console.log('Non-SSE line received:', line)
               }
-            } else if (line.trim() !== '') {
-              console.log('Non-SSE line received:', line)
             }
           }
+        } finally {
+          reader.releaseLock()
         }
-      } finally {
-        reader.releaseLock()
+      } else {
+        // Existing session - just got a JSON response
+        const result = await initResponse.json()
+        if (result.success) {
+          setToolResponse(prev => `${prev}✅ Message sent to existing Interface Agent session.\n`)
+        } else {
+          setToolResponse(prev => `${prev}❌ Error: ${result.error}\n`)
+        }
       }
       
-      setToolResponse(prev => `${prev}✅ Interface Agent session completed.\n`)
     } catch (error) {
       console.error('Interface Agent error:', error)
       setToolResponse(prev => `${prev}❌ Error: ${error.message || error}\n`)
