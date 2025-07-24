@@ -39,72 +39,16 @@ import { useState, useEffect, useRef } from "react"
 // Agent modes
 type AgentMode = 'auto' | 'coral'
 
-// Interface Agent - Central hub for all communications
-const INTERFACE_AGENT = {
-  name: "Interface Agent",
-  key: "user_interaction_agent",
-  description: "Central hub for all agent communications",
-  color: "bg-yellow-500"
+// Discovered agent interface
+interface DiscoveredAgent {
+  id: string
+  name: string
+  description: string
+  status: 'online' | 'offline' | 'unknown'
+  lastSeen?: string
+  messageCount: number
+  color?: string
 }
-
-// User's agents configuration including Interface Agent
-const USER_AGENTS = [
-  {
-    name: "Interface Agent",
-    key: "interface_agent",
-    description: "Central hub for all agent communications",
-    color: "bg-yellow-500",
-    isSpecial: true
-  },
-  {
-    name: "World News Agent",
-    key: "world_news_agent",
-    description: "Fetches and generates news topics",
-    color: "bg-blue-500"
-  },
-  {
-    name: "Tweet Scraping Agent", 
-    key: "tweet_scraping_agent",
-    description: "Scrapes and analyzes tweets",
-    color: "bg-green-500"
-  },
-  {
-    name: "Tweet Research Agent",
-    key: "tweet_research_agent", 
-    description: "Researches tweet content and context",
-    color: "bg-purple-500"
-  },
-  {
-    name: "Hot Topic Agent",
-    key: "hot_topic_agent",
-    description: "Identifies trending topics and engagement",
-    color: "bg-orange-500"
-  },
-  {
-    name: "Blog Critique Agent",
-    key: "blog_critique_agent",
-    description: "Reviews and fact-checks blog content",
-    color: "bg-red-500"
-  },
-  {
-    name: "Blog Writing Agent", 
-    key: "blog_writing_agent",
-    description: "Creates blog content from research",
-    color: "bg-indigo-500"
-  },
-  {
-    name: "Blog to Tweet Agent",
-    key: "blog_to_tweet_agent",
-    description: "Converts blogs to tweet threads",
-    color: "bg-pink-500"
-  },
-  {
-    name: "Twitter Posting Agent",
-    key: "twitter_posting_agent",
-    description: "Posts tweets and manages scheduling",
-    color: "bg-cyan-500"
-  }
-]
 
 interface AgentStatus {
   agentId: string
@@ -133,7 +77,7 @@ interface ThreadMessage {
 
 export default function CoralInspectorPage() {
   const { user } = useAuth()
-  const [agentStatuses, setAgentStatuses] = useState<AgentStatus[]>([])
+  const [discoveredAgents, setDiscoveredAgents] = useState<DiscoveredAgent[]>([])
   const [serverStatus, setServerStatus] = useState<CoralServerStatus>({
     connected: false,
     url: "coral.8interns.com",
@@ -164,59 +108,54 @@ export default function CoralInspectorPage() {
   const [showModeHelp, setShowModeHelp] = useState(false)
   const [showProtocolHelp, setShowProtocolHelp] = useState(false)
 
-  // Generate user-specific agent IDs
-  const getUserAgentId = (agentKey: string) => {
-    return user ? `${agentKey}_${user.id}` : agentKey
-  }
-
-  // Fetch user's agent statuses
+  // Fetch agents discovered from Coral server
   const fetchAgentStatuses = async () => {
     if (!user) return
 
     try {
       setLoading(true)
       
-      // Fetch status for each user agent
-      const statuses = await Promise.all(
-        USER_AGENTS.map(async (agent) => {
-          const agentId = getUserAgentId(agent.key)
-          
-          try {
-            // Check if agent is connected to Coral server
-            const response = await fetch(`/api/coral/agent-status?agentId=${agentId}`)
-            const data = await response.json()
-            
-            return {
-              agentId,
-              status: data.connected ? 'online' : 'offline',
-              lastSeen: data.lastSeen,
-              messageCount: data.messageCount || 0,
-              sessionId: data.sessionId
-            } as AgentStatus
-          } catch (error) {
-            return {
-              agentId,
-              status: 'error',
-              lastSeen: undefined,
-              messageCount: 0
-            } as AgentStatus
-          }
-        })
-      )
+      // Query the new discovery-based API
+      const response = await fetch(`/api/coral/agents?userId=${user.id}`)
+      const data = await response.json()
+      
+      if (data.success && data.agents) {
+        // Assign colors to discovered agents
+        const colors = [
+          "bg-blue-500", "bg-green-500", "bg-purple-500", "bg-orange-500",
+          "bg-red-500", "bg-indigo-500", "bg-pink-500", "bg-cyan-500",
+          "bg-yellow-500", "bg-teal-500"
+        ]
+        
+        const agentsWithColors = data.agents.map((agent: any, index: number) => ({
+          ...agent,
+          color: colors[index % colors.length]
+        }))
+        
+        setDiscoveredAgents(agentsWithColors)
 
-      setAgentStatuses(statuses)
-
-      // Update server status
-      const connectedAgents = statuses.filter(s => s.status === 'online').length
-      setServerStatus(prev => ({
-        ...prev,
-        connected: connectedAgents > 0,
-        activeSessions: connectedAgents,
-        totalMessages: statuses.reduce((sum, s) => sum + (s.messageCount || 0), 0)
-      }))
+        // Update server status
+        const connectedAgents = agentsWithColors.filter((a: DiscoveredAgent) => a.status === 'online').length
+        setServerStatus(prev => ({
+          ...prev,
+          connected: connectedAgents > 0,
+          activeSessions: connectedAgents,
+          totalMessages: agentsWithColors.reduce((sum: number, a: DiscoveredAgent) => sum + a.messageCount, 0)
+        }))
+      } else {
+        // No agents discovered
+        setDiscoveredAgents([])
+        setServerStatus(prev => ({
+          ...prev,
+          connected: false,
+          activeSessions: 0,
+          totalMessages: 0
+        }))
+      }
 
     } catch (error) {
       console.error('Failed to fetch agent statuses:', error)
+      setDiscoveredAgents([])
     } finally {
       setLoading(false)
     }
