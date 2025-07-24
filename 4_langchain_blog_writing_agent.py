@@ -654,18 +654,82 @@ async def main():
     # Combine Coral tools with agent-specific tools
     tools = coral_tools + agent_tools
     
-    # Create and run the agent
+    # Create the agent executor (but don't invoke it continuously)
     agent_executor = await create_blog_writing_agent(client, tools, agent_tools)
     
-    # Use the same main loop as other agents
+    # OPTIMIZED MAIN LOOP - Only call OpenAI when there's actual work to do
+    last_blog_time = 0
+    blog_interval = 1800  # 30 minutes between blog posts
+    
     while True:
         try:
-            logger.info("Starting new agent invocation")
-            log_to_database("info", "Starting new agent invocation cycle")
-            await agent_executor.ainvoke({"agent_scratchpad": []})
-            logger.info("Completed agent invocation, restarting loop")
-            log_to_database("info", "Completed agent invocation cycle")
-            await asyncio.sleep(1)
+            logger.info("Waiting for mentions...")
+            log_to_database("info", "Waiting for mentions from other agents")
+            
+            # Call wait_for_mentions directly through MCP (NO OpenAI API call)
+            try:
+                wait_for_mentions_tool = next((tool for tool in coral_tools if tool.name == "wait_for_mentions"), None)
+                if wait_for_mentions_tool:
+                    # Wait for mentions without invoking OpenAI
+                    mention_result = await wait_for_mentions_tool.ainvoke({"timeoutMs": 8000})
+                    
+                    if mention_result and "mentions" in mention_result and mention_result["mentions"]:
+                        # We received mentions - NOW invoke OpenAI to process them
+                        logger.info("Received mentions, processing with OpenAI...")
+                        log_to_database("info", "Received mentions, invoking agent executor")
+                        
+                        # Only NOW do we call OpenAI API
+                        await agent_executor.ainvoke({
+                            "agent_scratchpad": [],
+                            "mentions": mention_result["mentions"]  # Pass the mentions to the agent
+                        })
+                        
+                        logger.info("Completed processing mentions")
+                        log_to_database("info", "Completed processing mentions")
+                    else:
+                        # No mentions received, check if it's time for scheduled blog writing
+                        logger.info("No mentions received, checking scheduled blog writing...")
+                        
+                        current_time = time.time()
+                        time_since_last_blog = current_time - last_blog_time
+                        
+                        if time_since_last_blog >= blog_interval:
+                            # Time for scheduled blog writing - check if we have engagement metrics
+                            try:
+                                metrics_result = get_engagement_metrics.invoke({"limit": 1})
+                                if metrics_result.get("count", 0) > 0:
+                                    # We have engagement metrics - NOW invoke OpenAI for blog writing
+                                    logger.info("Time for scheduled blog writing, processing with OpenAI...")
+                                    log_to_database("info", "Time for scheduled blog writing, invoking agent executor")
+                                    
+                                    await agent_executor.ainvoke({
+                                        "agent_scratchpad": [],
+                                        "scheduled_task": "blog_writing"  # Indicate this is scheduled work
+                                    })
+                                    
+                                    last_blog_time = current_time
+                                    logger.info("Completed scheduled blog writing")
+                                    log_to_database("info", "Completed scheduled blog writing")
+                                else:
+                                    logger.info("No engagement metrics available for blog writing")
+                                    await asyncio.sleep(300)  # Wait 5 minutes before checking again
+                            except Exception as metrics_error:
+                                logger.error(f"Error checking engagement metrics: {str(metrics_error)}")
+                                await asyncio.sleep(60)
+                        else:
+                            # Not time yet, just continue waiting (no OpenAI call)
+                            time_remaining = blog_interval - time_since_last_blog
+                            logger.info(f"Not time for blog writing yet, {time_remaining:.0f}s remaining...")
+                            await asyncio.sleep(min(60, time_remaining))  # Wait up to 1 minute
+                else:
+                    logger.error("wait_for_mentions tool not found in coral tools")
+                    await asyncio.sleep(10)
+                    
+            except Exception as tool_error:
+                logger.error(f"Error calling wait_for_mentions: {str(tool_error)}")
+                log_to_database("error", f"Error calling wait_for_mentions: {str(tool_error)}")
+                await asyncio.sleep(5)
+                
         except Exception as e:
             logger.error(f"Error in agent loop: {str(e)}")
             log_to_database("error", f"Error in agent loop: {str(e)}")
