@@ -123,7 +123,7 @@ const agentFilePaths: Record<AgentMode, Record<string, string>> = {
 /**
  * Start an agent process with user context and mode
  */
-export async function startAgent(agentName: string, userId?: string, mode: AgentMode = 'auto'): Promise<boolean> {
+export async function startAgent(agentName: string, userId?: string, mode: AgentMode = 'coral'): Promise<boolean> {
   try {
     // Check if the agent is already running
     if (runningProcesses[agentName]) {
@@ -239,7 +239,7 @@ export async function startAgent(agentName: string, userId?: string, mode: Agent
 /**
  * Stop an agent process
  */
-export async function stopAgent(agentName: string, mode: AgentMode = 'auto'): Promise<boolean> {
+export async function stopAgent(agentName: string, mode: AgentMode = 'coral'): Promise<boolean> {
   try {
     let processKilled = false;
     
@@ -327,7 +327,7 @@ function delay(ms: number): Promise<void> {
 /**
  * Start all agents with a delay between each startup
  */
-export async function startAllAgents(userId?: string, mode: AgentMode = 'auto'): Promise<boolean> {
+export async function startAllAgents(userId?: string, mode: AgentMode = 'coral'): Promise<boolean> {
   try {
     // Define the order in which agents should be started
     const agentOrder = [
