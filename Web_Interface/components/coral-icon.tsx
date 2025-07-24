@@ -1,7 +1,6 @@
 "use client"
 
 import { useTheme } from "next-themes"
-import Image from "next/image"
 import { useEffect, useState } from "react"
 
 interface CoralIconProps {
@@ -27,13 +26,11 @@ export function CoralIcon({ className = "h-5 w-5" }: CoralIconProps) {
   const altText = `Coral ${isDark ? "Dark" : "Light"} Icon`
 
   return (
-    <Image
+    <img
       src={iconSrc}
       alt={altText}
-      width={20}
-      height={20}
       className={className}
-      priority
+      style={{ width: '20px', height: '20px' }}
     />
   )
 }
