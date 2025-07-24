@@ -46,7 +46,7 @@ base_url = "http://coral.8interns.com/devmode/exampleApplication/privkey/session
 params = {
     "waitForAgents": 2,
     "agentId": f"tweet_research_agent_{user_id}",
-    "agentDescription": f"You are tweet_research_agent for user {user_id}, responsible for analyzing tweets, extracting insights, and storing them for future reference"
+    "agentDescription": f"You are tweet_research_agent for user {user_id}, responsible for analyzing tweets, extracting insights, and storing them for future reference based on instructions from other agents"
 }
 query_string = urllib.parse.urlencode(params)
 MCP_SERVER_URL = f"{base_url}?{query_string}"
@@ -812,35 +812,48 @@ async def main():
             temperature=0.7
         )
         
-        # Create the prompt template
+        # Coral Protocol version - listens for mentions instead of autonomous execution
         prompt = ChatPromptTemplate.from_messages([
-            ("system", """You are an agent interacting with the tools from Coral Server and having your own tools. Your task is to perform any instructions coming from any agent.
-
-Follow these steps in order:
-1. Call wait_for_mentions from coral tools (timeoutMs: 8000) to receive mentions from other agents.
-2. When you receive a mention, keep the thread ID and the sender ID.
-3. Take 2 seconds to think about the content (instruction) of the message and check only from the list of your tools available for you to action.
-4. Check the tool schema and make a plan in steps for the task you want to perform.
-5. Only call the tools you need to perform for each step of the plan to complete the instruction in the content.
-6. Take 3 seconds and think about the content and see if you have executed the instruction to the best of your ability and the tools. Make this your response as "answer".
-7. Use `send_message` from coral tools to send a message in the same thread ID to the sender Id you received the mention from, with content: "answer".
-8. If any error occurs, use `send_message` to send a message in the same thread ID to the sender Id you received the mention from, with content: "error".
-9. Always respond back to the sender agent even if you have no answer or error.
-10. Wait for 2 seconds and repeat the process from step 1.
-
-If no mentions are received (timeout), you should:
-1. Fetch unanalyzed tweets from the database using fetch_tweets_from_supabase
-2. For each tweet:
-   a. Generate a focused research question using generate_research_question
-   b. Use Perplexity to conduct in-depth analysis using analyze_tweet_perplexity
-   c. Store the analysis in Qdrant vector database using store_analysis_qdrant
-   d. Mark tweets as analyzed using mark_tweet_as_analyzed
-3. Wait for 5 minutes before processing the next batch
-
-Your goal is to analyze tweets and extract deep insights for the current user's research memory.
-
-These are the list of all tools (Coral + your tools): {tools}
-These are the list of your tools: {agent_tools_description}"""),
+            ("system", f"""You are a Tweet Research Agent operating in CORAL PROTOCOL mode for user {user_id}.
+            
+            IMPORTANT: You are operating in MULTI-USER mode. Each user has their own research memory and tweet data.
+            You will only analyze tweets and store insights for the current user's data.
+            
+            CORAL PROTOCOL BEHAVIOR:
+            You listen for instructions from other agents and respond via the Coral Protocol.
+            
+            Follow these steps in order:
+            1. Call `wait_for_mentions` from coral tools (timeoutMs: 30000) to receive mentions from other agents.
+            2. When you receive a mention, keep the thread ID and the sender ID.
+            3. Parse the instruction in the message content. Look for requests like:
+               - "analyze tweets for research"
+               - "research tweet insights"
+               - "extract deep insights from tweets"
+               - "analyze tweet content"
+               - "store tweet analysis"
+            4. Based on the instruction, use your tools to:
+               a. Fetch unanalyzed tweets using `fetch_tweets_from_supabase`
+               b. For each tweet, generate a focused research question using `generate_research_question`
+               c. Use Perplexity to conduct in-depth analysis using `analyze_tweet_perplexity`
+               d. Store the analysis in Qdrant vector database using `store_analysis_qdrant`
+               e. Mark tweets as analyzed using `mark_tweet_as_analyzed`
+            5. Prepare a response with the results (number of tweets analyzed, insights generated, etc.)
+            6. Use `send_message` from coral tools to send your response back to the sender in the same thread.
+            7. Always respond back to the sender agent, even if there's an error.
+            8. Wait for 2 seconds and repeat the process from step 1.
+            
+            If no mentions are received (timeout), simply continue waiting - do NOT perform autonomous actions.
+            
+            RESPONSE FORMAT:
+            Always format your responses clearly:
+            - Success: "Analyzed X tweets and generated Y insights. Research questions focused on [topics]. Stored in research memory for user."
+            - Error: "Unable to analyze tweets: [reason]. Please check data availability or try again later."
+            - No tweets: "No unanalyzed tweets available for research. All tweets are up to date."
+            
+            Always respect user data isolation and handle cases where no tweets are available gracefully.
+            
+            Available Coral tools: {{tools}}
+            Available agent tools: {{agent_tools_description}}"""),
             ("placeholder", "{agent_scratchpad}")
         ])
         
@@ -848,87 +861,17 @@ These are the list of your tools: {agent_tools_description}"""),
         agent = create_tool_calling_agent(model, tools, prompt)
         agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
         
-        # OPTIMIZED MAIN LOOP - Only call OpenAI when there's actual work to do
-        last_research_time = 0
-        research_interval = 300  # 5 minutes between research batches
+        logger.info("Starting Tweet Research Agent (Coral Protocol) execution")
+        log_to_database("info", "Starting Tweet Research Agent (Coral Protocol) execution")
         
-        while True:
-            try:
-                logger.info("Waiting for mentions...")
-                log_to_database("info", "Waiting for mentions from other agents")
-                
-                # Call wait_for_mentions directly through MCP (NO OpenAI API call)
-                try:
-                    wait_for_mentions_tool = next((tool for tool in coral_tools if tool.name == "wait_for_mentions"), None)
-                    if wait_for_mentions_tool:
-                        # Wait for mentions without invoking OpenAI
-                        mention_result = await wait_for_mentions_tool.ainvoke({"timeoutMs": 8000})
-                        
-                        if mention_result and "mentions" in mention_result and mention_result["mentions"]:
-                            # We received mentions - NOW invoke OpenAI to process them
-                            logger.info("Received mentions, processing with OpenAI...")
-                            log_to_database("info", "Received mentions, invoking agent executor")
-                            
-                            # Only NOW do we call OpenAI API
-                            await agent_executor.ainvoke({
-                                "agent_scratchpad": [],
-                                "mentions": mention_result["mentions"],  # Pass the mentions to the agent
-                                "tools": get_tools_description(tools),
-                                "agent_tools_description": get_tools_description(agent_tools)
-                            })
-                            
-                            logger.info("Completed processing mentions")
-                            log_to_database("info", "Completed processing mentions")
-                        else:
-                            # No mentions received, check if it's time for scheduled research
-                            logger.info("No mentions received, checking scheduled research...")
-                            
-                            current_time = time.time()
-                            time_since_last_research = current_time - last_research_time
-                            
-                            if time_since_last_research >= research_interval:
-                                # Time for scheduled research - check if we have unanalyzed tweets
-                                try:
-                                    tweets_result = fetch_tweets_from_supabase.invoke({"limit": 1, "analyzed": False})
-                                    if tweets_result.get("count", 0) > 0:
-                                        # We have unanalyzed tweets - NOW invoke OpenAI for research
-                                        logger.info("Time for scheduled tweet research, processing with OpenAI...")
-                                        log_to_database("info", "Time for scheduled tweet research, invoking agent executor")
-                                        
-                                        await agent_executor.ainvoke({
-                                            "agent_scratchpad": [],
-                                            "scheduled_task": "tweet_research",  # Indicate this is scheduled work
-                                            "tools": get_tools_description(tools),
-                                            "agent_tools_description": get_tools_description(agent_tools)
-                                        })
-                                        
-                                        last_research_time = current_time
-                                        logger.info("Completed scheduled tweet research")
-                                        log_to_database("info", "Completed scheduled tweet research")
-                                    else:
-                                        logger.info("No unanalyzed tweets available for research")
-                                        await asyncio.sleep(300)  # Wait 5 minutes before checking again
-                                except Exception as research_error:
-                                    logger.error(f"Error checking unanalyzed tweets: {str(research_error)}")
-                                    await asyncio.sleep(60)
-                            else:
-                                # Not time yet, just continue waiting (no OpenAI call)
-                                time_remaining = research_interval - time_since_last_research
-                                logger.info(f"Not time for research yet, {time_remaining:.0f}s remaining...")
-                                await asyncio.sleep(min(60, time_remaining))  # Wait up to 1 minute
-                    else:
-                        logger.error("wait_for_mentions tool not found in coral tools")
-                        await asyncio.sleep(10)
-                        
-                except Exception as tool_error:
-                    logger.error(f"Error calling wait_for_mentions: {str(tool_error)}")
-                    log_to_database("error", f"Error calling wait_for_mentions: {str(tool_error)}")
-                    await asyncio.sleep(5)
-                
-            except Exception as e:
-                logger.error(f"Error in agent execution: {str(e)}")
-                log_to_database("error", f"Error in agent execution: {str(e)}")
-                await asyncio.sleep(60)  # Wait 1 minute before retrying
+        # Single execution like the Interface Agent - let the agent handle its own conversation flow
+        await agent_executor.ainvoke({
+            "tools": get_tools_description(tools),
+            "agent_tools_description": get_tools_description(agent_tools)
+        })
+        
+        logger.info("Tweet Research Agent (Coral Protocol) execution completed")
+        log_to_database("info", "Tweet Research Agent (Coral Protocol) execution completed")
                 
     except Exception as e:
         logger.error(f"Fatal error in Tweet Research Agent: {str(e)}")

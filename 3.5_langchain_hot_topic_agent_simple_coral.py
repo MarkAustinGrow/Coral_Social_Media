@@ -39,7 +39,7 @@ base_url = "http://coral.8interns.com/devmode/exampleApplication/privkey/session
 params = {
     "waitForAgents": 2,
     "agentId": f"hot_topic_agent_{user_id}",
-    "agentDescription": f"You are hot_topic_agent for user {user_id}, responsible for analyzing tweets for engagement and identifying trending topics"
+    "agentDescription": f"You are hot_topic_agent for user {user_id}, responsible for analyzing tweets for engagement and identifying trending topics based on instructions from other agents"
 }
 query_string = urllib.parse.urlencode(params)
 MCP_SERVER_URL = f"{base_url}?{query_string}"
@@ -398,37 +398,50 @@ async def create_hot_topic_agent(client, tools, agent_tools):
     tools_description = get_tools_description(tools)
     agent_tools_description = get_tools_description(agent_tools)
     
-    # Use a simpler prompt similar to the World News Agent
+    # Coral Protocol version - listens for mentions instead of autonomous execution
     prompt = ChatPromptTemplate.from_messages([
         (
             "system",
-            f"""You are an agent interacting with the tools from Coral Server and having your own tools. Your task is to perform any instructions coming from any agent.
+            f"""You are a Hot Topic Agent operating in CORAL PROTOCOL mode for user {user_id}.
+            
+            IMPORTANT: You are operating in MULTI-USER mode. Each user has their own engagement metrics and tweet data.
+            You will only analyze tweets and track engagement for the current user's data.
+            
+            CORAL PROTOCOL BEHAVIOR:
+            You listen for instructions from other agents and respond via the Coral Protocol.
             
             Follow these steps in order:
-            1. Call wait_for_mentions from coral tools (timeoutMs: 8000) to receive mentions from other agents.
+            1. Call `wait_for_mentions` from coral tools (timeoutMs: 30000) to receive mentions from other agents.
             2. When you receive a mention, keep the thread ID and the sender ID.
-            3. Take 2 seconds to think about the content (instruction) of the message and check only from the list of your tools available for you to action.
-            4. Check the tool schema and make a plan in steps for the task you want to perform.
-            5. Only call the tools you need to perform for each step of the plan to complete the instruction in the content.
-            6. Take 3 seconds and think about the content and see if you have executed the instruction to the best of your ability and the tools. Make this your response as "answer".
-            7. Use `send_message` from coral tools to send a message in the same thread ID to the sender Id you received the mention from, with content: "answer".
-            8. If any error occurs, use `send_message` to send a message in the same thread ID to the sender Id you received the mention from, with content: "error".
-            9. Always respond back to the sender agent even if you have no answer or error.
-            10. Wait for 2 seconds and repeat the process from step 1.
+            3. Parse the instruction in the message content. Look for requests like:
+               - "analyze tweets for hot topics"
+               - "process engagement metrics"
+               - "identify trending topics"
+               - "analyze tweet engagement"
+               - "update topic metrics"
+            4. Based on the instruction, use your tools to:
+               a. Get unprocessed tweets using `get_unprocessed_tweets`
+               b. For each tweet, calculate engagement score (likes + retweets*2 + replies)
+               c. Analyze tweets for topics using `analyze_tweet_for_topics`
+               d. Update engagement metrics using `update_engagement_metrics`
+               e. Mark tweets as processed using `mark_tweets_as_processed`
+            5. Prepare a response with the results (topics found, engagement scores, number of tweets processed, etc.)
+            6. Use `send_message` from coral tools to send your response back to the sender in the same thread.
+            7. Always respond back to the sender agent, even if there's an error.
+            8. Wait for 2 seconds and repeat the process from step 1.
             
-            If no mentions are received (timeout), you should:
-            1. Get unprocessed tweets using get_unprocessed_tweets (limit=5)
-            2. For each tweet:
-               a. Calculate engagement score (likes + retweets*2 + replies)
-               b. Analyze the tweet for topics using analyze_tweet_for_topics
-               c. Update engagement metrics using update_engagement_metrics
-               d. Mark the tweet as processed using mark_tweets_as_processed
-            3. Wait for 10 minutes before processing the next batch
+            If no mentions are received (timeout), simply continue waiting - do NOT perform autonomous actions.
             
-            Your goal is to identify trending topics and track engagement metrics for the current user's tweets.
+            RESPONSE FORMAT:
+            Always format your responses clearly:
+            - Success: "Analyzed X tweets and identified Y topics. Top topics: [topic1, topic2]. Updated engagement metrics for user."
+            - Error: "Unable to analyze tweets: [reason]. Please check data availability or try again later."
+            - No tweets: "No unprocessed tweets available for analysis. All tweets are up to date."
             
-            These are the list of all tools (Coral + your tools): {tools_description}
-            These are the list of your tools: {agent_tools_description}"""
+            Always respect user data isolation and handle cases where no tweets are available gracefully.
+            
+            Available Coral tools: {tools_description}
+            Available agent tools: {agent_tools_description}"""
         ),
         ("placeholder", "{agent_scratchpad}")
     ])
@@ -445,116 +458,88 @@ async def create_hot_topic_agent(client, tools, agent_tools):
     return AgentExecutor(agent=agent, tools=tools, verbose=True)
 
 async def main():
-    # Use the new MCP client pattern (langchain-mcp-adapters 0.1.0+)
-    client = MultiServerMCPClient(
-        connections={
-            "coral": {
-                "transport": "sse",
-                "url": MCP_SERVER_URL,
-                "headers": {"X-User-ID": user_id},  # CRITICAL: User isolation header
-                "timeout": 300,
-                "sse_read_timeout": 300,
-            }
-        }
-    )
+    # Check if user has context before starting
+    user_id = amu.get_user_context()
     
-    logger.info(f"Connected to MCP server at {MCP_SERVER_URL}")
-    log_to_database("info", f"Hot Topic Agent started and connected to MCP server")
+    if not user_id:
+        logger.error("No user context available. Cannot start Hot Topic Agent.")
+        log_to_database("error", "No user context available. Cannot start Hot Topic Agent.")
+        return
     
-    # Define agent-specific tools
-    agent_tools = [
-        get_unprocessed_tweets,
-        analyze_tweet_for_topics,
-        update_engagement_metrics,
-        mark_tweets_as_processed
-    ]
+    logger.info(f"Starting Hot Topic Agent (Coral Protocol) for user: {user_id}")
+    log_to_database("info", f"Hot Topic Agent (Coral Protocol) starting for user: {user_id}")
     
-    # Get Coral tools using the new pattern
-    coral_tools = client.get_tools()
-    
-    # Combine Coral tools with agent-specific tools
-    tools = coral_tools + agent_tools
-    
-    # Create the agent executor (but don't invoke it continuously)
-    agent_executor = await create_hot_topic_agent(client, tools, agent_tools)
-    
-    # OPTIMIZED MAIN LOOP - Only call OpenAI when there's actual work to do
-    last_processing_time = 0
-    processing_interval = 600  # 10 minutes between processing batches
-    
-    while True:
+    max_retries = 3
+    for attempt in range(max_retries):
         try:
-            logger.info("Waiting for mentions...")
-            log_to_database("info", "Waiting for mentions from other agents")
+            logger.info(f"Connecting to SSE endpoint: {MCP_SERVER_URL}")
             
-            # Call wait_for_mentions directly through MCP (NO OpenAI API call)
-            try:
-                wait_for_mentions_tool = next((tool for tool in coral_tools if tool.name == "wait_for_mentions"), None)
-                if wait_for_mentions_tool:
-                    # Wait for mentions without invoking OpenAI
-                    mention_result = await wait_for_mentions_tool.ainvoke({"timeoutMs": 8000})
-                    
-                    if mention_result and "mentions" in mention_result and mention_result["mentions"]:
-                        # We received mentions - NOW invoke OpenAI to process them
-                        logger.info("Received mentions, processing with OpenAI...")
-                        log_to_database("info", "Received mentions, invoking agent executor")
-                        
-                        # Only NOW do we call OpenAI API
-                        await agent_executor.ainvoke({
-                            "agent_scratchpad": [],
-                            "mentions": mention_result["mentions"]  # Pass the mentions to the agent
-                        })
-                        
-                        logger.info("Completed processing mentions")
-                        log_to_database("info", "Completed processing mentions")
-                    else:
-                        # No mentions received, check if it's time for scheduled processing
-                        logger.info("No mentions received, checking scheduled processing...")
-                        
-                        current_time = time.time()
-                        time_since_last_processing = current_time - last_processing_time
-                        
-                        if time_since_last_processing >= processing_interval:
-                            # Time for scheduled processing - check if we have unprocessed tweets
-                            try:
-                                tweets_result = get_unprocessed_tweets.invoke({"limit": 1})
-                                if tweets_result.get("count", 0) > 0:
-                                    # We have unprocessed tweets - NOW invoke OpenAI for processing
-                                    logger.info("Time for scheduled tweet processing, processing with OpenAI...")
-                                    log_to_database("info", "Time for scheduled tweet processing, invoking agent executor")
-                                    
-                                    await agent_executor.ainvoke({
-                                        "agent_scratchpad": [],
-                                        "scheduled_task": "tweet_processing"  # Indicate this is scheduled work
-                                    })
-                                    
-                                    last_processing_time = current_time
-                                    logger.info("Completed scheduled tweet processing")
-                                    log_to_database("info", "Completed scheduled tweet processing")
-                                else:
-                                    logger.info("No unprocessed tweets available for processing")
-                                    await asyncio.sleep(300)  # Wait 5 minutes before checking again
-                            except Exception as processing_error:
-                                logger.error(f"Error checking unprocessed tweets: {str(processing_error)}")
-                                await asyncio.sleep(60)
-                        else:
-                            # Not time yet, just continue waiting (no OpenAI call)
-                            time_remaining = processing_interval - time_since_last_processing
-                            logger.info(f"Not time for processing yet, {time_remaining:.0f}s remaining...")
-                            await asyncio.sleep(min(60, time_remaining))  # Wait up to 1 minute
-                else:
-                    logger.error("wait_for_mentions tool not found in coral tools")
-                    await asyncio.sleep(10)
-                    
-            except Exception as tool_error:
-                logger.error(f"Error calling wait_for_mentions: {str(tool_error)}")
-                log_to_database("error", f"Error calling wait_for_mentions: {str(tool_error)}")
-                await asyncio.sleep(5)
+            # Use the new MCP client pattern with user context (langchain-mcp-adapters 0.1.0+)
+            async with MultiServerMCPClient(
+                connections={
+                    "coral": {
+                        "transport": "sse",
+                        "url": MCP_SERVER_URL,
+                        "headers": {"X-User-ID": user_id},  # CRITICAL: User isolation header
+                        "timeout": 300,
+                        "sse_read_timeout": 300,
+                    }
+                }
+            ) as client:
+                logger.info(f"Connected to MCP server at {MCP_SERVER_URL}")
+                log_to_database("info", f"Hot Topic Agent (Coral Protocol) connected to MCP server for user {user_id}")
                 
+                # Define agent-specific tools
+                agent_tools = [
+                    get_unprocessed_tweets,
+                    analyze_tweet_for_topics,
+                    update_engagement_metrics,
+                    mark_tweets_as_processed
+                ]
+                
+                # Get Coral tools using the new pattern
+                coral_tools = client.get_tools()
+                logger.info(f"Available Coral tools: {[tool.name for tool in coral_tools]}")
+                log_to_database("info", f"Available Coral tools: {[tool.name for tool in coral_tools]}")
+                
+                # Combine Coral tools with agent-specific tools
+                tools = coral_tools + agent_tools
+                
+                logger.info("Starting Hot Topic Agent (Coral Protocol) execution")
+                log_to_database("info", "Starting Hot Topic Agent (Coral Protocol) execution")
+                
+                # Create and run the agent
+                agent_executor = await create_hot_topic_agent(client, tools, agent_tools)
+                
+                # Single execution like the Interface Agent - let the agent handle its own conversation flow
+                await agent_executor.ainvoke({})
+                
+                logger.info("Hot Topic Agent (Coral Protocol) execution completed")
+                log_to_database("info", "Hot Topic Agent (Coral Protocol) execution completed")
+                
+                # Break out of retry loop on successful execution
+                break
+                        
+        except ClosedResourceError as e:
+            logger.error(f"ClosedResourceError on attempt {attempt + 1}: {e}")
+            log_to_database("error", f"ClosedResourceError on attempt {attempt + 1}: {e}")
+            if attempt < max_retries - 1:
+                logger.info("Retrying in 5 seconds...")
+                await asyncio.sleep(5)
+                continue
+            else:
+                logger.error("Max retries reached. Exiting.")
+                raise
         except Exception as e:
-            logger.error(f"Error in agent loop: {str(e)}")
-            log_to_database("error", f"Error in agent loop: {str(e)}")
-            await asyncio.sleep(5)
+            logger.error(f"Unexpected error on attempt {attempt + 1}: {e}")
+            log_to_database("error", f"Unexpected error on attempt {attempt + 1}: {e}")
+            if attempt < max_retries - 1:
+                logger.info("Retrying in 5 seconds...")
+                await asyncio.sleep(5)
+                continue
+            else:
+                logger.error("Max retries reached. Exiting.")
+                raise
 
 if __name__ == "__main__":
     # Mark agent as started (use both old and new for compatibility)

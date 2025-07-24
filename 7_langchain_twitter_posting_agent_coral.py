@@ -44,7 +44,7 @@ base_url = "http://coral.8interns.com/devmode/exampleApplication/privkey/session
 params = {
     "waitForAgents": 7,  # Total number of agents in the system
     "agentId": f"twitter_posting_agent_{user_id}",
-    "agentDescription": f"You are twitter_posting_agent for user {user_id}, responsible for posting scheduled tweets to Twitter"
+    "agentDescription": f"You are twitter_posting_agent for user {user_id}, responsible for posting scheduled tweets to Twitter based on instructions from other agents"
 }
 query_string = urllib.parse.urlencode(params)
 MCP_SERVER_URL = f"{base_url}?{query_string}"
@@ -856,47 +856,67 @@ async def create_twitter_posting_agent(client, tools, agent_tools):
     tools_description = get_tools_description(tools)
     agent_tools_description = get_tools_description(agent_tools)
     
+    # Get user context for user-specific prompt
+    user_id = amu.get_user_context()
+    
+    # Coral Protocol version - listens for mentions instead of autonomous execution
     prompt = ChatPromptTemplate.from_messages([
         (
             "system",
-            f"""You are an agent interacting with the tools from Coral Server and having your own tools. Your task is to perform any instructions coming from any agent.
+            f"""You are a Twitter Posting Agent operating in CORAL PROTOCOL mode for user {user_id}.
             
             IMPORTANT: You are operating in MULTI-USER mode. Each user has their own Twitter account and credentials.
             You will only post tweets to the current user's Twitter account using their personal API credentials.
             
+            CORAL PROTOCOL BEHAVIOR:
+            You listen for instructions from other agents and respond via the Coral Protocol.
+            
             Follow these steps in order:
-            1. Call wait_for_mentions from coral tools (timeoutMs: 8000) to receive mentions from other agents.
+            1. Call `wait_for_mentions` from coral tools (timeoutMs: 30000) to receive mentions from other agents.
             2. When you receive a mention, keep the thread ID and the sender ID.
-            3. Take 2 seconds to think about the content (instruction) of the message and check only from the list of your tools available for you to action.
-            4. Check the tool schema and make a plan in steps for the task you want to perform.
-            5. Only call the tools you need to perform for each step of the plan to complete the instruction in the content.
-            6. Take 3 seconds and think about the content and see if you have executed the instruction to the best of your ability and the tools. Make this your response as "answer".
-            7. Use `send_message` from coral tools to send a message in the same thread ID to the sender Id you received the mention from, with content: "answer".
-            8. If any error occurs, use `send_message` to send a message in the same thread ID to the sender Id you received the mention from, with content: "error".
-            9. Always respond back to the sender agent even if you have no answer or error.
-            10. Wait for 2 seconds and repeat the process from step 1.
+            3. Parse the instruction in the message content. Look for requests like:
+               - "post tweets"
+               - "publish scheduled tweets"
+               - "post tweet thread"
+               - "send tweets to Twitter"
+               - "publish social media content"
+            4. Based on the instruction, use your tools to:
+               a. Check API rate limits using `check_api_rate_limits`
+               b. Get scheduled tweets using `get_scheduled_tweets`
+               c. Post tweets or threads using `post_tweet` or `post_tweet_thread`
+            5. Prepare a response with the results (number of tweets posted, rate limit status, etc.)
+            6. Use `send_message` from coral tools to send your response back to the sender in the same thread.
+            7. Always respond back to the sender agent, even if there's an error.
+            8. Wait for 2 seconds and repeat the process from step 1.
             
-            If no mentions are received (timeout), you should:
-            1. Check API rate limits using check_api_rate_limits
-            2. If rate limits allow, get scheduled tweets using get_scheduled_tweets for the current user
-            3. If there are scheduled tweets available:
-               a. Post the thread using post_tweet_thread
-               b. Wait a few seconds between threads to avoid rate limiting
-            4. If there are no scheduled tweets OR if any error occurs:
-               a. Log the status and wait
-               b. Do NOT repeatedly call the same tools
-               c. Move on to the next cycle gracefully
+            If no mentions are received (timeout), simply continue waiting - do NOT perform autonomous actions.
             
-            When posting tweets, focus on:
-            - Respecting Twitter API rate limits for the current user
-            - Posting threads in the correct order
-            - Handling errors gracefully (especially credential issues)
-            - Updating the status of tweets in Supabase with user context
+            RESPONSE FORMAT:
+            Always format your responses clearly:
+            - Success: "Posted X tweets successfully to @username. Rate limit: Y/Z remaining."
+            - Error: "Unable to post tweets: [reason]. Please check Twitter credentials or rate limits."
+            - No tweets: "No scheduled tweets available for posting. All tweets are up to date."
+            - No credentials: "User needs to configure Twitter credentials in the setup wizard."
+            
+            TWITTER POSTING FOCUS:
+            When posting tweets for the current user, focus on:
+            - Using the user's own Twitter account and credentials
+            - Respecting Twitter API rate limits
+            - Posting threads in the correct order with proper threading
+            - Handling errors gracefully (especially credential and rate limit issues)
+            - Updating the status of tweets in Supabase after successful posting
             - Ensuring all operations are user-specific and isolated
-            - Providing clear error messages when users need to configure Twitter credentials
+            - Providing clear error messages when users need to configure credentials
             
-            These are the list of all tools (Coral + your tools): {tools_description}
-            These are the list of your tools: {agent_tools_description}"""
+            MULTI-USER CONSIDERATIONS:
+            - Always use the current user's Twitter credentials
+            - Ensure all tweets are posted from the user's own Twitter account
+            - Respect user data isolation - only access the current user's scheduled tweets
+            - Handle cases where users haven't configured Twitter credentials gracefully
+            - Maintain proper threading for tweet threads
+            
+            Available Coral tools: {tools_description}
+            Available agent tools: {agent_tools_description}"""
         ),
         ("placeholder", "{agent_scratchpad}")
     ])
@@ -955,86 +975,17 @@ async def main():
     # Combine Coral tools with agent-specific tools
     tools = coral_tools + agent_tools
     
-    # Create the agent executor (but don't invoke it continuously)
+    # Create the agent executor
     agent_executor = await create_twitter_posting_agent(client, tools, agent_tools)
     
-    # OPTIMIZED MAIN LOOP - Only call OpenAI when there's actual work to do
-    last_posting_time = 0
-    posting_interval = 300  # 5 minutes between posting checks
+    logger.info("Starting Twitter Posting Agent (Coral Protocol) execution")
+    log_to_database("info", "Starting Twitter Posting Agent (Coral Protocol) execution")
     
-    while True:
-        try:
-            logger.info("Waiting for mentions...")
-            log_to_database("info", "Waiting for mentions from other agents")
-            
-            # Call wait_for_mentions directly through MCP (NO OpenAI API call)
-            try:
-                wait_for_mentions_tool = next((tool for tool in coral_tools if tool.name == "wait_for_mentions"), None)
-                if wait_for_mentions_tool:
-                    # Wait for mentions without invoking OpenAI
-                    mention_result = await wait_for_mentions_tool.ainvoke({"timeoutMs": 8000})
-                    
-                    if mention_result and "mentions" in mention_result and mention_result["mentions"]:
-                        # We received mentions - NOW invoke OpenAI to process them
-                        logger.info("Received mentions, processing with OpenAI...")
-                        log_to_database("info", "Received mentions, invoking agent executor")
-                        
-                        # Only NOW do we call OpenAI API
-                        await agent_executor.ainvoke({
-                            "agent_scratchpad": [],
-                            "mentions": mention_result["mentions"]  # Pass the mentions to the agent
-                        })
-                        
-                        logger.info("Completed processing mentions")
-                        log_to_database("info", "Completed processing mentions")
-                    else:
-                        # No mentions received, check if it's time for scheduled posting
-                        logger.info("No mentions received, checking scheduled posting...")
-                        
-                        current_time = time.time()
-                        time_since_last_posting = current_time - last_posting_time
-                        
-                        if time_since_last_posting >= posting_interval:
-                            # Time for scheduled posting - check if we have scheduled tweets
-                            try:
-                                tweets_result = get_scheduled_tweets.invoke({"limit": 1})
-                                if tweets_result.get("count", 0) > 0:
-                                    # We have scheduled tweets - NOW invoke OpenAI for posting
-                                    logger.info("Time for scheduled tweet posting, processing with OpenAI...")
-                                    log_to_database("info", "Time for scheduled tweet posting, invoking agent executor")
-                                    
-                                    await agent_executor.ainvoke({
-                                        "agent_scratchpad": [],
-                                        "scheduled_task": "tweet_posting"  # Indicate this is scheduled work
-                                    })
-                                    
-                                    last_posting_time = current_time
-                                    logger.info("Completed scheduled tweet posting")
-                                    log_to_database("info", "Completed scheduled tweet posting")
-                                else:
-                                    logger.info("No scheduled tweets available for posting")
-                                    await asyncio.sleep(300)  # Wait 5 minutes before checking again
-                            except Exception as posting_error:
-                                logger.error(f"Error checking scheduled tweets: {str(posting_error)}")
-                                await asyncio.sleep(60)
-                        else:
-                            # Not time yet, just continue waiting (no OpenAI call)
-                            time_remaining = posting_interval - time_since_last_posting
-                            logger.info(f"Not time for posting yet, {time_remaining:.0f}s remaining...")
-                            await asyncio.sleep(min(60, time_remaining))  # Wait up to 1 minute
-                else:
-                    logger.error("wait_for_mentions tool not found in coral tools")
-                    await asyncio.sleep(10)
-                    
-            except Exception as tool_error:
-                logger.error(f"Error calling wait_for_mentions: {str(tool_error)}")
-                log_to_database("error", f"Error calling wait_for_mentions: {str(tool_error)}")
-                await asyncio.sleep(5)
-                
-        except Exception as e:
-            logger.error(f"Error in agent loop: {str(e)}")
-            log_to_database("error", f"Error in agent loop: {str(e)}")
-            await asyncio.sleep(5)
+    # Single execution like the Interface Agent - let the agent handle its own conversation flow
+    await agent_executor.ainvoke({})
+    
+    logger.info("Twitter Posting Agent (Coral Protocol) execution completed")
+    log_to_database("info", "Twitter Posting Agent (Coral Protocol) execution completed")
 
 # Function to handle direct tweet posting (for API calls)
 async def post_tweet_direct(tweet_id, is_thread=False):

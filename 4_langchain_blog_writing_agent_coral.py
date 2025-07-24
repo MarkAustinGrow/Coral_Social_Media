@@ -42,7 +42,7 @@ base_url = "http://coral.8interns.com/devmode/exampleApplication/privkey/session
 params = {
     "waitForAgents": 7,  # Total number of agents in the system
     "agentId": f"blog_writing_agent_{user_id}",
-    "agentDescription": f"You are blog_writing_agent for user {user_id}, responsible for creating blog content based on research and insights from tweets"
+    "agentDescription": f"You are blog_writing_agent for user {user_id}, responsible for creating blog content based on research and insights from tweets based on instructions from other agents"
 }
 query_string = urllib.parse.urlencode(params)
 MCP_SERVER_URL = f"{base_url}?{query_string}"
@@ -561,50 +561,73 @@ async def create_blog_writing_agent(client, tools, agent_tools):
     tools_description = get_tools_description(tools)
     agent_tools_description = get_tools_description(agent_tools)
     
+    # Get user context for user-specific prompt
+    user_id = amu.get_user_context()
+    
+    # Coral Protocol version - listens for mentions instead of autonomous execution
     prompt = ChatPromptTemplate.from_messages([
         (
             "system",
-            f"""You are an agent interacting with the tools from Coral Server and having your own tools. Your task is to perform any instructions coming from any agent.
+            f"""You are a Blog Writing Agent operating in CORAL PROTOCOL mode for user {user_id}.
+            
+            IMPORTANT: You are operating in MULTI-USER mode. Each user has their own blog posts and engagement data.
+            You will only create blog content for the current user's data.
+            
+            CORAL PROTOCOL BEHAVIOR:
+            You listen for instructions from other agents and respond via the Coral Protocol.
             
             Follow these steps in order:
-            1. Call wait_for_mentions from coral tools (timeoutMs: 8000) to receive mentions from other agents.
+            1. Call `wait_for_mentions` from coral tools (timeoutMs: 30000) to receive mentions from other agents.
             2. When you receive a mention, keep the thread ID and the sender ID.
-            3. Take 2 seconds to think about the content (instruction) of the message and check only from the list of your tools available for you to action.
-            4. Check the tool schema and make a plan in steps for the task you want to perform.
-            5. Only call the tools you need to perform for each step of the plan to complete the instruction in the content.
-            6. Take 3 seconds and think about the content and see if you have executed the instruction to the best of your ability and the tools. Make this your response as "answer".
-            7. Use `send_message` from coral tools to send a message in the same thread ID to the sender Id you received the mention from, with content: "answer".
-            8. If any error occurs, use `send_message` to send a message in the same thread ID to the sender Id you received the mention from, with content: "error".
-            9. Always respond back to the sender agent even if you have no answer or error.
-            10. Wait for 2 seconds and repeat the process from step 1.
+            3. Parse the instruction in the message content. Look for requests like:
+               - "write blog post"
+               - "create blog content"
+               - "generate blog about [topic]"
+               - "write article on [subject]"
+               - "create content for blog"
+            4. Based on the instruction, use your tools to:
+               a. Fetch the current persona using `fetch_persona`
+               b. Get engagement metrics using `get_engagement_metrics`
+               c. Select appropriate topic using `select_next_topic` (if no specific topic requested)
+               d. Search for related tweet insights using `search_tweet_insights`
+               e. Generate and write the blog post content
+               f. Save the blog post using `save_blog_post` with status "pending_fact_check"
+               g. Update the topic's usage timestamp using `update_topic_usage`
+            5. Prepare a response with the results (blog title, word count, topic used, etc.)
+            6. Use `send_message` from coral tools to send your response back to the sender in the same thread.
+            7. Always respond back to the sender agent, even if there's an error.
+            8. Wait for 2 seconds and repeat the process from step 1.
             
-            If no mentions are received (timeout), you should:
-            1. Check if there are any engagement metrics using get_engagement_metrics
-            2. If engagement metrics exist:
-               a. Select the next topic using select_next_topic (which uses topic rotation)
-               b. Search for related tweet insights using search_tweet_insights
-               c. Generate a blog topic and write a blog post using Claude/Anthropic
-               d. Save the blog post using save_blog_post with status "pending_fact_check"
-               e. Update the topic's last_used_at timestamp
-            3. Wait for 30 minutes before processing the next blog post
+            If no mentions are received (timeout), simply continue waiting - do NOT perform autonomous actions.
             
-            Topic Rotation System:
-            - You use a topic rotation system to ensure diversity in blog content for the current user
+            RESPONSE FORMAT:
+            Always format your responses clearly:
+            - Success: "Created blog post: '[Title]' (X words) on topic: [topic]. Saved for fact-checking."
+            - Error: "Unable to create blog post: [reason]. Please check data availability or try again later."
+            - No data: "No engagement metrics or topics available for blog creation. Please ensure data is available."
+            
+            BLOG WRITING FOCUS:
+            When creating blog posts for the current user, focus on:
+            - Creating engaging, informative content
+            - Incorporating insights from tweet research for the current user
+            - Optimizing for SEO and readability
+            - Maintaining a consistent brand voice based on persona
+            - Using the topic rotation system for diversity
+            - Ensuring all content is user-specific and isolated
+            - Writing comprehensive, well-structured articles
+            - Including relevant examples and data points
+            
+            TOPIC ROTATION SYSTEM:
+            - Use a topic rotation system to ensure diversity in blog content for the current user
             - The system selects from the top 20 topics by engagement score for the current user
             - Topics that have never been used are prioritized
             - After that, topics are selected based on how long ago they were last used (oldest first)
             - After writing a blog post, update the topic's last_used_at timestamp
             
-            When writing blog posts, focus on:
-            - Creating engaging, informative content
-            - Incorporating insights from tweet research for the current user
-            - Optimizing for SEO
-            - Maintaining a consistent brand voice
-            - Covering a diverse range of topics through the rotation system
-            - Ensuring all content is user-specific and isolated
+            Always respect user data isolation and handle cases where no data is available gracefully.
             
-            These are the list of all tools (Coral + your tools): {tools_description}
-            These are the list of your tools: {agent_tools_description}"""
+            Available Coral tools: {tools_description}
+            Available agent tools: {agent_tools_description}"""
         ),
         ("placeholder", "{agent_scratchpad}")
     ])
@@ -654,86 +677,17 @@ async def main():
     # Combine Coral tools with agent-specific tools
     tools = coral_tools + agent_tools
     
-    # Create the agent executor (but don't invoke it continuously)
+    # Create the agent executor
     agent_executor = await create_blog_writing_agent(client, tools, agent_tools)
     
-    # OPTIMIZED MAIN LOOP - Only call OpenAI when there's actual work to do
-    last_blog_time = 0
-    blog_interval = 1800  # 30 minutes between blog posts
+    logger.info("Starting Blog Writing Agent (Coral Protocol) execution")
+    log_to_database("info", "Starting Blog Writing Agent (Coral Protocol) execution")
     
-    while True:
-        try:
-            logger.info("Waiting for mentions...")
-            log_to_database("info", "Waiting for mentions from other agents")
-            
-            # Call wait_for_mentions directly through MCP (NO OpenAI API call)
-            try:
-                wait_for_mentions_tool = next((tool for tool in coral_tools if tool.name == "wait_for_mentions"), None)
-                if wait_for_mentions_tool:
-                    # Wait for mentions without invoking OpenAI
-                    mention_result = await wait_for_mentions_tool.ainvoke({"timeoutMs": 8000})
-                    
-                    if mention_result and "mentions" in mention_result and mention_result["mentions"]:
-                        # We received mentions - NOW invoke OpenAI to process them
-                        logger.info("Received mentions, processing with OpenAI...")
-                        log_to_database("info", "Received mentions, invoking agent executor")
-                        
-                        # Only NOW do we call OpenAI API
-                        await agent_executor.ainvoke({
-                            "agent_scratchpad": [],
-                            "mentions": mention_result["mentions"]  # Pass the mentions to the agent
-                        })
-                        
-                        logger.info("Completed processing mentions")
-                        log_to_database("info", "Completed processing mentions")
-                    else:
-                        # No mentions received, check if it's time for scheduled blog writing
-                        logger.info("No mentions received, checking scheduled blog writing...")
-                        
-                        current_time = time.time()
-                        time_since_last_blog = current_time - last_blog_time
-                        
-                        if time_since_last_blog >= blog_interval:
-                            # Time for scheduled blog writing - check if we have engagement metrics
-                            try:
-                                metrics_result = get_engagement_metrics.invoke({"limit": 1})
-                                if metrics_result.get("count", 0) > 0:
-                                    # We have engagement metrics - NOW invoke OpenAI for blog writing
-                                    logger.info("Time for scheduled blog writing, processing with OpenAI...")
-                                    log_to_database("info", "Time for scheduled blog writing, invoking agent executor")
-                                    
-                                    await agent_executor.ainvoke({
-                                        "agent_scratchpad": [],
-                                        "scheduled_task": "blog_writing"  # Indicate this is scheduled work
-                                    })
-                                    
-                                    last_blog_time = current_time
-                                    logger.info("Completed scheduled blog writing")
-                                    log_to_database("info", "Completed scheduled blog writing")
-                                else:
-                                    logger.info("No engagement metrics available for blog writing")
-                                    await asyncio.sleep(300)  # Wait 5 minutes before checking again
-                            except Exception as metrics_error:
-                                logger.error(f"Error checking engagement metrics: {str(metrics_error)}")
-                                await asyncio.sleep(60)
-                        else:
-                            # Not time yet, just continue waiting (no OpenAI call)
-                            time_remaining = blog_interval - time_since_last_blog
-                            logger.info(f"Not time for blog writing yet, {time_remaining:.0f}s remaining...")
-                            await asyncio.sleep(min(60, time_remaining))  # Wait up to 1 minute
-                else:
-                    logger.error("wait_for_mentions tool not found in coral tools")
-                    await asyncio.sleep(10)
-                    
-            except Exception as tool_error:
-                logger.error(f"Error calling wait_for_mentions: {str(tool_error)}")
-                log_to_database("error", f"Error calling wait_for_mentions: {str(tool_error)}")
-                await asyncio.sleep(5)
-                
-        except Exception as e:
-            logger.error(f"Error in agent loop: {str(e)}")
-            log_to_database("error", f"Error in agent loop: {str(e)}")
-            await asyncio.sleep(5)
+    # Single execution like the Interface Agent - let the agent handle its own conversation flow
+    await agent_executor.ainvoke({})
+    
+    logger.info("Blog Writing Agent (Coral Protocol) execution completed")
+    log_to_database("info", "Blog Writing Agent (Coral Protocol) execution completed")
 
 if __name__ == "__main__":
     # Mark agent as started (use both old and new for compatibility)

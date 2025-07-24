@@ -39,7 +39,7 @@ base_url = "http://coral.8interns.com/devmode/exampleApplication/privkey/session
 params = {
     "waitForAgents": 7,  # Total number of agents in the system
     "agentId": f"blog_to_tweet_agent_{user_id}",
-    "agentDescription": f"You are blog_to_tweet_agent for user {user_id}, responsible for converting blog posts into tweet threads"
+    "agentDescription": f"You are blog_to_tweet_agent for user {user_id}, responsible for converting blog posts into tweet threads based on instructions from other agents"
 }
 query_string = urllib.parse.urlencode(params)
 MCP_SERVER_URL = f"{base_url}?{query_string}"
@@ -501,41 +501,70 @@ async def create_blog_to_tweet_agent(client, tools, agent_tools):
     tools_description = get_tools_description(tools)
     agent_tools_description = get_tools_description(agent_tools)
     
+    # Get user context for user-specific prompt
+    user_id = amu.get_user_context()
+    
+    # Coral Protocol version - listens for mentions instead of autonomous execution
     prompt = ChatPromptTemplate.from_messages([
         (
             "system",
-            f"""You are an agent interacting with the tools from Coral Server and having your own tools. Your task is to perform any instructions coming from any agent.
+            f"""You are a Blog to Tweet Agent operating in CORAL PROTOCOL mode for user {user_id}.
+            
+            IMPORTANT: You are operating in MULTI-USER mode. Each user has their own blog posts and tweet data.
+            You will only convert blog posts to tweets for the current user's data.
+            
+            CORAL PROTOCOL BEHAVIOR:
+            You listen for instructions from other agents and respond via the Coral Protocol.
             
             Follow these steps in order:
-            1. Call wait_for_mentions from coral tools (timeoutMs: 8000) to receive mentions from other agents.
+            1. Call `wait_for_mentions` from coral tools (timeoutMs: 30000) to receive mentions from other agents.
             2. When you receive a mention, keep the thread ID and the sender ID.
-            3. Take 2 seconds to think about the content (instruction) of the message and check only from the list of your tools available for you to action.
-            4. Check the tool schema and make a plan in steps for the task you want to perform.
-            5. Only call the tools you need to perform for each step of the plan to complete the instruction in the content.
-            6. Take 3 seconds and think about the content and see if you have executed the instruction to the best of your ability and the tools. Make this your response as "answer".
-            7. Use `send_message` from coral tools to send a message in the same thread ID to the sender Id you received the mention from, with content: "answer".
-            8. If any error occurs, use `send_message` to send a message in the same thread ID to the sender Id you received the mention from, with content: "error".
-            9. Always respond back to the sender agent even if you have no answer or error.
-            10. Wait for 2 seconds and repeat the process from step 1.
+            3. Parse the instruction in the message content. Look for requests like:
+               - "convert blog to tweets"
+               - "create tweet thread from blog"
+               - "generate tweets for blog post"
+               - "convert blog post [ID] to tweets"
+               - "create social media content"
+            4. Based on the instruction, use your tools to:
+               a. Fetch the current persona using `fetch_persona`
+               b. Get unconverted blog posts using `get_unconverted_blog_posts` (or specific blog by ID)
+               c. Convert the blog post to tweets using `convert_blog_to_tweets`
+               d. Save the tweet thread using `save_tweet_thread`
+            5. Prepare a response with the results (number of tweets created, blog post converted, etc.)
+            6. Use `send_message` from coral tools to send your response back to the sender in the same thread.
+            7. Always respond back to the sender agent, even if there's an error.
+            8. Wait for 2 seconds and repeat the process from step 1.
             
-            If no mentions are received (timeout), you should:
-            1. Check for unconverted blog posts using get_unconverted_blog_posts for the current user
-            2. For each unconverted blog post:
-               a. Get the full blog post using get_blog_post_by_id if needed
-               b. Convert the blog post to tweets using convert_blog_to_tweets
-               c. Save the tweet thread using save_tweet_thread
-            3. Wait for 15 minutes before processing the next batch
+            If no mentions are received (timeout), simply continue waiting - do NOT perform autonomous actions.
             
-            When converting blog posts to tweets, focus on:
+            RESPONSE FORMAT:
+            Always format your responses clearly:
+            - Success: "Converted blog '[Title]' to X tweets. Thread saved and scheduled for posting."
+            - Error: "Unable to convert blog to tweets: [reason]. Please check data availability or try again later."
+            - No blogs: "No unconverted blog posts available. All approved blogs have been converted to tweets."
+            
+            TWEET CONVERSION FOCUS:
+            When converting blog posts to tweets for the current user, focus on:
             - Capturing the key points of the blog post
-            - Creating engaging, shareable content for the current user
-            - Maintaining a consistent voice and tone
-            - Including relevant hashtags
+            - Creating engaging, shareable content
+            - Maintaining a consistent voice and tone based on persona
+            - Including relevant hashtags where appropriate
             - Ending with engagement-focused content rather than promotion
+            - Ensuring each tweet is under 280 characters
+            - Creating logical flow between tweets in the thread
             - Ensuring all content is user-specific and isolated
             
-            These are the list of all tools (Coral + your tools): {tools_description}
-            These are the list of your tools: {agent_tools_description}"""
+            THREAD STRUCTURE:
+            - Start with a hook that grabs attention
+            - Break down main points into digestible tweets
+            - Number each tweet (e.g., 1/7, 2/7, etc.)
+            - End with thought-provoking questions or insights
+            - Avoid direct promotion in the final tweet
+            
+            Always respect user data isolation and handle cases where no blogs are available gracefully.
+            
+            Available Coral tools: {tools_description}
+            Available agent tools: {agent_tools_description}"""
         ),
         ("placeholder", "{agent_scratchpad}")
     ])
@@ -583,86 +612,17 @@ async def main():
     # Combine Coral tools with agent-specific tools
     tools = coral_tools + agent_tools
     
-    # Create the agent executor (but don't invoke it continuously)
+    # Create the agent executor
     agent_executor = await create_blog_to_tweet_agent(client, tools, agent_tools)
     
-    # OPTIMIZED MAIN LOOP - Only call OpenAI when there's actual work to do
-    last_conversion_time = 0
-    conversion_interval = 900  # 15 minutes between conversion batches
+    logger.info("Starting Blog to Tweet Agent (Coral Protocol) execution")
+    log_to_database("info", "Starting Blog to Tweet Agent (Coral Protocol) execution")
     
-    while True:
-        try:
-            logger.info("Waiting for mentions...")
-            log_to_database("info", "Waiting for mentions from other agents")
-            
-            # Call wait_for_mentions directly through MCP (NO OpenAI API call)
-            try:
-                wait_for_mentions_tool = next((tool for tool in coral_tools if tool.name == "wait_for_mentions"), None)
-                if wait_for_mentions_tool:
-                    # Wait for mentions without invoking OpenAI
-                    mention_result = await wait_for_mentions_tool.ainvoke({"timeoutMs": 8000})
-                    
-                    if mention_result and "mentions" in mention_result and mention_result["mentions"]:
-                        # We received mentions - NOW invoke OpenAI to process them
-                        logger.info("Received mentions, processing with OpenAI...")
-                        log_to_database("info", "Received mentions, invoking agent executor")
-                        
-                        # Only NOW do we call OpenAI API
-                        await agent_executor.ainvoke({
-                            "agent_scratchpad": [],
-                            "mentions": mention_result["mentions"]  # Pass the mentions to the agent
-                        })
-                        
-                        logger.info("Completed processing mentions")
-                        log_to_database("info", "Completed processing mentions")
-                    else:
-                        # No mentions received, check if it's time for scheduled conversion
-                        logger.info("No mentions received, checking scheduled conversion...")
-                        
-                        current_time = time.time()
-                        time_since_last_conversion = current_time - last_conversion_time
-                        
-                        if time_since_last_conversion >= conversion_interval:
-                            # Time for scheduled conversion - check if we have unconverted blogs
-                            try:
-                                blogs_result = get_unconverted_blog_posts.invoke({"limit": 1})
-                                if blogs_result.get("count", 0) > 0:
-                                    # We have unconverted blogs - NOW invoke OpenAI for conversion
-                                    logger.info("Time for scheduled blog conversion, processing with OpenAI...")
-                                    log_to_database("info", "Time for scheduled blog conversion, invoking agent executor")
-                                    
-                                    await agent_executor.ainvoke({
-                                        "agent_scratchpad": [],
-                                        "scheduled_task": "blog_conversion"  # Indicate this is scheduled work
-                                    })
-                                    
-                                    last_conversion_time = current_time
-                                    logger.info("Completed scheduled blog conversion")
-                                    log_to_database("info", "Completed scheduled blog conversion")
-                                else:
-                                    logger.info("No unconverted blogs available for conversion")
-                                    await asyncio.sleep(900)  # Wait 15 minutes before checking again
-                            except Exception as conversion_error:
-                                logger.error(f"Error checking unconverted blogs: {str(conversion_error)}")
-                                await asyncio.sleep(60)
-                        else:
-                            # Not time yet, just continue waiting (no OpenAI call)
-                            time_remaining = conversion_interval - time_since_last_conversion
-                            logger.info(f"Not time for conversion yet, {time_remaining:.0f}s remaining...")
-                            await asyncio.sleep(min(60, time_remaining))  # Wait up to 1 minute
-                else:
-                    logger.error("wait_for_mentions tool not found in coral tools")
-                    await asyncio.sleep(10)
-                    
-            except Exception as tool_error:
-                logger.error(f"Error calling wait_for_mentions: {str(tool_error)}")
-                log_to_database("error", f"Error calling wait_for_mentions: {str(tool_error)}")
-                await asyncio.sleep(5)
-                
-        except Exception as e:
-            logger.error(f"Error in agent loop: {str(e)}")
-            log_to_database("error", f"Error in agent loop: {str(e)}")
-            await asyncio.sleep(5)
+    # Single execution like the Interface Agent - let the agent handle its own conversation flow
+    await agent_executor.ainvoke({})
+    
+    logger.info("Blog to Tweet Agent (Coral Protocol) execution completed")
+    log_to_database("info", "Blog to Tweet Agent (Coral Protocol) execution completed")
 
 if __name__ == "__main__":
     # Mark agent as started (use both old and new for compatibility)
