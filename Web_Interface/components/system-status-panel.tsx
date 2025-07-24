@@ -166,27 +166,6 @@ export function SystemStatusPanel() {
     }
   }
   
-  // Handle starting all agents
-  const handleStartAllAgents = async () => {
-    try {
-      // Call the API to start all agents
-      const response = await fetch('/api/agents/start-all', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-      })
-      
-      const data = await response.json()
-      
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to start all agents')
-      }
-      
-      toast.success('All agents started successfully')
-      handleRefresh()
-    } catch (error: any) {
-      toast.error(`Failed to start all agents: ${error.message}`)
-    }
-  }
   
   // Status helpers
   const getStatusIcon = (status: string) => {
@@ -307,15 +286,6 @@ export function SystemStatusPanel() {
     >
       {(agents) => (
         <div className="space-y-4">
-          <div className="flex justify-end">
-            <Button 
-              onClick={handleStartAllAgents} 
-              className="bg-green-600 hover:bg-green-700"
-            >
-              Start All Agents
-            </Button>
-          </div>
-          
           {agents.map((agent) => (
             <div key={agent.id} className="flex items-center gap-4 rounded-lg border p-4">
               <div className="flex-none">{getStatusIcon(agent.status)}</div>
