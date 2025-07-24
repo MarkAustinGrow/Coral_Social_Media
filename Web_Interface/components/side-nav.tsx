@@ -16,8 +16,8 @@ import {
   Zap,
   Bug,
   Database,
-  Network,
 } from "lucide-react"
+import { CoralIcon } from "./coral-icon"
 
 const items = [
   {
@@ -28,7 +28,7 @@ const items = [
   {
     title: "Coral Inspector",
     href: "/coral-inspector",
-    icon: Network,
+    icon: CoralIcon,
   },
   {
     title: "X Accounts",
