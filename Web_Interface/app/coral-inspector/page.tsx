@@ -29,7 +29,10 @@ import {
   Send,
   Download,
   Filter,
-  Play
+  Play,
+  HelpCircle,
+  ChevronDown,
+  ChevronUp
 } from "lucide-react"
 import { useState, useEffect, useRef } from "react"
 
@@ -156,6 +159,10 @@ export default function CoralInspectorPage() {
   const [messageContent, setMessageContent] = useState<string>("")
   const [threadId, setThreadId] = useState<string>("")
   const [toolResponse, setToolResponse] = useState<string>("")
+  
+  // Help sections state
+  const [showModeHelp, setShowModeHelp] = useState(false)
+  const [showProtocolHelp, setShowProtocolHelp] = useState(false)
 
   // Generate user-specific agent IDs
   const getUserAgentId = (agentKey: string) => {
@@ -584,80 +591,6 @@ export default function CoralInspectorPage() {
         </div>
       </div>
 
-      {/* Mode Switch Architecture Info */}
-      <Card className={agentMode === 'coral' ? 'border-green-200 bg-green-50' : 'border-blue-200 bg-blue-50'}>
-        <CardHeader>
-          <CardTitle className={`flex items-center gap-2 ${agentMode === 'coral' ? 'text-green-800' : 'text-blue-800'}`}>
-            <div className={`w-3 h-3 rounded-full ${agentMode === 'coral' ? 'bg-green-500' : 'bg-blue-500'}`} />
-            {agentMode === 'coral' ? 'Coral Mode - Multi-Agent Communication' : 'Auto Mode - Independent Agents'}
-          </CardTitle>
-          <CardDescription className={agentMode === 'coral' ? 'text-green-700' : 'text-blue-700'}>
-            {agentMode === 'coral' 
-              ? 'Agents communicate with each other through the Coral Protocol for coordinated tasks'
-              : 'Agents work independently without inter-agent communication'
-            }
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className={`text-sm ${agentMode === 'coral' ? 'text-green-800' : 'text-blue-800'}`}>
-            {agentMode === 'coral' ? (
-              <div className="space-y-2">
-                <p><strong>How it works:</strong> Interface Agent coordinates with other agents via Coral Protocol</p>
-                <p><strong>Best for:</strong> Complex tasks requiring multiple agents (research + writing + posting)</p>
-                <p><strong>Communication:</strong> Real-time agent-to-agent messaging and coordination</p>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                <p><strong>How it works:</strong> Each agent operates independently based on its configuration</p>
-                <p><strong>Best for:</strong> Simple, single-purpose tasks (just scraping, just writing, etc.)</p>
-                <p><strong>Communication:</strong> No inter-agent communication, direct user interaction only</p>
-              </div>
-            )}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Server Status */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Server className="h-5 w-5" />
-            Coral Server Connection
-          </CardTitle>
-          <CardDescription>
-            Connection status to {serverStatus.url}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2">
-                {serverStatus.connected ? (
-                  <CheckCircle className="h-5 w-5 text-green-500" />
-                ) : (
-                  <XCircle className="h-5 w-5 text-red-500" />
-                )}
-                <span className="font-medium">
-                  {serverStatus.connected ? 'Connected' : 'Disconnected'}
-                </span>
-              </div>
-              <Separator orientation="vertical" className="h-6" />
-              <div className="flex items-center gap-2">
-                <Users className="h-4 w-4 text-muted-foreground" />
-                <span className="text-sm text-muted-foreground">
-                  {serverStatus.activeSessions} active agents
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <MessageSquare className="h-4 w-4 text-muted-foreground" />
-                <span className="text-sm text-muted-foreground">
-                  {serverStatus.totalMessages} total messages
-                </span>
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
 
       {/* Main Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
@@ -766,49 +699,25 @@ export default function CoralInspectorPage() {
           </Card>
         </TabsContent>
 
-        {/* Tools Tab - Now a Simple Chat Interface */}
+        {/* Tools Tab - Chat Interface at Top */}
         <TabsContent value="tools" className="space-y-4">
-          <div>
-            <h2 className="text-2xl font-semibold mb-4">Chat with Interface Agent</h2>
-            <p className="text-muted-foreground mb-6">
-              Send messages directly to your Interface Agent - it will automatically route them to the right agents
-            </p>
-          </div>
-
-          {/* Architecture Info */}
-          <Card className="border-green-200 bg-green-50">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-green-800">
-                <MessageCircle className="h-5 w-5" />
-                Coral Protocol - Automatic Routing
-              </CardTitle>
-              <CardDescription className="text-green-700">
-                No need to select agents - the Interface Agent decides automatically
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="text-sm text-green-800">
-                <p className="mb-2">
-                  <strong>How it works:</strong> Just ask what you want - "Are there any new tweets?" or "Write a blog about AI"
-                </p>
-                <p className="mb-2">
-                  <strong>Message Flow:</strong> You → Interface Agent → Interface Agent chooses best agent → Response
-                </p>
-                <p>
-                  <strong>Your Role:</strong> Simply describe what you want done, like talking to a smart assistant
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-
+          {/* Main Chat Interface - Moved to Top */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Send className="h-5 w-5" />
-                Chat Interface
+                Chat with Interface Agent
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowProtocolHelp(!showProtocolHelp)}
+                  className="ml-auto"
+                >
+                  <HelpCircle className="h-4 w-4" />
+                </Button>
               </CardTitle>
               <CardDescription>
-                Send a message to your Interface Agent
+                Send messages directly to your Interface Agent - it will automatically route them to the right agents
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -849,12 +758,93 @@ export default function CoralInspectorPage() {
             </CardContent>
           </Card>
 
-          {/* Instructions Card */}
+          {/* Collapsible Protocol Help */}
+          {showProtocolHelp && (
+            <Card className="border-green-200 bg-green-50">
+              <CardHeader>
+                <CardTitle className="flex items-center justify-between text-green-800">
+                  <div className="flex items-center gap-2">
+                    <MessageCircle className="h-5 w-5" />
+                    Coral Protocol - Automatic Routing
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setShowProtocolHelp(false)}
+                  >
+                    <ChevronUp className="h-4 w-4" />
+                  </Button>
+                </CardTitle>
+                <CardDescription className="text-green-700">
+                  No need to select agents - the Interface Agent decides automatically
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="text-sm text-green-800">
+                  <p className="mb-2">
+                    <strong>How it works:</strong> Just ask what you want - "Are there any new tweets?" or "Write a blog about AI"
+                  </p>
+                  <p className="mb-2">
+                    <strong>Message Flow:</strong> You → Interface Agent → Interface Agent chooses best agent → Response
+                  </p>
+                  <p>
+                    <strong>Your Role:</strong> Simply describe what you want done, like talking to a smart assistant
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Agent Mode Help */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className={`w-3 h-3 rounded-full ${agentMode === 'coral' ? 'bg-green-500' : 'bg-blue-500'}`} />
+                  Current Mode: {agentMode === 'coral' ? 'Coral' : 'Auto'}
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowModeHelp(!showModeHelp)}
+                >
+                  <HelpCircle className="h-4 w-4" />
+                </Button>
+              </CardTitle>
+              <CardDescription>
+                {agentMode === 'coral' 
+                  ? 'Multi-agent communication enabled'
+                  : 'Independent agent operation'
+                }
+              </CardDescription>
+            </CardHeader>
+            {showModeHelp && (
+              <CardContent>
+                <div className={`text-sm ${agentMode === 'coral' ? 'text-green-800' : 'text-blue-800'}`}>
+                  {agentMode === 'coral' ? (
+                    <div className="space-y-2">
+                      <p><strong>How it works:</strong> Interface Agent coordinates with other agents via Coral Protocol</p>
+                      <p><strong>Best for:</strong> Complex tasks requiring multiple agents (research + writing + posting)</p>
+                      <p><strong>Communication:</strong> Real-time agent-to-agent messaging and coordination</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <p><strong>How it works:</strong> Each agent operates independently based on its configuration</p>
+                      <p><strong>Best for:</strong> Simple, single-purpose tasks (just scraping, just writing, etc.)</p>
+                      <p><strong>Communication:</strong> No inter-agent communication, direct user interaction only</p>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            )}
+          </Card>
+
+          {/* Quick Start Guide */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <MessageCircle className="h-5 w-5" />
-                How to Use
+                Quick Start Guide
               </CardTitle>
             </CardHeader>
             <CardContent>
