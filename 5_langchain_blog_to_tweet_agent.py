@@ -583,18 +583,82 @@ async def main():
     # Combine Coral tools with agent-specific tools
     tools = coral_tools + agent_tools
     
-    # Create and run the agent
+    # Create the agent executor (but don't invoke it continuously)
     agent_executor = await create_blog_to_tweet_agent(client, tools, agent_tools)
     
-    # Use the same main loop as other agents
+    # OPTIMIZED MAIN LOOP - Only call OpenAI when there's actual work to do
+    last_conversion_time = 0
+    conversion_interval = 900  # 15 minutes between conversion batches
+    
     while True:
         try:
-            logger.info("Starting new agent invocation")
-            log_to_database("info", "Starting new agent invocation cycle")
-            await agent_executor.ainvoke({"agent_scratchpad": []})
-            logger.info("Completed agent invocation, restarting loop")
-            log_to_database("info", "Completed agent invocation cycle")
-            await asyncio.sleep(1)
+            logger.info("Waiting for mentions...")
+            log_to_database("info", "Waiting for mentions from other agents")
+            
+            # Call wait_for_mentions directly through MCP (NO OpenAI API call)
+            try:
+                wait_for_mentions_tool = next((tool for tool in coral_tools if tool.name == "wait_for_mentions"), None)
+                if wait_for_mentions_tool:
+                    # Wait for mentions without invoking OpenAI
+                    mention_result = await wait_for_mentions_tool.ainvoke({"timeoutMs": 8000})
+                    
+                    if mention_result and "mentions" in mention_result and mention_result["mentions"]:
+                        # We received mentions - NOW invoke OpenAI to process them
+                        logger.info("Received mentions, processing with OpenAI...")
+                        log_to_database("info", "Received mentions, invoking agent executor")
+                        
+                        # Only NOW do we call OpenAI API
+                        await agent_executor.ainvoke({
+                            "agent_scratchpad": [],
+                            "mentions": mention_result["mentions"]  # Pass the mentions to the agent
+                        })
+                        
+                        logger.info("Completed processing mentions")
+                        log_to_database("info", "Completed processing mentions")
+                    else:
+                        # No mentions received, check if it's time for scheduled conversion
+                        logger.info("No mentions received, checking scheduled conversion...")
+                        
+                        current_time = time.time()
+                        time_since_last_conversion = current_time - last_conversion_time
+                        
+                        if time_since_last_conversion >= conversion_interval:
+                            # Time for scheduled conversion - check if we have unconverted blogs
+                            try:
+                                blogs_result = get_unconverted_blog_posts.invoke({"limit": 1})
+                                if blogs_result.get("count", 0) > 0:
+                                    # We have unconverted blogs - NOW invoke OpenAI for conversion
+                                    logger.info("Time for scheduled blog conversion, processing with OpenAI...")
+                                    log_to_database("info", "Time for scheduled blog conversion, invoking agent executor")
+                                    
+                                    await agent_executor.ainvoke({
+                                        "agent_scratchpad": [],
+                                        "scheduled_task": "blog_conversion"  # Indicate this is scheduled work
+                                    })
+                                    
+                                    last_conversion_time = current_time
+                                    logger.info("Completed scheduled blog conversion")
+                                    log_to_database("info", "Completed scheduled blog conversion")
+                                else:
+                                    logger.info("No unconverted blogs available for conversion")
+                                    await asyncio.sleep(900)  # Wait 15 minutes before checking again
+                            except Exception as conversion_error:
+                                logger.error(f"Error checking unconverted blogs: {str(conversion_error)}")
+                                await asyncio.sleep(60)
+                        else:
+                            # Not time yet, just continue waiting (no OpenAI call)
+                            time_remaining = conversion_interval - time_since_last_conversion
+                            logger.info(f"Not time for conversion yet, {time_remaining:.0f}s remaining...")
+                            await asyncio.sleep(min(60, time_remaining))  # Wait up to 1 minute
+                else:
+                    logger.error("wait_for_mentions tool not found in coral tools")
+                    await asyncio.sleep(10)
+                    
+            except Exception as tool_error:
+                logger.error(f"Error calling wait_for_mentions: {str(tool_error)}")
+                log_to_database("error", f"Error calling wait_for_mentions: {str(tool_error)}")
+                await asyncio.sleep(5)
+                
         except Exception as e:
             logger.error(f"Error in agent loop: {str(e)}")
             log_to_database("error", f"Error in agent loop: {str(e)}")
