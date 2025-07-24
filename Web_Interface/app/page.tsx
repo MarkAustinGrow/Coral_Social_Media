@@ -9,6 +9,7 @@ import { RecentActivity } from "@/components/recent-activity"
 import { SystemStatusPanel } from "@/components/system-status-panel"
 import { StatsCards } from "@/components/stats-cards"
 import { QuickActions } from "@/components/quick-actions"
+import { AgentModeSelector } from "@/components/agent-mode-selector"
 import { Settings } from "lucide-react"
 
 export default function DashboardPage() {
@@ -17,7 +18,7 @@ export default function DashboardPage() {
       <DashboardHeader heading="Dashboard" text="Monitor and manage your social media agent system.">
         <div className="flex items-center gap-2">
           <Button variant="outline">Refresh Data</Button>
-          <Button>Start All Agents</Button>
+          <AgentModeSelector />
         </div>
       </DashboardHeader>
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">

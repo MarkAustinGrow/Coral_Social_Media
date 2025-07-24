@@ -8,6 +8,11 @@ export async function POST(request: NextRequest) {
   try {
     console.log('🔧 Start All Agents API: Starting all agents process...')
     
+    // Parse request body to get mode
+    const body = await request.json()
+    const mode = body.mode || 'coral' // Default to coral mode
+    console.log(`🔧 Start All Agents API: Using mode: ${mode}`)
+    
     // Create Supabase client with authentication
     const supabase = createRouteHandlerClient<Database>({ cookies })
     
@@ -47,8 +52,8 @@ export async function POST(request: NextRequest) {
     
     console.log(`🔧 Start All Agents API: Found ${userAgents.length} agents for user`)
     
-    // Start all agent processes with user context
-    const success = await startAllAgents(userId)
+    // Start all agent processes with user context and mode
+    const success = await startAllAgents(userId, mode)
     
     if (!success) {
       console.error('❌ Start All Agents API: Failed to start agent processes')

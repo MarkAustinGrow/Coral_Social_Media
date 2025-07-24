@@ -98,27 +98,27 @@ export type AgentMode = 'coral' | 'auto';
 const agentFilePaths: Record<AgentMode, Record<string, string>> = {
   coral: {
     'Interface Agent': '0_langchain_interface.py', // Already Coral Protocol
-    'World News Agent': '1_langchain_world_news_agent.py', // Optimized with Coral Protocol
-    'Tweet Scraping Agent': '2_langchain_tweet_scraping_agent.py', // Optimized with Coral Protocol
-    'Hot Topic Agent': '3.5_langchain_hot_topic_agent_simple.py', // Optimized with Coral Protocol
-    'Tweet Research Agent': '3_langchain_tweet_research_agent_multiuser.py', // Optimized with Coral Protocol
-    'Blog Writing Agent': '4_langchain_blog_writing_agent.py', // Optimized with Coral Protocol
-    'Blog Critique Agent': '4_langchain_blog_critique_agent.py', // Optimized with Coral Protocol
-    'Blog to Tweet Agent': '5_langchain_blog_to_tweet_agent.py', // Optimized with Coral Protocol
-    'Twitter Posting Agent': '7_langchain_twitter_posting_agent.py', // Optimized with Coral Protocol
-    'X Reply Agent': '6_langchain_x_reply_agent.py' // Fixed: Use the optimized version
+    'World News Agent': '1_langchain_world_news_agent.py', // Use auto version for now
+    'Tweet Scraping Agent': '2_langchain_tweet_scraping_agent_coral.py', // Coral Protocol version
+    'Hot Topic Agent': '3.5_langchain_hot_topic_agent_simple_coral.py', // Coral Protocol version
+    'Tweet Research Agent': '3_langchain_tweet_research_agent_multiuser_coral.py', // Coral Protocol version
+    'Blog Writing Agent': '4_langchain_blog_writing_agent_coral.py', // Coral Protocol version
+    'Blog Critique Agent': '4_langchain_blog_critique_agent_coral.py', // Coral Protocol version
+    'Blog to Tweet Agent': '5_langchain_blog_to_tweet_agent_coral.py', // Coral Protocol version
+    'Twitter Posting Agent': '7_langchain_twitter_posting_agent_coral.py', // Coral Protocol version
+    'X Reply Agent': '6_langchain_x_reply_agent_coral.py' // Coral Protocol version
   },
   auto: {
     'Interface Agent': '0_langchain_interface.py', // Interface Agent stays the same
-    'World News Agent': '1_langchain_world_news_agent.py', // Optimized with Coral Protocol
-    'Tweet Scraping Agent': '2_langchain_tweet_scraping_agent.py', // Optimized with Coral Protocol
-    'Hot Topic Agent': '3.5_langchain_hot_topic_agent_simple.py', // Optimized with Coral Protocol
-    'Tweet Research Agent': '3_langchain_tweet_research_agent_multiuser.py', // Optimized with Coral Protocol
-    'Blog Writing Agent': '4_langchain_blog_writing_agent.py', // Optimized with Coral Protocol
-    'Blog Critique Agent': '4_langchain_blog_critique_agent.py', // Optimized with Coral Protocol
-    'Blog to Tweet Agent': '5_langchain_blog_to_tweet_agent.py', // Optimized with Coral Protocol
-    'Twitter Posting Agent': '7_langchain_twitter_posting_agent.py', // Optimized with Coral Protocol
-    'X Reply Agent': '6_langchain_x_reply_agent.py' // Fixed: Use the optimized version
+    'World News Agent': '1_langchain_world_news_agent.py', // Auto mode - independent operation
+    'Tweet Scraping Agent': '2_langchain_tweet_scraping_agent.py', // Auto mode - independent operation
+    'Hot Topic Agent': '3.5_langchain_hot_topic_agent_simple.py', // Auto mode - independent operation
+    'Tweet Research Agent': '3_langchain_tweet_research_agent_multiuser.py', // Auto mode - independent operation
+    'Blog Writing Agent': '4_langchain_blog_writing_agent.py', // Auto mode - independent operation
+    'Blog Critique Agent': '4_langchain_blog_critique_agent.py', // Auto mode - independent operation
+    'Blog to Tweet Agent': '5_langchain_blog_to_tweet_agent.py', // Auto mode - independent operation
+    'Twitter Posting Agent': '7_langchain_twitter_posting_agent.py', // Auto mode - independent operation
+    'X Reply Agent': '6_langchain_x_reply_agent.py' // Auto mode - independent operation
   }
 };
 
