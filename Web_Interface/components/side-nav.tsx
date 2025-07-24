@@ -26,14 +26,14 @@ const items = [
     icon: LayoutDashboard,
   },
   {
-    title: "Debug Tools",
-    href: "/debug",
-    icon: Bug,
+    title: "Coral Inspector",
+    href: "/coral-inspector",
+    icon: Network,
   },
   {
-    title: "X API Usage",
-    href: "/x-api",
-    icon: Gauge,
+    title: "X Accounts",
+    href: "/accounts",
+    icon: Twitter,
   },
   {
     title: "Blog Interface",
@@ -46,29 +46,9 @@ const items = [
     icon: MessageSquare,
   },
   {
-    title: "X Accounts",
-    href: "/accounts",
-    icon: Twitter,
-  },
-  {
-    title: "Agent Status & Logs",
-    href: "/logs",
-    icon: Zap,
-  },
-  {
-    title: "Coral Inspector",
-    href: "/coral-inspector",
-    icon: Network,
-  },
-  {
     title: "Research Memory",
     href: "/memory",
     icon: Database,
-  },
-  {
-    title: "Content Calendar",
-    href: "/calendar",
-    icon: CalendarDays,
   },
   {
     title: "Persona Config",
@@ -76,9 +56,29 @@ const items = [
     icon: Users,
   },
   {
+    title: "Agent Status & Logs",
+    href: "/logs",
+    icon: Zap,
+  },
+  {
     title: "Engagement Metrics",
     href: "/metrics",
     icon: BarChart3,
+  },
+  {
+    title: "Content Calendar",
+    href: "/calendar",
+    icon: CalendarDays,
+  },
+  {
+    title: "X API Usage",
+    href: "/x-api",
+    icon: Gauge,
+  },
+  {
+    title: "Debug Tools",
+    href: "/debug",
+    icon: Bug,
   },
   {
     title: "System Config",
