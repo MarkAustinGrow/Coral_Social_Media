@@ -773,9 +773,13 @@ async def main():
         asu.mark_agent_started(AGENT_NAME)
         amu.mark_agent_started_with_user(AGENT_NAME)
         log_to_database("info", "Tweet Research Agent started with user context")
+        log_to_database("info", "Tweet Research Agent started with user context")
         
-        # Initialize MCP client
-        client = MultiServerMCPClient(
+        logger.info("Starting Tweet Research Agent (Coral Protocol) execution")
+        log_to_database("info", "Starting Tweet Research Agent (Coral Protocol) execution")
+        
+        # Use async context manager for proper MCP client connection
+        async with MultiServerMCPClient(
             connections={
                 "coral": {
                     "transport": "sse",
@@ -785,90 +789,86 @@ async def main():
                     "sse_read_timeout": 300,
                 }
             }
-        )
-        
-        # Get Coral tools
-        coral_tools = client.get_tools()
-        
-        # Define agent tools
-        agent_tools = [
-            fetch_persona,
-            fetch_tweets_from_supabase,
-            mark_tweet_as_analyzed,
-            analyze_tweet_perplexity,
-            store_analysis_qdrant,
-            search_qdrant,
-            generate_research_question
-        ]
-        
-        # Combine Coral tools with agent-specific tools
-        tools = coral_tools + agent_tools
-        
-        # Initialize the chat model
-        model = init_chat_model(
-            model="gpt-4o-mini",
-            model_provider="openai",
-            api_key=os.getenv("OPENAI_API_KEY"),
-            temperature=0.7
-        )
-        
-        # Coral Protocol version - listens for mentions instead of autonomous execution
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", f"""You are a Tweet Research Agent operating in CORAL PROTOCOL mode for user {user_id}.
+        ) as client:
+            # Get Coral tools
+            coral_tools = client.get_tools()
             
-            IMPORTANT: You are operating in MULTI-USER mode. Each user has their own research memory and tweet data.
-            You will only analyze tweets and store insights for the current user's data.
+            # Define agent tools
+            agent_tools = [
+                fetch_persona,
+                fetch_tweets_from_supabase,
+                mark_tweet_as_analyzed,
+                analyze_tweet_perplexity,
+                store_analysis_qdrant,
+                search_qdrant,
+                generate_research_question
+            ]
             
-            CORAL PROTOCOL BEHAVIOR:
-            You listen for instructions from other agents and respond via the Coral Protocol.
+            # Combine Coral tools with agent-specific tools
+            tools = coral_tools + agent_tools
             
-            Follow these steps in order:
-            1. Call `wait_for_mentions` from coral tools (timeoutMs: 30000) to receive mentions from other agents.
-            2. When you receive a mention, keep the thread ID and the sender ID.
-            3. Parse the instruction in the message content. Look for requests like:
-               - "analyze tweets for research"
-               - "research tweet insights"
-               - "extract deep insights from tweets"
-               - "analyze tweet content"
-               - "store tweet analysis"
-            4. Based on the instruction, use your tools to:
-               a. Fetch unanalyzed tweets using `fetch_tweets_from_supabase`
-               b. For each tweet, generate a focused research question using `generate_research_question`
-               c. Use Perplexity to conduct in-depth analysis using `analyze_tweet_perplexity`
-               d. Store the analysis in Qdrant vector database using `store_analysis_qdrant`
-               e. Mark tweets as analyzed using `mark_tweet_as_analyzed`
-            5. Prepare a response with the results (number of tweets analyzed, insights generated, etc.)
-            6. Use `send_message` from coral tools to send your response back to the sender in the same thread.
-            7. Always respond back to the sender agent, even if there's an error.
-            8. Wait for 2 seconds and repeat the process from step 1.
+            # Initialize the chat model
+            model = init_chat_model(
+                model="gpt-4o-mini",
+                model_provider="openai",
+                api_key=os.getenv("OPENAI_API_KEY"),
+                temperature=0.7
+            )
             
-            If no mentions are received (timeout), simply continue waiting - do NOT perform autonomous actions.
+            # Coral Protocol version - listens for mentions instead of autonomous execution
+            prompt = ChatPromptTemplate.from_messages([
+                ("system", f"""You are a Tweet Research Agent operating in CORAL PROTOCOL mode for user {user_id}.
+                
+                IMPORTANT: You are operating in MULTI-USER mode. Each user has their own research memory and tweet data.
+                You will only analyze tweets and store insights for the current user's data.
+                
+                CORAL PROTOCOL BEHAVIOR:
+                You listen for instructions from other agents and respond via the Coral Protocol.
+                
+                Follow these steps in order:
+                1. Call `wait_for_mentions` from coral tools (timeoutMs: 30000) to receive mentions from other agents.
+                2. When you receive a mention, keep the thread ID and the sender ID.
+                3. Parse the instruction in the message content. Look for requests like:
+                   - "analyze tweets for research"
+                   - "research tweet insights"
+                   - "extract deep insights from tweets"
+                   - "analyze tweet content"
+                   - "store tweet analysis"
+                4. Based on the instruction, use your tools to:
+                   a. Fetch unanalyzed tweets using `fetch_tweets_from_supabase`
+                   b. For each tweet, generate a focused research question using `generate_research_question`
+                   c. Use Perplexity to conduct in-depth analysis using `analyze_tweet_perplexity`
+                   d. Store the analysis in Qdrant vector database using `store_analysis_qdrant`
+                   e. Mark tweets as analyzed using `mark_tweet_as_analyzed`
+                5. Prepare a response with the results (number of tweets analyzed, insights generated, etc.)
+                6. Use `send_message` from coral tools to send your response back to the sender in the same thread.
+                7. Always respond back to the sender agent, even if there's an error.
+                8. Wait for 2 seconds and repeat the process from step 1.
+                
+                If no mentions are received (timeout), simply continue waiting - do NOT perform autonomous actions.
+                
+                RESPONSE FORMAT:
+                Always format your responses clearly:
+                - Success: "Analyzed X tweets and generated Y insights. Research questions focused on [topics]. Stored in research memory for user."
+                - Error: "Unable to analyze tweets: [reason]. Please check data availability or try again later."
+                - No tweets: "No unanalyzed tweets available for research. All tweets are up to date."
+                
+                Always respect user data isolation and handle cases where no tweets are available gracefully.
+                
+                Available Coral tools: {{tools}}
+                Available agent tools: {{agent_tools_description}}"""),
+                ("placeholder", "{agent_scratchpad}")
+            ])
             
-            RESPONSE FORMAT:
-            Always format your responses clearly:
-            - Success: "Analyzed X tweets and generated Y insights. Research questions focused on [topics]. Stored in research memory for user."
-            - Error: "Unable to analyze tweets: [reason]. Please check data availability or try again later."
-            - No tweets: "No unanalyzed tweets available for research. All tweets are up to date."
+            # Create the agent
+            agent = create_tool_calling_agent(model, tools, prompt)
+            agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
             
-            Always respect user data isolation and handle cases where no tweets are available gracefully.
-            
-            Available Coral tools: {{tools}}
-            Available agent tools: {{agent_tools_description}}"""),
-            ("placeholder", "{agent_scratchpad}")
-        ])
-        
-        # Create the agent
-        agent = create_tool_calling_agent(model, tools, prompt)
-        agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
-        
-        logger.info("Starting Tweet Research Agent (Coral Protocol) execution")
-        log_to_database("info", "Starting Tweet Research Agent (Coral Protocol) execution")
-        
-        # Single execution like the Interface Agent - let the agent handle its own conversation flow
-        await agent_executor.ainvoke({
-            "tools": get_tools_description(tools),
-            "agent_tools_description": get_tools_description(agent_tools)
-        })
+            # Single execution like the Interface Agent - let the agent handle its own conversation flow
+            await agent_executor.ainvoke({
+                "tools": get_tools_description(tools),
+                "agent_tools_description": get_tools_description(agent_tools)
+            })
         
         logger.info("Tweet Research Agent (Coral Protocol) execution completed")
         log_to_database("info", "Tweet Research Agent (Coral Protocol) execution completed")
