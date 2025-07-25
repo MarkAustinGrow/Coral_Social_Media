@@ -37,33 +37,69 @@ Our system supports **two operational modes** via the **Agent Mode Selector**:
 
 #### Coral Version (`_coral.py`)
 ```python
-# Robust execution with retry logic and error handling
-max_retries = 3
-for attempt in range(max_retries):
-    try:
-        async with MultiServerMCPClient(...) as client:
-            # Single execution - let agent handle its own conversation flow
-            await agent_executor.ainvoke({})
-            break  # Success - exit retry loop
-    except ClosedResourceError as e:
-        if attempt < max_retries - 1:
-            logger.info("Retrying in 5 seconds...")
-            await asyncio.sleep(5)
-            continue
-        else:
-            raise  # Max retries reached
-    except Exception as e:
-        # Handle other errors with retry logic
-        if attempt < max_retries - 1:
-            await asyncio.sleep(5)
-            continue
-        else:
-            raise
+# Persistent infinite loop with single connection (following World News Agent pattern)
+async def main():
+    """Main agent execution loop following working World News Agent pattern"""
+    # Check if user has context before starting
+    user_id = amu.get_user_context()
+    
+    if not user_id:
+        logger.error("No user context available. Cannot start Agent.")
+        log_to_database("error", "No user context available. Cannot start Agent.")
+        return
+    
+    logger.info(f"Starting Agent (Coral Protocol) for user: {user_id}")
+    log_to_database("info", f"Agent (Coral Protocol) starting for user: {user_id}")
+    
+    # Single persistent connection following working World News Agent pattern
+    async with MultiServerMCPClient(
+        connections={
+            "coral": {
+                "transport": "sse",
+                "url": MCP_SERVER_URL,
+                "headers": {"X-User-ID": user_id},  # CRITICAL: User isolation header
+                "timeout": 300,
+                "sse_read_timeout": 300,
+            }
+        }
+    ) as client:
+        logger.info(f"Connected to MCP server at {MCP_SERVER_URL}")
+        log_to_database("info", f"Agent connected to MCP server for user {user_id}")
+        
+        # Define agent-specific tools
+        agent_tools = [...]
+        
+        # Get Coral tools using the new pattern
+        coral_tools = client.get_tools()
+        logger.info(f"Available Coral tools: {[tool.name for tool in coral_tools]}")
+        log_to_database("info", f"Available Coral tools: {[tool.name for tool in coral_tools]}")
+        
+        # Combine Coral tools with agent-specific tools
+        tools = coral_tools + agent_tools
+        
+        # Create the agent executor
+        agent_executor = await create_agent(client, tools, agent_tools)
+        
+        logger.info("Starting Agent (Coral Protocol) execution")
+        log_to_database("info", "Starting Agent (Coral Protocol) execution")
+        
+        # Infinite loop with persistent connection following working World News Agent pattern
+        while True:
+            try:
+                logger.info("Starting new agent invocation")
+                await agent_executor.ainvoke({})
+                logger.info("Completed agent invocation, restarting loop")
+                await asyncio.sleep(1)
+            except Exception as e:
+                logger.error(f"Error in agent loop: {str(e)}")
+                log_to_database("error", f"Error in agent loop: {str(e)}")
+                await asyncio.sleep(5)
 ```
 - **Event-driven**: Only acts when mentioned by other agents
-- **Single execution**: Agent manages its own conversation loop internally
+- **Persistent operation**: Maintains continuous connection and infinite loop
 - **Pure reactive**: No autonomous scheduled operations
-- **Crash-resistant**: Robust retry logic prevents connection failures
+- **Crash-resistant**: Automatic error recovery within persistent connection
+- **Proven pattern**: Uses the same reliable pattern as the working World News Agent
 
 #### Standard Version (`.py`)
 ```python
@@ -391,13 +427,47 @@ const agentMappings = {
    - Increase timeout to 30000ms
    - Add explicit "no autonomous actions" instruction
 
-4. **Simplify the Main Loop**
+4. **Implement the Infinite Loop Pattern**
    ```python
-   # Replace complex while loop with:
-   async with MultiServerMCPClient(...) as client:
-       # ... setup ...
-       agent_executor = await create_agent(client, tools, agent_tools)
-       await agent_executor.ainvoke({})  # Single execution
+   # Replace complex retry logic with proven infinite loop pattern:
+   async def main():
+       """Main agent execution loop following working World News Agent pattern"""
+       # Check if user has context before starting
+       user_id = amu.get_user_context()
+       
+       if not user_id:
+           logger.error("No user context available. Cannot start Agent.")
+           log_to_database("error", "No user context available. Cannot start Agent.")
+           return
+       
+       logger.info(f"Starting Agent (Coral Protocol) for user: {user_id}")
+       log_to_database("info", f"Agent (Coral Protocol) starting for user: {user_id}")
+       
+       # Single persistent connection following working World News Agent pattern
+       async with MultiServerMCPClient(
+           connections={
+               "coral": {
+                   "transport": "sse",
+                   "url": MCP_SERVER_URL,
+                   "headers": {"X-User-ID": user_id},  # CRITICAL: User isolation header
+                   "timeout": 300,
+                   "sse_read_timeout": 300,
+               }
+           }
+       ) as client:
+           # ... setup tools and agent executor ...
+           
+           # Infinite loop with persistent connection
+           while True:
+               try:
+                   logger.info("Starting new agent invocation")
+                   await agent_executor.ainvoke({})
+                   logger.info("Completed agent invocation, restarting loop")
+                   await asyncio.sleep(1)
+               except Exception as e:
+                   logger.error(f"Error in agent loop: {str(e)}")
+                   log_to_database("error", f"Error in agent loop: {str(e)}")
+                   await asyncio.sleep(5)
    ```
 
 5. **Remove Scheduling Tools**
