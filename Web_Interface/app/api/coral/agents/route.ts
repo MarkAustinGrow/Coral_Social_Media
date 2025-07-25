@@ -77,33 +77,13 @@ export async function GET(request: NextRequest) {
         }
       }
 
-      // Fallback: If we can't get the agent list from Coral server,
-      // we'll have to use the Interface Agent's list_agents tool
-      const interfaceAgentUrl = `/api/coral/interface-agent?userId=${userId}&action=list_agents`
-      const interfaceResponse = await fetch(interfaceAgentUrl, {
-        method: 'GET',
-        signal: AbortSignal.timeout(10000)
-      })
-
-      if (interfaceResponse.ok) {
-        const interfaceData = await interfaceResponse.json()
-        
-        if (interfaceData.agents) {
-          return NextResponse.json({
-            success: true,
-            agents: interfaceData.agents,
-            source: 'interface_agent',
-            timestamp: new Date().toISOString()
-          })
-        }
-      }
-
-      // If all else fails, return empty list - no hardcoded agents!
+      // If we can't get the agent list from Coral server, return empty list
+      console.log('⚠️ [Coral Agents API] Could not retrieve agents from Coral server, returning empty list')
       return NextResponse.json({
         success: true,
         agents: [],
-        source: 'none',
-        message: 'No agents discovered from Coral server',
+        source: 'coral_server_unavailable',
+        message: 'Coral server is currently unavailable. No agents discovered.',
         timestamp: new Date().toISOString()
       })
 
