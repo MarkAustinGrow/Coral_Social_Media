@@ -945,47 +945,84 @@ async def main():
         logger.warning(f"User {user_id} has not configured Twitter credentials. Agent will wait for credentials to be configured.")
         log_to_database("warning", f"User {user_id} has not configured Twitter credentials. Agent will wait for credentials to be configured.")
     
-    # Use the new MCP client pattern (langchain-mcp-adapters 0.1.0+)
-    client = MultiServerMCPClient(
-        connections={
-            "coral": {
-                "transport": "sse",
-                "url": MCP_SERVER_URL,
-                "headers": {"X-User-ID": user_id},  # CRITICAL: User isolation header
-                "timeout": 300,
-                "sse_read_timeout": 300,
-            }
-        }
-    )
+    max_retries = 3
+    retry_delay = 5  # seconds
     
-    logger.info(f"Connected to MCP server at {MCP_SERVER_URL}")
-    log_to_database("info", f"Twitter Posting Agent (Multi-User) connected to MCP server for user {user_id}")
-    
-    # Define agent-specific tools
-    agent_tools = [
-        get_scheduled_tweets,
-        post_tweet,
-        post_tweet_thread,
-        check_api_rate_limits
-    ]
-    
-    # Get Coral tools using the new pattern
-    coral_tools = client.get_tools()
-    
-    # Combine Coral tools with agent-specific tools
-    tools = coral_tools + agent_tools
-    
-    # Create the agent executor
-    agent_executor = await create_twitter_posting_agent(client, tools, agent_tools)
-    
-    logger.info("Starting Twitter Posting Agent (Coral Protocol) execution")
-    log_to_database("info", "Starting Twitter Posting Agent (Coral Protocol) execution")
-    
-    # Single execution like the Interface Agent - let the agent handle its own conversation flow
-    await agent_executor.ainvoke({})
-    
-    logger.info("Twitter Posting Agent (Coral Protocol) execution completed")
-    log_to_database("info", "Twitter Posting Agent (Coral Protocol) execution completed")
+    for attempt in range(max_retries):
+        try:
+            # Use the new MCP client pattern (langchain-mcp-adapters 0.1.0+)
+            async with MultiServerMCPClient(
+                connections={
+                    "coral": {
+                        "transport": "sse",
+                        "url": MCP_SERVER_URL,
+                        "headers": {"X-User-ID": user_id},  # CRITICAL: User isolation header
+                        "timeout": 300,
+                        "sse_read_timeout": 300,
+                    }
+                }
+            ) as client:
+                logger.info(f"Connected to MCP server at {MCP_SERVER_URL}")
+                log_to_database("info", f"Twitter Posting Agent (Multi-User) connected to MCP server for user {user_id}")
+                
+                # Define agent-specific tools
+                agent_tools = [
+                    get_scheduled_tweets,
+                    post_tweet,
+                    post_tweet_thread,
+                    check_api_rate_limits
+                ]
+                
+                # Get Coral tools using the new pattern
+                coral_tools = client.get_tools()
+                
+                # Combine Coral tools with agent-specific tools
+                tools = coral_tools + agent_tools
+                
+                # Create the agent executor
+                agent_executor = await create_twitter_posting_agent(client, tools, agent_tools)
+                
+                logger.info("Starting Twitter Posting Agent (Coral Protocol) execution")
+                log_to_database("info", "Starting Twitter Posting Agent (Coral Protocol) execution")
+                
+                # Single execution like the Interface Agent - let the agent handle its own conversation flow
+                await agent_executor.ainvoke({})
+                
+                logger.info("Twitter Posting Agent (Coral Protocol) execution completed")
+                log_to_database("info", "Twitter Posting Agent (Coral Protocol) execution completed")
+                
+                # If we reach here, execution was successful
+                break
+                
+        except ClosedResourceError as e:
+            logger.warning(f"Connection closed unexpectedly (attempt {attempt + 1}/{max_retries}): {str(e)}")
+            log_to_database("warning", f"Connection closed unexpectedly (attempt {attempt + 1}/{max_retries}): {str(e)}")
+            
+            if attempt < max_retries - 1:
+                logger.info(f"Retrying in {retry_delay} seconds...")
+                log_to_database("info", f"Retrying in {retry_delay} seconds...")
+                await asyncio.sleep(retry_delay)
+            else:
+                logger.error("Max retries reached. Unable to maintain stable connection.")
+                log_to_database("error", "Max retries reached. Unable to maintain stable connection.")
+                raise
+                
+        except Exception as e:
+            logger.error(f"Unexpected error (attempt {attempt + 1}/{max_retries}): {str(e)}")
+            log_to_database("error", f"Unexpected error (attempt {attempt + 1}/{max_retries}): {str(e)}")
+            
+            if attempt < max_retries - 1:
+                logger.info(f"Retrying in {retry_delay} seconds...")
+                log_to_database("info", f"Retrying in {retry_delay} seconds...")
+                await asyncio.sleep(retry_delay)
+            else:
+                logger.error("Max retries reached. Unable to recover from error.")
+                log_to_database("error", "Max retries reached. Unable to recover from error.")
+                raise
+        finally:
+            # Ensure proper cleanup
+            logger.info("Cleaning up resources...")
+            log_to_database("info", "Cleaning up resources...")
 
 # Function to handle direct tweet posting (for API calls)
 async def post_tweet_direct(tweet_id, is_thread=False):

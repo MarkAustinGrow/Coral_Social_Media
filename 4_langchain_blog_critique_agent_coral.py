@@ -665,48 +665,90 @@ async def create_blog_critique_agent(client, tools, agent_tools):
     return AgentExecutor(agent=agent, tools=tools, verbose=True)
 
 async def main():
-    # Use the new MCP client pattern (langchain-mcp-adapters 0.1.0+)
-    client = MultiServerMCPClient(
-        connections={
-            "coral": {
-                "transport": "sse",
-                "url": MCP_SERVER_URL,
-                "headers": {"X-User-ID": user_id},  # CRITICAL: User isolation header
-                "timeout": 300,
-                "sse_read_timeout": 300,
-            }
-        }
-    )
+    """Main agent execution loop with retry logic"""
+    # Check if user has context before starting
+    user_id = amu.get_user_context()
     
-    logger.info(f"Connected to MCP server at {MCP_SERVER_URL}")
-    log_to_database("info", f"Blog Critique Agent started and connected to MCP server")
+    if not user_id:
+        logger.error("No user context available. Cannot start Blog Critique Agent.")
+        log_to_database("error", "No user context available. Cannot start Blog Critique Agent.")
+        return
     
-    # Define agent-specific tools
-    agent_tools = [
-        fetch_pending_blogs,
-        fetch_persona,
-        fact_check_blog_with_perplexity,
-        store_critique_report,
-        list_fact_check_status
-    ]
+    logger.info(f"Starting Blog Critique Agent (Coral Protocol) for user: {user_id}")
+    log_to_database("info", f"Blog Critique Agent (Coral Protocol) starting for user: {user_id}")
     
-    # Get Coral tools using the new pattern
-    coral_tools = client.get_tools()
-    
-    # Combine Coral tools with agent-specific tools
-    tools = coral_tools + agent_tools
-    
-    # Create the agent executor
-    agent_executor = await create_blog_critique_agent(client, tools, agent_tools)
-    
-    logger.info("Starting Blog Critique Agent (Coral Protocol) execution")
-    log_to_database("info", "Starting Blog Critique Agent (Coral Protocol) execution")
-    
-    # Single execution like the Interface Agent - let the agent handle its own conversation flow
-    await agent_executor.ainvoke({})
-    
-    logger.info("Blog Critique Agent (Coral Protocol) execution completed")
-    log_to_database("info", "Blog Critique Agent (Coral Protocol) execution completed")
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            logger.info(f"Connecting to SSE endpoint: {MCP_SERVER_URL}")
+            
+            # Use async context manager for proper MCP client connection with retry logic
+            async with MultiServerMCPClient(
+                connections={
+                    "coral": {
+                        "transport": "sse",
+                        "url": MCP_SERVER_URL,
+                        "headers": {"X-User-ID": user_id},  # CRITICAL: User isolation header
+                        "timeout": 300,           # 5 minute connection timeout
+                        "sse_read_timeout": 300,  # 5 minute read timeout
+                    }
+                }
+            ) as client:
+                logger.info(f"Connected to MCP server at {MCP_SERVER_URL}")
+                log_to_database("info", f"Blog Critique Agent (Coral Protocol) connected to MCP server for user {user_id}")
+                
+                # Define agent-specific tools
+                agent_tools = [
+                    fetch_pending_blogs,
+                    fetch_persona,
+                    fact_check_blog_with_perplexity,
+                    store_critique_report,
+                    list_fact_check_status
+                ]
+                
+                # Get Coral tools using the new pattern
+                coral_tools = client.get_tools()
+                logger.info(f"Available Coral tools: {[tool.name for tool in coral_tools]}")
+                log_to_database("info", f"Available Coral tools: {[tool.name for tool in coral_tools]}")
+                
+                # Combine Coral tools with agent-specific tools
+                tools = coral_tools + agent_tools
+                
+                logger.info("Starting Blog Critique Agent (Coral Protocol) execution")
+                log_to_database("info", "Starting Blog Critique Agent (Coral Protocol) execution")
+                
+                # Create the agent executor
+                agent_executor = await create_blog_critique_agent(client, tools, agent_tools)
+                
+                # Single execution like the Interface Agent - let the agent handle its own conversation flow
+                await agent_executor.ainvoke({})
+                
+                logger.info("Blog Critique Agent (Coral Protocol) execution completed")
+                log_to_database("info", "Blog Critique Agent (Coral Protocol) execution completed")
+                
+                # Break out of retry loop on successful execution
+                break
+                        
+        except ClosedResourceError as e:
+            logger.error(f"ClosedResourceError on attempt {attempt + 1}: {e}")
+            log_to_database("error", f"ClosedResourceError on attempt {attempt + 1}: {e}")
+            if attempt < max_retries - 1:
+                logger.info("Retrying in 5 seconds...")
+                await asyncio.sleep(5)
+                continue
+            else:
+                logger.error("Max retries reached. Exiting.")
+                raise
+        except Exception as e:
+            logger.error(f"Unexpected error on attempt {attempt + 1}: {e}")
+            log_to_database("error", f"Unexpected error on attempt {attempt + 1}: {e}")
+            if attempt < max_retries - 1:
+                logger.info("Retrying in 5 seconds...")
+                await asyncio.sleep(5)
+                continue
+            else:
+                logger.error("Max retries reached. Exiting.")
+                raise
 
 if __name__ == "__main__":
     # Mark agent as started (use both old and new for compatibility)

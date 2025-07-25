@@ -644,50 +644,87 @@ async def create_blog_writing_agent(client, tools, agent_tools):
     return AgentExecutor(agent=agent, tools=tools, verbose=True)
 
 async def main():
-    # Use the new MCP client pattern (langchain-mcp-adapters 0.1.0+)
-    client = MultiServerMCPClient(
-        connections={
-            "coral": {
-                "transport": "sse",
-                "url": MCP_SERVER_URL,
-                "headers": {"X-User-ID": user_id},  # CRITICAL: User isolation header
-                "timeout": 300,
-                "sse_read_timeout": 300,
-            }
-        }
-    )
+    max_retries = 3
+    retry_delay = 5  # seconds
     
-    logger.info(f"Connected to MCP server at {MCP_SERVER_URL}")
-    log_to_database("info", f"Blog Writing Agent started and connected to MCP server")
-    
-    # Define agent-specific tools
-    agent_tools = [
-        fetch_persona,
-        get_engagement_metrics,
-        select_next_topic,
-        update_topic_usage,
-        search_tweet_insights,
-        get_recent_blog_posts,
-        save_blog_post
-    ]
-    
-    # Get Coral tools using the new pattern
-    coral_tools = client.get_tools()
-    
-    # Combine Coral tools with agent-specific tools
-    tools = coral_tools + agent_tools
-    
-    # Create the agent executor
-    agent_executor = await create_blog_writing_agent(client, tools, agent_tools)
-    
-    logger.info("Starting Blog Writing Agent (Coral Protocol) execution")
-    log_to_database("info", "Starting Blog Writing Agent (Coral Protocol) execution")
-    
-    # Single execution like the Interface Agent - let the agent handle its own conversation flow
-    await agent_executor.ainvoke({})
-    
-    logger.info("Blog Writing Agent (Coral Protocol) execution completed")
-    log_to_database("info", "Blog Writing Agent (Coral Protocol) execution completed")
+    for attempt in range(max_retries):
+        try:
+            # Use the new MCP client pattern (langchain-mcp-adapters 0.1.0+)
+            async with MultiServerMCPClient(
+                connections={
+                    "coral": {
+                        "transport": "sse",
+                        "url": MCP_SERVER_URL,
+                        "headers": {"X-User-ID": user_id},  # CRITICAL: User isolation header
+                        "timeout": 300,
+                        "sse_read_timeout": 300,
+                    }
+                }
+            ) as client:
+                logger.info(f"Connected to MCP server at {MCP_SERVER_URL}")
+                log_to_database("info", f"Blog Writing Agent started and connected to MCP server")
+                
+                # Define agent-specific tools
+                agent_tools = [
+                    fetch_persona,
+                    get_engagement_metrics,
+                    select_next_topic,
+                    update_topic_usage,
+                    search_tweet_insights,
+                    get_recent_blog_posts,
+                    save_blog_post
+                ]
+                
+                # Get Coral tools using the new pattern
+                coral_tools = client.get_tools()
+                
+                # Combine Coral tools with agent-specific tools
+                tools = coral_tools + agent_tools
+                
+                # Create the agent executor
+                agent_executor = await create_blog_writing_agent(client, tools, agent_tools)
+                
+                logger.info("Starting Blog Writing Agent (Coral Protocol) execution")
+                log_to_database("info", "Starting Blog Writing Agent (Coral Protocol) execution")
+                
+                # Single execution like the Interface Agent - let the agent handle its own conversation flow
+                await agent_executor.ainvoke({})
+                
+                logger.info("Blog Writing Agent (Coral Protocol) execution completed")
+                log_to_database("info", "Blog Writing Agent (Coral Protocol) execution completed")
+                
+                # If we reach here, execution was successful
+                break
+                
+        except ClosedResourceError as e:
+            logger.warning(f"Connection closed unexpectedly (attempt {attempt + 1}/{max_retries}): {str(e)}")
+            log_to_database("warning", f"Connection closed unexpectedly (attempt {attempt + 1}/{max_retries}): {str(e)}")
+            
+            if attempt < max_retries - 1:
+                logger.info(f"Retrying in {retry_delay} seconds...")
+                log_to_database("info", f"Retrying in {retry_delay} seconds...")
+                await asyncio.sleep(retry_delay)
+            else:
+                logger.error("Max retries reached. Unable to maintain stable connection.")
+                log_to_database("error", "Max retries reached. Unable to maintain stable connection.")
+                raise
+                
+        except Exception as e:
+            logger.error(f"Unexpected error (attempt {attempt + 1}/{max_retries}): {str(e)}")
+            log_to_database("error", f"Unexpected error (attempt {attempt + 1}/{max_retries}): {str(e)}")
+            
+            if attempt < max_retries - 1:
+                logger.info(f"Retrying in {retry_delay} seconds...")
+                log_to_database("info", f"Retrying in {retry_delay} seconds...")
+                await asyncio.sleep(retry_delay)
+            else:
+                logger.error("Max retries reached. Unable to recover from error.")
+                log_to_database("error", "Max retries reached. Unable to recover from error.")
+                raise
+        finally:
+            # Ensure proper cleanup
+            logger.info("Cleaning up resources...")
+            log_to_database("info", "Cleaning up resources...")
 
 if __name__ == "__main__":
     # Mark agent as started (use both old and new for compatibility)
