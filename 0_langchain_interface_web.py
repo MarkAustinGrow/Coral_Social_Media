@@ -135,25 +135,60 @@ async def create_interface_agent(client, tools):
     prompt = ChatPromptTemplate.from_messages([
         (
             "system",
-            f"""You are an agent interacting with the tools from Coral Server and having your own Human Tool to ask have a conversation with Human. 
+            f"""You are an Interface Agent operating in CORAL PROTOCOL mode for user {user_id}.
             
-            IMPORTANT: You are operating in MULTI-USER mode for user {user_id}.
+            IMPORTANT: You are operating in MULTI-USER mode. Each user has their own agents and data.
             You will only interact with agents and data belonging to this specific user.
             
+            CORAL PROTOCOL BEHAVIOR:
+            You listen for instructions from other agents and respond via the Coral Protocol.
+            
             Follow these steps in order:
-            1. Use `list_agents` to list all connected agents and get their descriptions.
-            2. Use `ask_human` to ask, "How can I assist you today?" and capture the response.
-            3. Take 2 seconds to think and understand the user's intent and decide the right agent to handle the request based on list of agents. 
-            4. If the user wants any information about the coral server, use the tools to get the information and pass it to the user. Do not send any message to any other agent, just give the information and go to Step 1.
-            5. Once you have the right agent, use `create_thread` to create a thread with the selected agent. If no agent is available, use the `ask_human` tool to specify the agent you want to use.
-            6. Use your logic to determine the task you want that agent to perform and create a message for them which instructs the agent to perform the task called "instruction". 
-            7. Use `send_message` to send a message in the thread, mentioning the selected agent, with content: "instructions".
-            8. Use `wait_for_mentions` with a 30 seconds timeout to wait for a response from the agent you mentioned.
-            9. Show the entire conversation in the thread to the user.
-            10. Wait for 3 seconds and then use `ask_human` to ask the user if they need anything else and keep waiting for their response.
-            11. If the user asks for something else, repeat the process from step 1.
-
-            Use only listed tools: {tools_description}"""
+            1. Call `wait_for_mentions` from coral tools (timeoutMs: 30000) to receive mentions from other agents.
+            2. When you receive a mention, keep the thread ID and the sender ID.
+            3. Parse the instruction in the message content. Look for requests like:
+               - "coordinate with agents"
+               - "process user request"
+               - "manage workflow"
+               - "interface with user"
+               - "orchestrate tasks"
+            4. Based on the instruction, use your tools to:
+               a. List available agents using `list_agents`
+               b. Create threads with appropriate agents using `create_thread`
+               c. Send instructions to agents using `send_message`
+               d. Wait for responses using `wait_for_mentions`
+               e. Coordinate multi-agent workflows
+            5. Prepare a response with the results (agents contacted, tasks coordinated, etc.)
+            6. Use `send_message` from coral tools to send your response back to the sender in the same thread.
+            7. Always respond back to the sender agent, even if there's an error.
+            8. Wait for 2 seconds and repeat the process from step 1.
+            
+            If no mentions are received (timeout), simply continue waiting - do NOT perform autonomous actions.
+            
+            RESPONSE FORMAT:
+            Always format your responses clearly:
+            - Success: "Coordinated with X agents successfully. Tasks: [list of tasks]"
+            - Error: "Unable to coordinate: [reason]. Please check agent availability."
+            - No agents: "No suitable agents available for the requested task."
+            - Workflow complete: "Multi-agent workflow completed successfully."
+            
+            INTERFACE AGENT FOCUS:
+            When coordinating agents for the current user, focus on:
+            - Using the user's own agents and data
+            - Orchestrating multi-agent workflows
+            - Managing inter-agent communication
+            - Ensuring proper task delegation
+            - Providing clear status updates
+            - Handling errors gracefully
+            - Maintaining user data isolation
+            
+            MULTI-USER CONSIDERATIONS:
+            - Always use the current user's agents
+            - Ensure all coordination is user-specific and isolated
+            - Handle cases where agents are not available gracefully
+            - Maintain proper threading for complex workflows
+            
+            Available Coral tools: {tools_description}"""
         ),
         ("placeholder", "{agent_scratchpad}")
     ])
@@ -169,151 +204,68 @@ async def create_interface_agent(client, tools):
     agent = create_tool_calling_agent(model, tools, prompt)
     return AgentExecutor(agent=agent, tools=tools, verbose=True)
 
-async def handle_user_message(client, tools, user_message):
-    """Handle a single user message and return response"""
-    try:
-        # Create agent executor
-        agent_executor = await create_interface_agent(client, tools)
-        
-        # Process the user message
-        send_json_message("status", message="Processing your request...")
-        
-        # Create a custom prompt that includes the user's message
-        result = await agent_executor.ainvoke({
-            "input": user_message,
-            "chat_history": []
-        })
-        
-        # Send the result back
-        if result and "output" in result:
-            send_json_message("agent_response", response=result["output"])
-        else:
-            send_json_message("agent_response", response="Task completed successfully.")
-            
-        return True
-        
-    except Exception as e:
-        logger.error(f"Error handling user message: {e}")
-        send_json_message("error", message=f"Error processing message: {e}")
-        return False
 
 async def main():
+    """Main agent execution loop following working World News Agent pattern"""
     # Check if user context is available
     if not user_id:
         logger.error("No user context available. Cannot start Interface Agent.")
         log_to_database("error", "No user context available. Cannot start Interface Agent.")
         return
     
-    logger.info(f"Starting Web Interface Agent for user: {user_id}")
-    log_to_database("info", f"Web Interface Agent starting for user: {user_id}")
+    logger.info(f"Starting Interface Agent (Coral Protocol) for user: {user_id}")
+    log_to_database("info", f"Interface Agent (Coral Protocol) starting for user: {user_id}")
     send_json_message("status", message=f"Interface Agent starting for user: {user_id}")
     
-    max_retries = 3
-    for attempt in range(max_retries):
-        try:
-            logger.info(f"Connecting to SSE endpoint: {MCP_SERVER_URL}")
-            send_json_message("status", message="Connecting to Coral server...")
-            
-            # Use the new MCP client pattern with user context (langchain-mcp-adapters 0.1.0+)
-            async with MultiServerMCPClient(
-                connections={
-                    "coral": {
-                        "transport": "sse",
-                        "url": MCP_SERVER_URL,
-                        "headers": {"X-User-ID": user_id},  # CRITICAL: User isolation header
-                        "timeout": 300,
-                        "sse_read_timeout": 300,
-                    }
-                }
-            ) as client:
-                logger.info(f"Connected to MCP server at {MCP_SERVER_URL}")
-                log_to_database("info", f"Web Interface Agent connected to MCP server for user {user_id}")
-                send_json_message("status", message="Connected to Coral server")
-                
-                # Get Coral tools using the new pattern
-                coral_tools = client.get_tools()
-                logger.info(f"Available Coral tools: {[tool.name for tool in coral_tools]}")
-                log_to_database("info", f"Available Coral tools: {[tool.name for tool in coral_tools]}")
-                send_json_message("tools_available", tools=[tool.name for tool in coral_tools])
-                
-                # Add the ask_human tool
-                tools = coral_tools + [Tool(
-                    name="ask_human",
-                    func=None,
-                    coroutine=ask_human_tool,
-                    description="Ask the user a question and wait for a response."
-                )]
-                
-                logger.info("Web Interface Agent ready for messages")
-                log_to_database("info", "Web Interface Agent ready for messages")
-                send_json_message("status", message="Interface Agent ready")
-                
-                # Wait for messages from the web interface
-                while True:
-                    # Check for messages in the queue
-                    if message_queue:
-                        message = message_queue.pop(0)
-                        
-                        # Handle different message types
-                        if message.get("type") == "user_message":
-                            user_message = message.get("content", "")
-                            logger.info(f"Processing user message: {user_message}")
-                            
-                            # Handle the user message
-                            success = await handle_user_message(client, tools, user_message)
-                            
-                            if not success:
-                                break
-                        elif message.get("type") == "user_response":
-                            # This is handled by the ask_human_tool function
-                            pass
-                        else:
-                            # Handle initial message from web interface (string format)
-                            if isinstance(message, str):
-                                logger.info(f"Processing initial message: {message}")
-                                
-                                # Handle the initial message
-                                success = await handle_user_message(client, tools, message)
-                                
-                                if not success:
-                                    break
-                    
-                    # Small delay to prevent busy waiting
-                    await asyncio.sleep(0.1)
-                
-                logger.info("Web Interface Agent session ended")
-                log_to_database("info", "Web Interface Agent session ended")
-                send_json_message("status", message="Interface Agent session ended")
-                
-                # Break out of retry loop on successful execution
-                break
-                        
-        except ClosedResourceError as e:
-            logger.error(f"ClosedResourceError on attempt {attempt + 1}: {e}")
-            log_to_database("error", f"ClosedResourceError on attempt {attempt + 1}: {e}")
-            send_json_message("error", message=f"Connection error: {e}")
-            if attempt < max_retries - 1:
-                logger.info("Retrying in 5 seconds...")
-                send_json_message("status", message="Retrying connection...")
+    # Single persistent connection following working World News Agent pattern
+    async with MultiServerMCPClient(
+        connections={
+            "coral": {
+                "transport": "sse",
+                "url": MCP_SERVER_URL,
+                "headers": {"X-User-ID": user_id},  # CRITICAL: User isolation header
+                "timeout": 300,
+                "sse_read_timeout": 300,
+            }
+        }
+    ) as client:
+        logger.info(f"Connected to MCP server at {MCP_SERVER_URL}")
+        log_to_database("info", f"Interface Agent connected to MCP server for user {user_id}")
+        send_json_message("status", message="Connected to Coral server")
+        
+        # Get Coral tools using the new pattern
+        coral_tools = client.get_tools()
+        logger.info(f"Available Coral tools: {[tool.name for tool in coral_tools]}")
+        log_to_database("info", f"Available Coral tools: {[tool.name for tool in coral_tools]}")
+        send_json_message("tools_available", tools=[tool.name for tool in coral_tools])
+        
+        # Add the ask_human tool
+        tools = coral_tools + [Tool(
+            name="ask_human",
+            func=None,
+            coroutine=ask_human_tool,
+            description="Ask the user a question and wait for a response."
+        )]
+        
+        # Create the agent executor
+        agent_executor = await create_interface_agent(client, tools)
+        
+        logger.info("Starting Interface Agent (Coral Protocol) execution")
+        log_to_database("info", "Starting Interface Agent (Coral Protocol) execution")
+        send_json_message("status", message="Interface Agent ready")
+        
+        # Infinite loop with persistent connection following working World News Agent pattern
+        while True:
+            try:
+                logger.info("Starting new agent invocation")
+                await agent_executor.ainvoke({})
+                logger.info("Completed agent invocation, restarting loop")
+                await asyncio.sleep(1)
+            except Exception as e:
+                logger.error(f"Error in agent loop: {str(e)}")
+                log_to_database("error", f"Error in agent loop: {str(e)}")
+                send_json_message("error", message=f"Agent loop error: {str(e)}")
                 await asyncio.sleep(5)
-                continue
-            else:
-                logger.error("Max retries reached. Exiting.")
-                send_json_message("error", message="Max retries reached")
-                raise
-        except Exception as e:
-            logger.error(f"Unexpected error on attempt {attempt + 1}: {e}")
-            log_to_database("error", f"Unexpected error on attempt {attempt + 1}: {e}")
-            send_json_message("error", message=f"Unexpected error: {e}")
-            if attempt < max_retries - 1:
-                logger.info("Retrying in 5 seconds...")
-                send_json_message("status", message="Retrying...")
-                await asyncio.sleep(5)
-                continue
-            else:
-                logger.error("Max retries reached. Exiting.")
-                send_json_message("error", message="Max retries reached")
-                raise
 
 if __name__ == "__main__":
     # Start stdin reader in background

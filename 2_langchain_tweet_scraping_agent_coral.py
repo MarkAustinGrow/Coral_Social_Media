@@ -556,6 +556,7 @@ async def create_tweet_scraping_agent(client, tools, agent_tools):
     return AgentExecutor(agent=agent, tools=tools, verbose=True)
 
 async def main():
+    """Main agent execution loop following working World News Agent pattern"""
     # Check if user has Twitter credentials before starting
     user_id = amu.get_user_context()
     
@@ -567,78 +568,55 @@ async def main():
     logger.info(f"Starting Tweet Scraping Agent (Coral Protocol) for user: {user_id}")
     log_to_database("info", f"Tweet Scraping Agent (Coral Protocol) starting for user: {user_id}")
     
-    max_retries = 3
-    for attempt in range(max_retries):
-        try:
-            logger.info(f"Connecting to SSE endpoint: {MCP_SERVER_URL}")
-            
-            # Use the new MCP client pattern with user context (langchain-mcp-adapters 0.1.0+)
-            async with MultiServerMCPClient(
-                connections={
-                    "coral": {
-                        "transport": "sse",
-                        "url": MCP_SERVER_URL,
-                        "headers": {"X-User-ID": user_id},  # CRITICAL: User isolation header
-                        "timeout": 300,
-                        "sse_read_timeout": 300,
-                    }
-                }
-            ) as client:
-                logger.info(f"Connected to MCP server at {MCP_SERVER_URL}")
-                log_to_database("info", f"Tweet Scraping Agent (Coral Protocol) connected to MCP server for user {user_id}")
-                
-                # Define agent-specific tools
-                agent_tools = [
-                    fetch_tweets,
-                    get_api_usage,
-                    store_tweets,
-                    get_accounts_to_monitor,
-                    update_account_fetch_time
-                ]
-                
-                # Get Coral tools using the new pattern
-                coral_tools = client.get_tools()
-                logger.info(f"Available Coral tools: {[tool.name for tool in coral_tools]}")
-                log_to_database("info", f"Available Coral tools: {[tool.name for tool in coral_tools]}")
-                
-                # Combine Coral tools with agent-specific tools
-                tools = coral_tools + agent_tools
-                
-                logger.info("Starting Tweet Scraping Agent (Coral Protocol) execution")
-                log_to_database("info", "Starting Tweet Scraping Agent (Coral Protocol) execution")
-                
-                # Create and run the agent
-                agent_executor = await create_tweet_scraping_agent(client, tools, agent_tools)
-                
-                # Single execution like the Interface Agent - let the agent handle its own conversation flow
+    # Single persistent connection following working World News Agent pattern
+    async with MultiServerMCPClient(
+        connections={
+            "coral": {
+                "transport": "sse",
+                "url": MCP_SERVER_URL,
+                "headers": {"X-User-ID": user_id},  # CRITICAL: User isolation header
+                "timeout": 300,
+                "sse_read_timeout": 300,
+            }
+        }
+    ) as client:
+        logger.info(f"Connected to MCP server at {MCP_SERVER_URL}")
+        log_to_database("info", f"Tweet Scraping Agent (Coral Protocol) connected to MCP server for user {user_id}")
+        
+        # Define agent-specific tools
+        agent_tools = [
+            fetch_tweets,
+            get_api_usage,
+            store_tweets,
+            get_accounts_to_monitor,
+            update_account_fetch_time
+        ]
+        
+        # Get Coral tools using the new pattern
+        coral_tools = client.get_tools()
+        logger.info(f"Available Coral tools: {[tool.name for tool in coral_tools]}")
+        log_to_database("info", f"Available Coral tools: {[tool.name for tool in coral_tools]}")
+        
+        # Combine Coral tools with agent-specific tools
+        tools = coral_tools + agent_tools
+        
+        # Create the agent executor
+        agent_executor = await create_tweet_scraping_agent(client, tools, agent_tools)
+        
+        logger.info("Starting Tweet Scraping Agent (Coral Protocol) execution")
+        log_to_database("info", "Starting Tweet Scraping Agent (Coral Protocol) execution")
+        
+        # Infinite loop with persistent connection following working World News Agent pattern
+        while True:
+            try:
+                logger.info("Starting new agent invocation")
                 await agent_executor.ainvoke({})
-                
-                logger.info("Tweet Scraping Agent (Coral Protocol) execution completed")
-                log_to_database("info", "Tweet Scraping Agent (Coral Protocol) execution completed")
-                
-                # Break out of retry loop on successful execution
-                break
-                        
-        except ClosedResourceError as e:
-            logger.error(f"ClosedResourceError on attempt {attempt + 1}: {e}")
-            log_to_database("error", f"ClosedResourceError on attempt {attempt + 1}: {e}")
-            if attempt < max_retries - 1:
-                logger.info("Retrying in 5 seconds...")
+                logger.info("Completed agent invocation, restarting loop")
+                await asyncio.sleep(1)
+            except Exception as e:
+                logger.error(f"Error in agent loop: {str(e)}")
+                log_to_database("error", f"Error in agent loop: {str(e)}")
                 await asyncio.sleep(5)
-                continue
-            else:
-                logger.error("Max retries reached. Exiting.")
-                raise
-        except Exception as e:
-            logger.error(f"Unexpected error on attempt {attempt + 1}: {e}")
-            log_to_database("error", f"Unexpected error on attempt {attempt + 1}: {e}")
-            if attempt < max_retries - 1:
-                logger.info("Retrying in 5 seconds...")
-                await asyncio.sleep(5)
-                continue
-            else:
-                logger.error("Max retries reached. Exiting.")
-                raise
 
 if __name__ == "__main__":
     # Mark agent as started (use both old and new for compatibility)
