@@ -109,25 +109,46 @@ def get_tools_description(tools):
     )
 
 async def ask_human_tool(question: str) -> str:
-    """Web-compatible ask_human tool that uses JSON communication"""
+    """Web-compatible ask_human tool that uses JSON communication with timeout and error handling"""
     global waiting_for_input, message_queue
     
-    # Send question to web interface
-    send_json_message("agent_question", question=question)
-    
-    # Wait for response from web interface
-    waiting_for_input = True
-    while waiting_for_input and len(message_queue) == 0:
-        await asyncio.sleep(0.1)
-    
-    if message_queue:
-        response_msg = message_queue.pop(0)
-        if response_msg.get("type") == "user_response":
-            user_response = response_msg.get("content", "")
-            send_json_message("user_response", message=user_response)
-            return user_response
-    
-    return "No response received"
+    try:
+        # Send question to web interface
+        send_json_message("agent_question", question=question)
+        logger.info(f"Sent question to web interface: {question[:50]}...")
+        
+        # Wait for response from web interface with timeout (60 seconds)
+        waiting_for_input = True
+        timeout_counter = 0
+        max_timeout = 600  # 60 seconds (600 * 0.1)
+        
+        while waiting_for_input and len(message_queue) == 0 and timeout_counter < max_timeout:
+            await asyncio.sleep(0.1)
+            timeout_counter += 1
+        
+        # Check if we got a response
+        if message_queue:
+            response_msg = message_queue.pop(0)
+            if response_msg.get("type") == "user_response":
+                user_response = response_msg.get("content", "")
+                send_json_message("user_response", message=user_response)
+                logger.info(f"Received user response: {user_response[:50]}...")
+                return user_response
+        
+        # Handle timeout case
+        if timeout_counter >= max_timeout:
+            logger.warning("Timeout waiting for user response (60 seconds)")
+            send_json_message("timeout", message="Timeout waiting for user response")
+            return "Timeout - no response received within 60 seconds. Please try again."
+        
+        # Handle no response case
+        logger.warning("No response received from web interface")
+        return "No response received from web interface. Please try again."
+        
+    except Exception as e:
+        logger.error(f"Error in ask_human_tool: {str(e)}")
+        send_json_message("error", message=f"Communication error: {str(e)}")
+        return f"Communication error occurred: {str(e)}. Please try again."
 
 async def create_interface_agent(client, tools):
     tools_description = get_tools_description(tools)
