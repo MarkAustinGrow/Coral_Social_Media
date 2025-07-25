@@ -37,12 +37,33 @@ Our system supports **two operational modes** via the **Agent Mode Selector**:
 
 #### Coral Version (`_coral.py`)
 ```python
-# Single execution - let agent handle its own conversation flow
-await agent_executor.ainvoke({})
+# Robust execution with retry logic and error handling
+max_retries = 3
+for attempt in range(max_retries):
+    try:
+        async with MultiServerMCPClient(...) as client:
+            # Single execution - let agent handle its own conversation flow
+            await agent_executor.ainvoke({})
+            break  # Success - exit retry loop
+    except ClosedResourceError as e:
+        if attempt < max_retries - 1:
+            logger.info("Retrying in 5 seconds...")
+            await asyncio.sleep(5)
+            continue
+        else:
+            raise  # Max retries reached
+    except Exception as e:
+        # Handle other errors with retry logic
+        if attempt < max_retries - 1:
+            await asyncio.sleep(5)
+            continue
+        else:
+            raise
 ```
 - **Event-driven**: Only acts when mentioned by other agents
 - **Single execution**: Agent manages its own conversation loop internally
 - **Pure reactive**: No autonomous scheduled operations
+- **Crash-resistant**: Robust retry logic prevents connection failures
 
 #### Standard Version (`.py`)
 ```python
@@ -470,6 +491,128 @@ CPU: Medium (continuous loops)
 Memory: Medium (persistent state)
 Network: Steady (regular operations)
 Latency: Variable (depends on scheduling)
+```
+
+---
+
+## Error Handling and Crash Prevention
+
+### Robust Connection Management
+
+All Coral Protocol agents implement **robust error handling** to prevent crashes from connection issues:
+
+#### 1. **Retry Logic Pattern**
+```python
+async def main():
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            async with MultiServerMCPClient(...) as client:
+                # Agent execution
+                await agent_executor.ainvoke({})
+                break  # Success - exit retry loop
+        except ClosedResourceError as e:
+            logger.error(f"ClosedResourceError on attempt {attempt + 1}: {e}")
+            if attempt < max_retries - 1:
+                logger.info("Retrying in 5 seconds...")
+                await asyncio.sleep(5)
+                continue
+            else:
+                logger.error("Max retries reached. Exiting.")
+                raise
+        except Exception as e:
+            logger.error(f"Unexpected error on attempt {attempt + 1}: {e}")
+            if attempt < max_retries - 1:
+                await asyncio.sleep(5)
+                continue
+            else:
+                raise
+```
+
+#### 2. **Enhanced Status Management**
+```python
+if __name__ == "__main__":
+    # Mark agent as started
+    asu.mark_agent_started(AGENT_NAME)
+    amu.mark_agent_started_with_user(AGENT_NAME)
+    log_to_database("info", "Agent started")
+    
+    try:
+        asyncio.run(main())
+    except Exception as e:
+        # Report error in status
+        asu.report_error(AGENT_NAME, f"Fatal error: {str(e)}")
+        amu.report_error_with_user(AGENT_NAME, f"Fatal error: {str(e)}")
+        raise
+    finally:
+        # Always mark as stopped
+        asu.mark_agent_stopped(AGENT_NAME)
+        amu.mark_agent_stopped_with_user(AGENT_NAME)
+```
+
+### Why This Prevents Crashes
+
+#### **Common Crash Scenarios:**
+1. **Connection Timeouts**: MCP server becomes temporarily unavailable
+2. **Network Issues**: Temporary network connectivity problems
+3. **Resource Exhaustion**: Server-side resource limitations
+4. **Protocol Errors**: Coral Protocol communication issues
+
+#### **How Retry Logic Helps:**
+- **Automatic Recovery**: Agents automatically retry failed connections
+- **Graceful Degradation**: Agents continue operating after temporary issues
+- **Proper Cleanup**: Resources are properly released on failures
+- **Status Tracking**: System knows when agents are having issues
+
+#### **Production Benefits:**
+- **Higher Uptime**: Agents stay running through temporary issues
+- **Better User Experience**: Workflows continue despite minor hiccups
+- **Easier Debugging**: Clear logs of retry attempts and failures
+- **Predictable Behavior**: Consistent error handling across all agents
+
+### Error Handling Best Practices
+
+#### 1. **Import Required Modules**
+```python
+from anyio import ClosedResourceError
+import asyncio
+import logging
+```
+
+#### 2. **Configure Proper Timeouts**
+```python
+# Coral Protocol connection with appropriate timeouts
+async with MultiServerMCPClient(
+    connections={
+        "coral": {
+            "transport": "sse",
+            "url": MCP_SERVER_URL,
+            "headers": {"X-User-ID": user_id},
+            "timeout": 300,           # 5 minute connection timeout
+            "sse_read_timeout": 300,  # 5 minute read timeout
+        }
+    }
+) as client:
+```
+
+#### 3. **Comprehensive Logging**
+```python
+# Log all retry attempts
+logger.error(f"ClosedResourceError on attempt {attempt + 1}: {e}")
+log_to_database("error", f"Connection error on attempt {attempt + 1}: {e}")
+
+# Log successful recoveries
+logger.info("Successfully reconnected after retry")
+log_to_database("info", "Agent recovered from connection error")
+```
+
+#### 4. **Graceful Shutdown**
+```python
+# Always clean up resources
+finally:
+    asu.mark_agent_stopped(AGENT_NAME)
+    amu.mark_agent_stopped_with_user(AGENT_NAME)
+    log_to_database("info", "Agent stopped gracefully")
 ```
 
 ---

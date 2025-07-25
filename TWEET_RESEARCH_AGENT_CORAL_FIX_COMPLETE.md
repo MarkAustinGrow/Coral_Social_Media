@@ -154,6 +154,94 @@ This fix ensures the Tweet Research Agent Coral version follows the proper Coral
 - `Coralised.md` - Architecture documentation
 - `Web_Interface/lib/process-manager.ts` - Agent mode switching
 
+## Crash Prevention Fix Applied ✅
+
+### **Additional Fix: Robust Error Handling**
+After analyzing the working Tweet Scraping Agent, I identified and implemented the key difference that prevents crashes:
+
+#### **Root Cause of Crashes:**
+The original Tweet Research Agent lacked **retry logic and proper error handling** for `ClosedResourceError`, causing it to crash when connections closed during timeout periods.
+
+#### **Solution Implemented:**
+1. **Added retry logic** with max 3 attempts
+2. **Proper ClosedResourceError handling** with 5-second delays between retries
+3. **Robust main execution pattern** matching the working Tweet Scraping Agent
+4. **Enhanced status tracking** with proper error reporting
+
+#### **Key Changes Made:**
+```python
+# BEFORE: Single execution with no retry logic
+async def main():
+    try:
+        async with MultiServerMCPClient(...) as client:
+            # Agent execution
+    except Exception as e:
+        # Simple error logging
+        raise
+
+# AFTER: Robust retry pattern
+async def main():
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            async with MultiServerMCPClient(...) as client:
+                # Agent execution
+                break  # Success - exit retry loop
+        except ClosedResourceError as e:
+            if attempt < max_retries - 1:
+                await asyncio.sleep(5)  # Wait and retry
+                continue
+            else:
+                raise  # Max retries reached
+        except Exception as e:
+            # Handle other errors with retry logic
+```
+
+#### **Enhanced Status Management:**
+```python
+if __name__ == "__main__":
+    # Mark agent as started
+    asu.mark_agent_started(AGENT_NAME)
+    amu.mark_agent_started_with_user(AGENT_NAME)
+    
+    try:
+        asyncio.run(main())
+    except Exception as e:
+        # Report error in status
+        asu.report_error(AGENT_NAME, f"Fatal error: {str(e)}")
+        amu.report_error_with_user(AGENT_NAME, f"Fatal error: {str(e)}")
+        raise
+    finally:
+        # Always mark as stopped
+        asu.mark_agent_stopped(AGENT_NAME)
+        amu.mark_agent_stopped_with_user(AGENT_NAME)
+```
+
+## Expected Behavior After Crash Fix ✅
+
+### **1. Resilient Operation:**
+- **Handles connection drops** gracefully with automatic retries
+- **Survives timeout periods** without crashing
+- **Continues waiting** for mentions after temporary connection issues
+- **Logs all retry attempts** for debugging
+
+### **2. Robust Error Recovery:**
+- **3 retry attempts** for connection issues
+- **5-second delays** between retries
+- **Proper error reporting** to status system
+- **Graceful shutdown** on max retries reached
+
+### **3. Consistent Availability:**
+- **Stays running** during normal timeout periods
+- **Automatically reconnects** after temporary network issues
+- **Maintains registration** with Coral Protocol
+- **Ready to respond** to mentions from other agents
+
 ## Status: COMPLETE ✅
 
-The Tweet Research Agent Coral version is now properly coralised and should integrate seamlessly with the Coral Protocol multi-agent system.
+The Tweet Research Agent Coral version is now:
+1. **Properly coralised** ✅
+2. **Crash-resistant** ✅ 
+3. **Ready for production** ✅
+
+The agent should now integrate seamlessly with the Coral Protocol multi-agent system and remain stable during extended operation.
