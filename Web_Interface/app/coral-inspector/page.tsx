@@ -154,12 +154,87 @@ function CoralInspectorPageContent() {
   const [messageContent, setMessageContent] = useState<string>("")
   const [threadId, setThreadId] = useState<string>("")
   const [toolResponse, setToolResponse] = useState<string>("")
+  const [sessionId, setSessionId] = useState<string>("")
 
   // Help sections state
   const [showModeHelp, setShowModeHelp] = useState(false)
   const [showProtocolHelp, setShowProtocolHelp] = useState(false)
   const [showArchitectureInfo, setShowArchitectureInfo] = useState(false)
   const [showInstructions, setShowInstructions] = useState(false)
+
+  // Session persistence functions
+  const getSessionKey = () => user ? `coral-inspector-session-${user.id}` : null
+
+  const saveSessionToStorage = (response: string, sessionId: string) => {
+    const key = getSessionKey()
+    if (!key) return
+    
+    const sessionData = {
+      response,
+      sessionId,
+      timestamp: Date.now(),
+      userId: user?.id
+    }
+    
+    try {
+      localStorage.setItem(key, JSON.stringify(sessionData))
+    } catch (error) {
+      console.error('Failed to save session to localStorage:', error)
+    }
+  }
+
+  const loadSessionFromStorage = () => {
+    const key = getSessionKey()
+    if (!key) return null
+    
+    try {
+      const stored = localStorage.getItem(key)
+      if (!stored) return null
+      
+      const sessionData = JSON.parse(stored)
+      
+      // Check if session is less than 1 hour old
+      const oneHour = 60 * 60 * 1000
+      if (Date.now() - sessionData.timestamp > oneHour) {
+        localStorage.removeItem(key)
+        return null
+      }
+      
+      return sessionData
+    } catch (error) {
+      console.error('Failed to load session from localStorage:', error)
+      return null
+    }
+  }
+
+  const clearSessionFromStorage = () => {
+    const key = getSessionKey()
+    if (!key) return
+    
+    try {
+      localStorage.removeItem(key)
+    } catch (error) {
+      console.error('Failed to clear session from localStorage:', error)
+    }
+  }
+
+  // Load session on component mount
+  useEffect(() => {
+    if (!user) return
+    
+    const savedSession = loadSessionFromStorage()
+    if (savedSession) {
+      setToolResponse(savedSession.response)
+      setSessionId(savedSession.sessionId)
+    }
+  }, [user])
+
+  // Save session whenever toolResponse changes
+  useEffect(() => {
+    if (!user || !toolResponse) return
+    
+    saveSessionToStorage(toolResponse, sessionId)
+  }, [toolResponse, sessionId, user])
 
   // Generate user-specific agent IDs
   const getUserAgentId = (agentKey: string) => {
@@ -354,6 +429,14 @@ function CoralInspectorPageContent() {
 
     try {
       console.log('[FRONTEND] Starting Interface Agent session for user:', user.id)
+      
+      // Clear previous session from storage when starting new session
+      clearSessionFromStorage()
+      
+      // Generate new session ID
+      const newSessionId = `session_${Date.now()}_${user.id}`
+      setSessionId(newSessionId)
+      
       setToolResponse("🚀 Starting Interface Agent session...\n")
       
       // Start SSE connection to Interface Agent
