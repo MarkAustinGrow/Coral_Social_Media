@@ -6,15 +6,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Label } from "@/components/ui/label"
 import { Card } from "@/components/ui/card"
 import { useToast } from "@/hooks/use-toast"
-
-type AgentMode = 'coral' | 'auto'
+import { useAgentMode, AgentMode } from "@/contexts/AgentModeContext"
 
 interface AgentModeSelectorProps {
   onStartAllAgents?: (mode: AgentMode) => void
 }
 
 export function AgentModeSelector({ onStartAllAgents }: AgentModeSelectorProps) {
-  const [agentMode, setAgentMode] = useState<AgentMode>('coral') // Default to coral mode
+  const { agentMode, setAgentMode } = useAgentMode()
   const [isStarting, setIsStarting] = useState(false)
   const { toast } = useToast()
 

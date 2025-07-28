@@ -8,7 +8,7 @@ export async function POST(request: NextRequest) {
   try {
     console.log('🔧 Start Agent API: Starting agent start process...')
     
-    const { agentName, mode = 'auto' } = await request.json()
+    const { agentName, mode = 'coral' } = await request.json()
     
     if (!agentName) {
       return NextResponse.json(

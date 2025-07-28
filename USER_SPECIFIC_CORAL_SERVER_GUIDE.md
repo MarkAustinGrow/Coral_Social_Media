@@ -4,6 +4,26 @@
 
 The agents were failing because they couldn't connect to the Coral MCP server. Each user needs their own isolated Coral server instance to maintain proper multiuser separation.
 
+## 🖥️ **Server Infrastructure**
+
+### **Two-Server Architecture:**
+- **Application Server**: Hosts the web interface, agents, and database
+  - **Server**: `coraluser@8interns.com` (main application server)
+  - **Working Directory**: `/home/coraluser/Coral_Social_Media`
+  - **Contains**: Next.js web interface, Python agents, PM2 processes
+
+- **Coral Server**: Dedicated MCP server for agent communication
+  - **Server**: `root@coral.8interns.com` (dedicated Coral server)
+  - **Working Directory**: `/root/Coral-Server-user-isolation/`
+  - **Contains**: Coral MCP server with user isolation support
+
+### **Coral Server Details:**
+- **Location**: `/root/Coral-Server-user-isolation/` on coral.8interns.com
+- **Executable**: `./gradlew run`
+- **Log File**: `coral-server.log`
+- **Test Script**: `test_multiuser.py`
+- **URL**: `http://coral.8interns.com/devmode/exampleApplication/privkey/session1/sse`
+
 ## 🏗️ **Architecture Overview**
 
 ### **User-Specific Port Allocation:**
@@ -53,12 +73,70 @@ ALTER TABLE user_profiles ADD COLUMN coral_server_port INTEGER;
 ALTER TABLE user_profiles ADD COLUMN coral_server_status VARCHAR(20) DEFAULT 'stopped';
 ```
 
+## 🖥️ **Coral Server Management**
+
+### **Starting the Coral Server:**
+```bash
+# SSH to the Coral server
+ssh root@coral.8interns.com
+
+# Navigate to Coral server directory
+cd /root/Coral-Server-user-isolation/
+
+# Start the server
+./gradlew run
+```
+
+### **Running in Background:**
+```bash
+# Start in background with nohup
+nohup ./gradlew run > coral-server.log 2>&1 &
+
+# Or use screen for persistent session
+screen -S coral-server
+./gradlew run
+# Press Ctrl+A, then D to detach
+```
+
+### **Checking Server Status:**
+```bash
+# Check if server is running
+ps aux | grep gradle
+
+# Check server logs
+tail -f coral-server.log
+
+# Check network connectivity
+netstat -tlnp | grep :8080  # Default Coral server port
+```
+
+### **Stopping the Server:**
+```bash
+# Find the process ID
+ps aux | grep gradle
+
+# Kill the process
+kill -9 <PID>
+
+# Or if running in screen
+screen -r coral-server
+# Press Ctrl+C to stop, then exit
+```
+
 ## 🔧 **Deployment Instructions**
 
-### **Step 1: Update Server Code**
+### **Step 1: Update Application Server Code**
 ```bash
+# On the application server (coraluser@8interns.com)
 cd /home/coraluser/Coral_Social_Media
 git pull origin authentication-working
+```
+
+### **Step 2: Ensure Coral Server is Running**
+```bash
+# On the Coral server (root@coral.8interns.com)
+cd /root/Coral-Server-user-isolation/
+./gradlew run
 ```
 
 ### **Step 2: Run Database Migration**

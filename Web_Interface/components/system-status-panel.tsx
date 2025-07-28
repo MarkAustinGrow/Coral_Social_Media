@@ -18,6 +18,7 @@ import { getSupabaseClient } from "@/lib/supabase"
 import { toast } from "sonner"
 import { formatDistanceToNow } from "date-fns"
 import { CreateAgentsButton } from "@/components/create-agents-button"
+import { useAgentMode } from "@/contexts/AgentModeContext"
 
 // Types for agent status
 interface AgentStatus {
@@ -32,6 +33,7 @@ interface AgentStatus {
 }
 
 export function SystemStatusPanel() {
+  const { agentMode } = useAgentMode()
   const [refreshKey, setRefreshKey] = useState(0)
   const [isStarting, setIsStarting] = useState<Record<string, boolean>>({})
   const [isStopping, setIsStopping] = useState<Record<string, boolean>>({})
@@ -85,11 +87,11 @@ export function SystemStatusPanel() {
     try {
       setIsStarting(prev => ({ ...prev, [agentName]: true }))
       
-      // Call the API to start the agent
+      // Call the API to start the agent with the current mode
       const response = await fetch('/api/agents/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ agentName })
+        body: JSON.stringify({ agentName, mode: agentMode })
       })
       
       const data = await response.json()
@@ -98,7 +100,7 @@ export function SystemStatusPanel() {
         throw new Error(data.error || 'Failed to start agent')
       }
       
-      toast.success(`${agentName} started successfully`)
+      toast.success(`${agentName} started successfully in ${agentMode} mode`)
       handleRefresh()
     } catch (error: any) {
       toast.error(`Failed to start ${agentName}: ${error.message}`)
