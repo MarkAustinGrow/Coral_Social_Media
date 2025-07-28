@@ -139,7 +139,7 @@ function CoralInspectorPageContent() {
     totalMessages: 0
   })
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState("dashboard")
+  const [activeTab, setActiveTab] = useState("tools")
   
   // Thread viewer state
   const [messages, setMessages] = useState<ThreadMessage[]>([])
@@ -647,18 +647,14 @@ function CoralInspectorPageContent() {
 
       {/* Main Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-4">
-          <TabsTrigger value="dashboard" className="flex items-center gap-2">
-            <Monitor className="h-4 w-4" />
-            Dashboard
+        <TabsList className="grid w-full grid-cols-3">
+          <TabsTrigger value="tools" className="flex items-center gap-2">
+            <Settings className="h-4 w-4" />
+            Chat
           </TabsTrigger>
           <TabsTrigger value="threads" className="flex items-center gap-2">
             <MessageCircle className="h-4 w-4" />
             Threads
-          </TabsTrigger>
-          <TabsTrigger value="tools" className="flex items-center gap-2">
-            <Settings className="h-4 w-4" />
-            Tools
           </TabsTrigger>
           <TabsTrigger value="logs" className="flex items-center gap-2">
             <FileText className="h-4 w-4" />
@@ -666,143 +662,6 @@ function CoralInspectorPageContent() {
           </TabsTrigger>
         </TabsList>
 
-        {/* Dashboard Tab */}
-        <TabsContent value="dashboard" className="space-y-6">
-          <div>
-            <h2 className="text-2xl font-semibold mb-4">My Agents</h2>
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              {USER_AGENTS.map((agent) => {
-                const agentId = getUserAgentId(agent.key)
-                const status = agentStatuses.find(s => s.agentId === agentId)
-                
-                return (
-                  <Card key={agent.key} className="relative">
-                    <CardHeader className="pb-3">
-                      <div className="flex items-center justify-between">
-                        <div className={`w-3 h-3 rounded-full ${agent.color}`} />
-                        {getStatusIcon(status?.status || 'offline')}
-                      </div>
-                      <CardTitle className="text-lg">{agent.name}</CardTitle>
-                      <CardDescription className="text-sm">
-                        {agent.description}
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="space-y-3">
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm text-muted-foreground">Status</span>
-                          {getStatusBadge(status?.status || 'offline')}
-                        </div>
-                        
-                        {status?.lastSeen && (
-                          <div className="flex items-center justify-between">
-                            <span className="text-sm text-muted-foreground">Last Seen</span>
-                            <span className="text-sm">
-                              {new Date(status.lastSeen).toLocaleTimeString()}
-                            </span>
-                          </div>
-                        )}
-                        
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm text-muted-foreground">Messages</span>
-                          <span className="text-sm font-medium">
-                            {status?.messageCount || 0}
-                          </span>
-                        </div>
-
-                        <div className="pt-2">
-                          {agent.isSpecial ? (
-                            // Interface Agent gets start/stop buttons
-                            <div className="space-y-2">
-                              {status?.status === 'online' ? (
-                                <Button 
-                                  variant="outline" 
-                                  size="sm" 
-                                  className="w-full"
-                                  onClick={() => handleStopAgent(agent.name)}
-                                >
-                                  <XCircle className="h-3 w-3 mr-1" />
-                                  Stop Agent
-                                </Button>
-                              ) : (
-                                <Button 
-                                  variant="outline" 
-                                  size="sm" 
-                                  className="w-full"
-                                  onClick={() => handleStartAgent(agent.name)}
-                                >
-                                  <Play className="h-3 w-3 mr-1" />
-                                  Start Agent
-                                </Button>
-                              )}
-                              {status?.sessionId && (
-                                <Button 
-                                  variant="outline" 
-                                  size="sm" 
-                                  className="w-full"
-                                  onClick={() => setActiveTab('threads')}
-                                >
-                                  <Eye className="h-3 w-3 mr-1" />
-                                  Inspect
-                                </Button>
-                              )}
-                            </div>
-                          ) : (
-                            // Other agents get inspect button
-                            status?.sessionId && (
-                              <Button 
-                                variant="outline" 
-                                size="sm" 
-                                className="w-full"
-                                onClick={() => setActiveTab('threads')}
-                              >
-                                <Eye className="h-3 w-3 mr-1" />
-                                Inspect
-                              </Button>
-                            )
-                          )}
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                )
-              })}
-            </div>
-          </div>
-
-          {/* Quick Actions */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Zap className="h-5 w-5" />
-                Quick Actions
-              </CardTitle>
-              <CardDescription>
-                Common Coral Protocol inspection tasks
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
-                <Button variant="outline" className="justify-start" onClick={() => setActiveTab('threads')}>
-                  <Activity className="h-4 w-4 mr-2" />
-                  View All Sessions
-                </Button>
-                <Button variant="outline" className="justify-start" onClick={() => setActiveTab('threads')}>
-                  <MessageSquare className="h-4 w-4 mr-2" />
-                  Recent Messages
-                </Button>
-                <Button variant="outline" className="justify-start" onClick={() => setActiveTab('tools')}>
-                  <Users className="h-4 w-4 mr-2" />
-                  Agent Interactions
-                </Button>
-                <Button variant="outline" className="justify-start" onClick={() => setActiveTab('tools')}>
-                  <Eye className="h-4 w-4 mr-2" />
-                  Debug Tools
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
 
         {/* Threads Tab */}
         <TabsContent value="threads" className="space-y-4">
