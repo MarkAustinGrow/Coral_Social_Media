@@ -142,9 +142,12 @@ async function startPythonInterfaceAgent(userId: string, session: any, initialMe
     
     logWithTimestamp('INFO', 'Environment variables set', { userId, AGENT_USER_ID: userId })
     
-    // Start the Python Interface Agent process
-    logWithTimestamp('INFO', 'Spawning Python process...', { userId })
-    const agentProcess = spawn('python3', [pythonScript], {
+    // Start the Python Interface Agent process using virtual environment
+    logWithTimestamp('INFO', 'Spawning Python process with virtual environment...', { userId })
+    const venvPythonPath = path.join(rootDir, 'coral_env', 'bin', 'python')
+    logWithTimestamp('INFO', 'Virtual environment Python path', { userId, venvPythonPath })
+    
+    const agentProcess = spawn(venvPythonPath, [pythonScript], {
       cwd: rootDir,
       stdio: ['pipe', 'pipe', 'pipe'],
       env: env
