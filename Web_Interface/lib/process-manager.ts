@@ -30,10 +30,16 @@ async function isProcessRunningByName(processName: string): Promise<boolean> {
 }
 
 /**
- * Kill a process by its name
+ * Kill a process by its name (with Interface Agent protection)
  */
 async function killProcessByName(processName: string): Promise<boolean> {
   try {
+    // PROTECTION: Never kill Interface Agent processes
+    if (processName.includes('0_langchain_interface') || processName.includes('interface_agent')) {
+      console.log(`🛡️ PROTECTION: Refusing to kill Interface Agent process: ${processName}`);
+      return false;
+    }
+    
     if (os.platform() === 'win32') {
       // On Windows, use taskkill with a more specific filter
       // First try with WINDOWTITLE filter
@@ -50,6 +56,12 @@ async function killProcessByName(processName: string): Promise<boolean> {
         const lines = stdout.split('\n');
         for (const line of lines) {
           if (line.toLowerCase().includes(processName.toLowerCase())) {
+            // PROTECTION: Double-check we're not killing Interface Agent
+            if (line.toLowerCase().includes('0_langchain_interface') || line.toLowerCase().includes('interface_agent')) {
+              console.log(`🛡️ PROTECTION: Skipping Interface Agent process in Windows kill: ${line}`);
+              continue;
+            }
+            
             // Extract PID from the CSV line (format: "python.exe","1234",...)
             const match = line.match(/"python\.exe","(\d+)"/i);
             if (match && match[1]) {
@@ -62,18 +74,19 @@ async function killProcessByName(processName: string): Promise<boolean> {
         
         // As a last resort, try using WMIC to find and kill the process
         try {
-          await execPromise(`wmic process where "commandline like '%${processName}%' and name='python.exe'" call terminate`);
+          await execPromise(`wmic process where "commandline like '%${processName}%' and name='python.exe' and not commandline like '%0_langchain_interface%'" call terminate`);
         } catch (wmicError) {
           console.log(`WMIC kill attempt failed: ${wmicError}`);
         }
       }
     } else {
       // On Unix-like systems, use pkill with the -f flag to match against the full command line
-      await execPromise(`pkill -f "${processName}"`);
+      // PROTECTION: Exclude Interface Agent from pkill
+      await execPromise(`pkill -f "${processName}" | grep -v "0_langchain_interface" | head -1`);
       
-      // If that doesn't work, try a more aggressive approach
+      // If that doesn't work, try a more aggressive approach with protection
       try {
-        await execPromise(`ps aux | grep "${processName}" | grep -v grep | awk '{print $2}' | xargs kill -9`);
+        await execPromise(`ps aux | grep "${processName}" | grep -v grep | grep -v "0_langchain_interface" | awk '{print $2}' | xargs kill -9`);
       } catch (e) {
         // Ignore errors from this command, as it might fail if no processes are found
       }
