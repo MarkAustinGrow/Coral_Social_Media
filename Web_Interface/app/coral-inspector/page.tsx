@@ -353,9 +353,11 @@ function CoralInspectorPageContent() {
     if (!user?.id) return
 
     try {
+      console.log('[FRONTEND] Starting Interface Agent session for user:', user.id)
       setToolResponse("🚀 Starting Interface Agent session...\n")
       
       // Start SSE connection to Interface Agent
+      console.log('[FRONTEND] Making POST request to /api/coral/interface-agent')
       const response = await fetch('/api/coral/interface-agent', {
         method: 'POST',
         headers: {
@@ -367,36 +369,53 @@ function CoralInspectorPageContent() {
         })
       })
 
+      console.log('[FRONTEND] Response received:', {
+        status: response.status,
+        statusText: response.statusText,
+        ok: response.ok,
+        headers: Object.fromEntries(response.headers.entries())
+      })
+
       if (!response.ok) {
         const errorText = await response.text()
+        console.error('[FRONTEND] HTTP error response:', errorText)
         throw new Error(`HTTP ${response.status}: ${response.statusText} - ${errorText}`)
       }
 
       if (!response.body) {
+        console.error('[FRONTEND] No response stream received')
         throw new Error('No response stream received')
       }
 
+      console.log('[FRONTEND] Starting to read SSE stream')
       const reader = response.body.getReader()
       const decoder = new TextDecoder()
       let buffer = ''
+      let chunkCount = 0
 
       try {
         // Read the SSE stream
         while (true) {
+          console.log('[FRONTEND] Reading chunk', chunkCount + 1)
           const { done, value } = await reader.read()
           
           if (done) {
-            console.log('SSE stream completed')
+            console.log('[FRONTEND] SSE stream completed after', chunkCount, 'chunks')
             break
           }
+
+          chunkCount++
+          console.log('[FRONTEND] Chunk', chunkCount, 'received, size:', value?.length)
 
           // Decode the chunk and add to buffer
           const chunk = decoder.decode(value, { stream: true })
           buffer += chunk
+          console.log('[FRONTEND] Chunk decoded, buffer size:', buffer.length)
           
           // Process complete lines
           const lines = buffer.split('\n')
           buffer = lines.pop() || '' // Keep incomplete line in buffer
+          console.log('[FRONTEND] Processing', lines.length, 'lines from chunk', chunkCount)
 
           for (const line of lines) {
             if (line.trim() === '') continue // Skip empty lines
@@ -406,25 +425,35 @@ function CoralInspectorPageContent() {
                 const jsonStr = line.slice(6).trim()
                 if (jsonStr && jsonStr !== '') {
                   const data = JSON.parse(jsonStr)
-                  console.log('Received SSE data:', data)
+                  console.log('[FRONTEND] Received SSE data:', data)
                   handleInterfaceAgentMessage(data)
                 }
               } catch (e) {
-                console.error('Error parsing SSE data:', e, 'Line:', line)
+                console.error('[FRONTEND] Error parsing SSE data:', e, 'Line:', line)
                 setToolResponse(prev => `${prev}[ERROR] Failed to parse: ${line}\n`)
               }
             } else if (line.trim() !== '') {
-              console.log('Non-SSE line received:', line)
+              console.log('[FRONTEND] Non-SSE line received:', line)
             }
           }
         }
+      } catch (streamError) {
+        console.error('[FRONTEND] Stream reading error:', streamError)
+        console.error('[FRONTEND] Error type:', streamError.constructor.name)
+        console.error('[FRONTEND] Error message:', streamError.message)
+        throw streamError
       } finally {
+        console.log('[FRONTEND] Releasing reader lock')
         reader.releaseLock()
       }
       
+      console.log('[FRONTEND] Interface Agent session completed successfully')
       setToolResponse(prev => `${prev}✅ Interface Agent session completed.\n`)
     } catch (error) {
-      console.error('Interface Agent error:', error)
+      console.error('[FRONTEND] Interface Agent error:', error)
+      console.error('[FRONTEND] Error type:', error.constructor.name)
+      console.error('[FRONTEND] Error message:', error.message)
+      console.error('[FRONTEND] Error stack:', error.stack)
       setToolResponse(prev => `${prev}❌ Error: ${error.message || error}\n`)
     }
   }

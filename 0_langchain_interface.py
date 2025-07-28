@@ -5,6 +5,7 @@ import logging
 import signal
 import sys
 import atexit
+from datetime import datetime
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain.prompts import ChatPromptTemplate
 from langchain.chat_models import init_chat_model
@@ -16,9 +17,30 @@ import urllib.parse
 import agent_status_updater as asu
 import agent_multiuser_utils_simple as amu
 
-# Setup logging
+# Setup logging with enhanced web interface debugging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+# Enhanced logging for web interface debugging
+def web_debug_log(level: str, message: str, data: dict = None):
+    """Enhanced logging specifically for web interface debugging"""
+    timestamp = datetime.now().isoformat()
+    log_data = {"timestamp": timestamp, "level": level, "message": message}
+    if data:
+        log_data.update(data)
+    
+    # Print to stdout for Node.js to capture
+    print(f"[WEB_DEBUG] [{level}] {message}", flush=True)
+    if data:
+        print(f"[WEB_DEBUG] Data: {data}", flush=True)
+    
+    # Also log normally
+    if level == "ERROR":
+        logger.error(f"{message} - Data: {data}")
+    elif level == "WARN":
+        logger.warning(f"{message} - Data: {data}")
+    else:
+        logger.info(f"{message} - Data: {data}")
 
 # Agent name for database logging
 AGENT_NAME = "Interface Agent"
@@ -26,8 +48,13 @@ AGENT_NAME = "Interface Agent"
 # Load environment variables
 load_dotenv()
 
+# Check if running via web interface
+is_web_interface = os.getenv('AGENT_USER_ID') is not None
+web_debug_log("INFO", "Interface Agent starting", {"is_web_interface": is_web_interface, "user_id_env": os.getenv('AGENT_USER_ID')})
+
 # Get user context for user-specific MCP server
 user_id = amu.get_user_context()
+web_debug_log("INFO", "User context retrieved", {"user_id": user_id, "from_env": os.getenv('AGENT_USER_ID')})
 
 # Use centralized multi-user Coral server
 base_url = "http://coral.8interns.com/devmode/exampleApplication/privkey/session1/sse"
@@ -121,19 +148,23 @@ async def create_interface_agent(client, tools):
 async def main():
     # Check if user context is available
     if not user_id:
+        web_debug_log("ERROR", "No user context available. Cannot start Interface Agent.")
         logger.error("No user context available. Cannot start Interface Agent.")
         log_to_database("error", "No user context available. Cannot start Interface Agent.")
         return
     
+    web_debug_log("INFO", "Starting Interface Agent main function", {"user_id": user_id})
     logger.info(f"Starting Interface Agent for user: {user_id}")
     log_to_database("info", f"Interface Agent starting for user: {user_id}")
     
     max_retries = 3
     for attempt in range(max_retries):
         try:
+            web_debug_log("INFO", f"Connection attempt {attempt + 1}", {"url": MCP_SERVER_URL, "user_id": user_id})
             logger.info(f"Connecting to SSE endpoint: {MCP_SERVER_URL}")
             
             # Use the new MCP client pattern with user context (langchain-mcp-adapters 0.1.0+)
+            web_debug_log("INFO", "Creating MCP client", {"user_id": user_id})
             async with MultiServerMCPClient(
                 connections={
                     "coral": {
@@ -145,13 +176,17 @@ async def main():
                     }
                 }
             ) as client:
+                web_debug_log("INFO", "MCP client connected successfully", {"user_id": user_id})
                 logger.info(f"Connected to MCP server at {MCP_SERVER_URL}")
                 log_to_database("info", f"Interface Agent connected to MCP server for user {user_id}")
                 
                 # Get Coral tools using the new pattern
+                web_debug_log("INFO", "Getting Coral tools", {"user_id": user_id})
                 coral_tools = client.get_tools()
-                logger.info(f"Available Coral tools: {[tool.name for tool in coral_tools]}")
-                log_to_database("info", f"Available Coral tools: {[tool.name for tool in coral_tools]}")
+                tool_names = [tool.name for tool in coral_tools]
+                web_debug_log("INFO", "Coral tools retrieved", {"user_id": user_id, "tool_count": len(coral_tools), "tools": tool_names})
+                logger.info(f"Available Coral tools: {tool_names}")
+                log_to_database("info", f"Available Coral tools: {tool_names}")
                 
                 # Add the ask_human tool
                 tools = coral_tools + [Tool(
@@ -161,12 +196,18 @@ async def main():
                     description="Ask the user a question and wait for a response."
                 )]
                 
+                web_debug_log("INFO", "Starting Interface Agent execution", {"user_id": user_id, "total_tools": len(tools)})
                 logger.info("Starting Interface Agent execution")
                 log_to_database("info", "Starting Interface Agent execution")
                 
                 # Single execution like the original - let the agent handle its own conversation flow
-                await (await create_interface_agent(client, tools)).ainvoke({})
+                web_debug_log("INFO", "Creating and invoking agent executor", {"user_id": user_id})
+                agent_executor = await create_interface_agent(client, tools)
+                web_debug_log("INFO", "Agent executor created, starting execution", {"user_id": user_id})
                 
+                await agent_executor.ainvoke({})
+                
+                web_debug_log("INFO", "Interface Agent execution completed successfully", {"user_id": user_id})
                 logger.info("Interface Agent execution completed")
                 log_to_database("info", "Interface Agent execution completed")
                 
@@ -174,23 +215,29 @@ async def main():
                 break
                         
         except ClosedResourceError as e:
+            web_debug_log("ERROR", f"ClosedResourceError on attempt {attempt + 1}", {"user_id": user_id, "error": str(e)})
             logger.error(f"ClosedResourceError on attempt {attempt + 1}: {e}")
             log_to_database("error", f"ClosedResourceError on attempt {attempt + 1}: {e}")
             if attempt < max_retries - 1:
+                web_debug_log("INFO", "Retrying after ClosedResourceError", {"user_id": user_id, "attempt": attempt + 1})
                 logger.info("Retrying in 5 seconds...")
                 await asyncio.sleep(5)
                 continue
             else:
+                web_debug_log("ERROR", "Max retries reached for ClosedResourceError", {"user_id": user_id})
                 logger.error("Max retries reached. Exiting.")
                 raise
         except Exception as e:
+            web_debug_log("ERROR", f"Unexpected error on attempt {attempt + 1}", {"user_id": user_id, "error": str(e), "type": type(e).__name__})
             logger.error(f"Unexpected error on attempt {attempt + 1}: {e}")
             log_to_database("error", f"Unexpected error on attempt {attempt + 1}: {e}")
             if attempt < max_retries - 1:
+                web_debug_log("INFO", "Retrying after unexpected error", {"user_id": user_id, "attempt": attempt + 1})
                 logger.info("Retrying in 5 seconds...")
                 await asyncio.sleep(5)
                 continue
             else:
+                web_debug_log("ERROR", "Max retries reached for unexpected error", {"user_id": user_id})
                 logger.error("Max retries reached. Exiting.")
                 raise
 

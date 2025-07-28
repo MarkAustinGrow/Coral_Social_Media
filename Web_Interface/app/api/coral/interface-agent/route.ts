@@ -3,6 +3,18 @@ import { NextRequest, NextResponse } from 'next/server'
 // BASIC ROUTE TEST - This should appear in logs if route is called
 console.log('🔥 [ROUTE TEST] Interface Agent route file loaded at:', new Date().toISOString())
 
+// Enhanced logging utility
+function logWithTimestamp(level: string, message: string, data?: any) {
+  const timestamp = new Date().toISOString()
+  const logMessage = `[${timestamp}] [${level}] [Interface Agent API] ${message}`
+  
+  if (data) {
+    console.log(logMessage, data)
+  } else {
+    console.log(logMessage)
+  }
+}
+
 // Store active agent sessions - simplified approach
 const activeSessions = new Map<string, {
   writer: WritableStreamDefaultWriter,
@@ -11,24 +23,24 @@ const activeSessions = new Map<string, {
 }>()
 
 export async function POST(request: NextRequest) {
-  console.log('🚀 [Interface Agent API] POST request received')
+  logWithTimestamp('INFO', 'POST request received')
   
   try {
-    console.log('🔧 [Interface Agent API] Parsing request body...')
+    logWithTimestamp('INFO', 'Parsing request body...')
     const { message, userId } = await request.json()
-    console.log(`📝 [Interface Agent API] Request data: message="${message}", userId="${userId}"`)
+    logWithTimestamp('INFO', `Request data parsed`, { message: message?.substring(0, 100), userId })
 
     if (!userId) {
-      console.log('❌ [Interface Agent API] No userId provided')
+      logWithTimestamp('ERROR', 'No userId provided')
       return NextResponse.json({ error: 'User ID required' }, { status: 400 })
     }
 
-    console.log('🔍 [Interface Agent API] Checking for existing session...')
+    logWithTimestamp('INFO', 'Checking for existing session...', { userId })
     // Create or get existing session
     let session = activeSessions.get(userId)
     
     if (!session) {
-      console.log('🆕 [Interface Agent API] Creating new session...')
+      logWithTimestamp('INFO', 'Creating new session...', { userId })
       // Start new Interface Agent session
       const stream = new TransformStream()
       const writer = stream.writable.getWriter()
@@ -39,18 +51,18 @@ export async function POST(request: NextRequest) {
         agentProcess: null
       }
       
-      console.log('💾 [Interface Agent API] Storing session in activeSessions...')
+      logWithTimestamp('INFO', 'Storing session in activeSessions...', { userId, sessionCount: activeSessions.size + 1 })
       activeSessions.set(userId, session)
       
-      console.log('🚀 [Interface Agent API] Starting Python Interface Agent...')
+      logWithTimestamp('INFO', 'Starting Python Interface Agent...', { userId })
       // Start the Python Interface Agent process directly
       setTimeout(() => {
         startPythonInterfaceAgent(userId, session, message).catch(error => {
-          console.error('❌ [Interface Agent API] Error in startPythonInterfaceAgent:', error)
+          logWithTimestamp('ERROR', 'Error in startPythonInterfaceAgent', { userId, error: error.message })
         })
       }, 0)
       
-      console.log('📡 [Interface Agent API] Returning SSE stream...')
+      logWithTimestamp('INFO', 'Returning SSE stream...', { userId })
       // Return the stream for real-time communication with proper headers
       return new Response(stream.readable, {
         headers: {
@@ -66,28 +78,34 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    console.log('🔄 [Interface Agent API] Using existing session...')
+    logWithTimestamp('INFO', 'Using existing session...', { userId, conversationState: session.conversationState })
     // Handle user response for existing session
     if (session.conversationState === 'waiting_for_user' && session.agentProcess) {
-      console.log(`[Interface Agent] User response received: ${message}`)
+      logWithTimestamp('INFO', 'User response received for existing session', { userId, message: message?.substring(0, 100) })
       
       // Send the user input to the Python process
       try {
+        logWithTimestamp('INFO', 'Writing to Python process stdin...', { userId })
         session.agentProcess.stdin.write(message + '\n')
         session.conversationState = 'processing'
+        logWithTimestamp('INFO', 'Message sent to Python process successfully', { userId })
         
         return NextResponse.json({ success: true, sent: true })
-      } catch (error) {
-        console.error('❌ [Interface Agent API] Error sending to Python process:', error)
+      } catch (error: any) {
+        logWithTimestamp('ERROR', 'Error sending to Python process', { userId, error: error.message })
         return NextResponse.json({ error: 'Failed to send message to agent' }, { status: 500 })
       }
     }
 
-    console.log('⚠️ [Interface Agent API] Agent not ready for user input')
+    logWithTimestamp('WARN', 'Agent not ready for user input', { 
+      userId, 
+      conversationState: session.conversationState, 
+      hasAgentProcess: !!session.agentProcess 
+    })
     return NextResponse.json({ error: 'Agent not ready or not waiting for response' }, { status: 503 })
     
   } catch (error: any) {
-    console.error('❌ [Interface Agent API] Critical error in POST handler:', error)
+    logWithTimestamp('ERROR', 'Critical error in POST handler', { error: error.message, stack: error.stack })
     return NextResponse.json({ 
       error: 'Internal server error', 
       details: error.message 
@@ -101,7 +119,7 @@ async function startPythonInterfaceAgent(userId: string, session: any, initialMe
   const path = require('path')
   
   try {
-    console.log(`[Interface Agent] Starting Python Interface Agent for user: ${userId}`)
+    logWithTimestamp('INFO', 'Starting Python Interface Agent', { userId })
     
     await writer.write(`data: ${JSON.stringify({
       type: 'status',
@@ -113,7 +131,7 @@ async function startPythonInterfaceAgent(userId: string, session: any, initialMe
     const rootDir = path.resolve(process.cwd(), '..')
     const pythonScript = path.join(rootDir, '0_langchain_interface.py')
     
-    console.log(`[Interface Agent] Starting Python process: ${pythonScript}`)
+    logWithTimestamp('INFO', 'Python script path resolved', { userId, rootDir, pythonScript })
     
     // Set environment variables for the Python process
     const env = { 
@@ -122,135 +140,173 @@ async function startPythonInterfaceAgent(userId: string, session: any, initialMe
       PYTHONUNBUFFERED: '1' // Ensure real-time output
     }
     
+    logWithTimestamp('INFO', 'Environment variables set', { userId, AGENT_USER_ID: userId })
+    
     // Start the Python Interface Agent process
+    logWithTimestamp('INFO', 'Spawning Python process...', { userId })
     const agentProcess = spawn('python3', [pythonScript], {
       cwd: rootDir,
       stdio: ['pipe', 'pipe', 'pipe'],
       env: env
     })
     
+    logWithTimestamp('INFO', 'Python process spawned', { userId, pid: agentProcess.pid })
     session.agentProcess = agentProcess
     
     // Handle stdout (agent output)
     agentProcess.stdout.on('data', async (data: Buffer) => {
       const output = data.toString()
-      console.log(`[Python Agent] ${output}`)
+      logWithTimestamp('INFO', 'Python stdout received', { userId, outputLength: output.length, preview: output.substring(0, 200) })
       
-      // Parse the output and send appropriate SSE messages
-      const lines = output.split('\n').filter(line => line.trim())
-      
-      for (const line of lines) {
-        // Check if this is the agent asking a question
-        if (line.includes('Agent asks:')) {
-          const question = line.replace(/.*Agent asks:\s*/, '').trim()
-          
-          await writer.write(`data: ${JSON.stringify({
-            type: 'agent_question',
-            question: question,
-            timestamp: new Date().toISOString()
-          })}\n\n`)
-          
-          session.conversationState = 'waiting_for_user'
+      try {
+        // Parse the output and send appropriate SSE messages
+        const lines = output.split('\n').filter(line => line.trim())
+        logWithTimestamp('INFO', 'Processing stdout lines', { userId, lineCount: lines.length })
+        
+        for (const line of lines) {
+          // Check if this is the agent asking a question
+          if (line.includes('Agent asks:')) {
+            const question = line.replace(/.*Agent asks:\s*/, '').trim()
+            logWithTimestamp('INFO', 'Agent question detected', { userId, question: question.substring(0, 100) })
+            
+            await writer.write(`data: ${JSON.stringify({
+              type: 'agent_question',
+              question: question,
+              timestamp: new Date().toISOString()
+            })}\n\n`)
+            
+            session.conversationState = 'waiting_for_user'
+            logWithTimestamp('INFO', 'Conversation state changed to waiting_for_user', { userId })
+          }
+          // Check for other important output
+          else if (line.includes('Connected to MCP server')) {
+            logWithTimestamp('INFO', 'MCP server connection detected', { userId })
+            await writer.write(`data: ${JSON.stringify({
+              type: 'status',
+              message: 'Connected to Coral server successfully!',
+              timestamp: new Date().toISOString()
+            })}\n\n`)
+          }
+          else if (line.includes('Available Coral tools:')) {
+            logWithTimestamp('INFO', 'Coral tools discovery detected', { userId })
+            await writer.write(`data: ${JSON.stringify({
+              type: 'status',
+              message: 'Coral tools discovered and ready',
+              timestamp: new Date().toISOString()
+            })}\n\n`)
+          }
+          else if (line.includes('ERROR') || line.includes('Error')) {
+            logWithTimestamp('ERROR', 'Python agent error detected', { userId, error: line })
+            await writer.write(`data: ${JSON.stringify({
+              type: 'error',
+              message: line,
+              timestamp: new Date().toISOString()
+            })}\n\n`)
+          }
+          else if (line.trim() && !line.includes('INFO') && !line.includes('HTTP Request')) {
+            // Send other significant output
+            logWithTimestamp('INFO', 'Sending agent output', { userId, output: line.substring(0, 100) })
+            await writer.write(`data: ${JSON.stringify({
+              type: 'agent_output',
+              message: line,
+              timestamp: new Date().toISOString()
+            })}\n\n`)
+          }
         }
-        // Check for other important output
-        else if (line.includes('Connected to MCP server')) {
-          await writer.write(`data: ${JSON.stringify({
-            type: 'status',
-            message: 'Connected to Coral server successfully!',
-            timestamp: new Date().toISOString()
-          })}\n\n`)
-        }
-        else if (line.includes('Available Coral tools:')) {
-          await writer.write(`data: ${JSON.stringify({
-            type: 'status',
-            message: 'Coral tools discovered and ready',
-            timestamp: new Date().toISOString()
-          })}\n\n`)
-        }
-        else if (line.includes('ERROR') || line.includes('Error')) {
-          await writer.write(`data: ${JSON.stringify({
-            type: 'error',
-            message: line,
-            timestamp: new Date().toISOString()
-          })}\n\n`)
-        }
-        else if (line.trim() && !line.includes('INFO') && !line.includes('HTTP Request')) {
-          // Send other significant output
-          await writer.write(`data: ${JSON.stringify({
-            type: 'agent_output',
-            message: line,
-            timestamp: new Date().toISOString()
-          })}\n\n`)
-        }
+      } catch (error: any) {
+        logWithTimestamp('ERROR', 'Error processing stdout', { userId, error: error.message })
       }
     })
 
     // Handle stderr (agent errors)
     agentProcess.stderr.on('data', async (data: Buffer) => {
       const error = data.toString()
-      console.error(`[Python Agent] ERROR: ${error}`)
+      logWithTimestamp('ERROR', 'Python stderr received', { userId, error: error.substring(0, 200) })
       
-      await writer.write(`data: ${JSON.stringify({
-        type: 'error',
-        message: `Agent Error: ${error}`,
-        timestamp: new Date().toISOString()
-      })}\n\n`)
+      try {
+        await writer.write(`data: ${JSON.stringify({
+          type: 'error',
+          message: `Agent Error: ${error}`,
+          timestamp: new Date().toISOString()
+        })}\n\n`)
+      } catch (writeError: any) {
+        logWithTimestamp('ERROR', 'Error writing stderr to SSE stream', { userId, error: writeError.message })
+      }
     })
 
     // Handle process exit
     agentProcess.on('exit', async (code: number | null) => {
-      console.log(`[Interface Agent] Python process exited with code ${code}`)
+      logWithTimestamp('INFO', 'Python process exited', { userId, exitCode: code })
       
-      await writer.write(`data: ${JSON.stringify({
-        type: 'status',
-        message: `Interface Agent session ended (exit code: ${code})`,
-        timestamp: new Date().toISOString()
-      })}\n\n`)
+      try {
+        await writer.write(`data: ${JSON.stringify({
+          type: 'status',
+          message: `Interface Agent session ended (exit code: ${code})`,
+          timestamp: new Date().toISOString()
+        })}\n\n`)
+      } catch (writeError: any) {
+        logWithTimestamp('ERROR', 'Error writing exit message to SSE stream', { userId, error: writeError.message })
+      }
       
       // Clean up session
+      logWithTimestamp('INFO', 'Cleaning up session after process exit', { userId })
       activeSessions.delete(userId)
       
       try {
         await writer.close()
-      } catch (closeError) {
-        console.error('Error closing writer:', closeError)
+        logWithTimestamp('INFO', 'SSE writer closed successfully', { userId })
+      } catch (closeError: any) {
+        logWithTimestamp('ERROR', 'Error closing SSE writer', { userId, error: closeError.message })
       }
     })
 
     // Handle process error
     agentProcess.on('error', async (error: Error) => {
-      console.error(`[Interface Agent] Error starting Python process:`, error)
+      logWithTimestamp('ERROR', 'Python process error', { userId, error: error.message, stack: error.stack })
       
-      await writer.write(`data: ${JSON.stringify({
-        type: 'error',
-        message: `Failed to start Interface Agent: ${error.message}`,
-        timestamp: new Date().toISOString()
-      })}\n\n`)
+      try {
+        await writer.write(`data: ${JSON.stringify({
+          type: 'error',
+          message: `Failed to start Interface Agent: ${error.message}`,
+          timestamp: new Date().toISOString()
+        })}\n\n`)
+      } catch (writeError: any) {
+        logWithTimestamp('ERROR', 'Error writing process error to SSE stream', { userId, error: writeError.message })
+      }
       
       // Clean up session
+      logWithTimestamp('INFO', 'Cleaning up session after process error', { userId })
       activeSessions.delete(userId)
       
       try {
         await writer.close()
-      } catch (closeError) {
-        console.error('Error closing writer:', closeError)
+        logWithTimestamp('INFO', 'SSE writer closed after process error', { userId })
+      } catch (closeError: any) {
+        logWithTimestamp('ERROR', 'Error closing SSE writer after process error', { userId, error: closeError.message })
       }
     })
 
-    console.log(`[Interface Agent] Python Interface Agent started for user ${userId}`)
+    logWithTimestamp('INFO', 'Python Interface Agent event handlers registered', { userId })
     
     // Send initial message if provided
     if (initialMessage) {
+      logWithTimestamp('INFO', 'Scheduling initial message send', { userId, message: initialMessage.substring(0, 100) })
       // Wait a moment for the process to be ready, then send the initial message
       setTimeout(() => {
         if (agentProcess && !agentProcess.killed) {
           try {
+            logWithTimestamp('INFO', 'Sending initial message to Python process', { userId })
             agentProcess.stdin.write(initialMessage + '\n')
-          } catch (error) {
-            console.error('Error sending initial message:', error)
+            logWithTimestamp('INFO', 'Initial message sent successfully', { userId })
+          } catch (error: any) {
+            logWithTimestamp('ERROR', 'Error sending initial message', { userId, error: error.message })
           }
+        } else {
+          logWithTimestamp('WARN', 'Cannot send initial message - process not available', { userId, killed: agentProcess?.killed })
         }
       }, 3000) // Wait 3 seconds for the agent to be ready
+    } else {
+      logWithTimestamp('INFO', 'No initial message to send', { userId })
     }
     
   } catch (error: any) {
