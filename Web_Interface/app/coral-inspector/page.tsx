@@ -763,56 +763,16 @@ function CoralInspectorPageContent() {
           </Card>
         </TabsContent>
 
-        {/* Tools Tab - Chat Interface Focused */}
+        {/* Tools Tab - Help Sections Only */}
         <TabsContent value="tools" className="space-y-6">
-          {/* Main Chat Interface - Prominent */}
-          <Card className="border-2 border-blue-200">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-xl">
-                <Send className="h-6 w-6" />
-                Chat Interface
-              </CardTitle>
-              <CardDescription className="text-base">
-                Send messages directly to your Interface Agent - it will automatically route them to the right agents
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {/* Simple message input - no agent selection */}
-              <div>
-                <Label htmlFor="message-content" className="text-base font-medium">What would you like me to help you with?</Label>
-                <Textarea
-                  id="message-content"
-                  placeholder="Type your request here... e.g., 'Are there any new tweets to scrape?' or 'Write a blog about the latest tech trends'"
-                  value={messageContent}
-                  onChange={(e) => setMessageContent(e.target.value)}
-                  rows={4}
-                  className="mt-2 text-base"
-                />
-                <p className="text-sm text-muted-foreground mt-2">
-                  Examples: "Check for new tweets", "Write a blog about AI", "What's trending on social media?"
-                </p>
+          {/* Note about main chat interface */}
+          <Card className="border-blue-200 bg-blue-50">
+            <CardContent className="pt-6">
+              <div className="text-center text-blue-800">
+                <MessageCircle className="h-8 w-8 mx-auto mb-2" />
+                <p className="font-medium">The main chat interface is located at the top of this page</p>
+                <p className="text-sm text-blue-600 mt-1">Scroll up to start chatting with your Interface Agent</p>
               </div>
-
-              <Button 
-                onClick={handleSendMessage} 
-                disabled={!messageContent}
-                className="w-full h-12 text-base"
-                size="lg"
-              >
-                <Send className="h-5 w-5 mr-2" />
-                Send Message
-              </Button>
-
-              {toolResponse && (
-                <div>
-                  <Label className="text-base font-medium">Response</Label>
-                  <ScrollArea className="h-40 w-full mt-2">
-                    <pre className="text-sm bg-muted p-4 rounded">
-                      {toolResponse}
-                    </pre>
-                  </ScrollArea>
-                </div>
-              )}
             </CardContent>
           </Card>
 
