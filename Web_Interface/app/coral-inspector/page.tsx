@@ -572,6 +572,57 @@ function CoralInspectorPageContent() {
         </div>
       </div>
 
+      {/* Main Chat Interface - Top Priority */}
+      <Card className="border-2 border-blue-200">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-xl">
+            <Send className="h-6 w-6" />
+            Chat Interface
+          </CardTitle>
+          <CardDescription className="text-base">
+            Send messages directly to your Interface Agent - it will automatically route them to the right agents
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Simple message input - no agent selection */}
+          <div>
+            <Label htmlFor="message-content" className="text-base font-medium">What would you like me to help you with?</Label>
+            <Textarea
+              id="message-content"
+              placeholder="Type your request here... e.g., 'Are there any new tweets to scrape?' or 'Write a blog about the latest tech trends'"
+              value={messageContent}
+              onChange={(e) => setMessageContent(e.target.value)}
+              rows={4}
+              className="mt-2 text-base"
+            />
+            <p className="text-sm text-muted-foreground mt-2">
+              Examples: "Check for new tweets", "Write a blog about AI", "What's trending on social media?"
+            </p>
+          </div>
+
+          <Button 
+            onClick={handleSendMessage} 
+            disabled={!messageContent}
+            className="w-full h-12 text-base"
+            size="lg"
+          >
+            <Send className="h-5 w-5 mr-2" />
+            Send Message
+          </Button>
+
+          {toolResponse && (
+            <div>
+              <Label className="text-base font-medium">Response</Label>
+              <ScrollArea className="h-40 w-full mt-2">
+                <pre className="text-sm bg-muted p-4 rounded">
+                  {toolResponse}
+                </pre>
+              </ScrollArea>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Mode Switch Architecture Info */}
       <Card className={agentMode === 'coral' ? 'border-green-200 bg-green-50' : 'border-blue-200 bg-blue-50'}>
         <CardHeader>
@@ -601,48 +652,6 @@ function CoralInspectorPageContent() {
                 <p><strong>Communication:</strong> No inter-agent communication, direct user interaction only</p>
               </div>
             )}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Server Status */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Server className="h-5 w-5" />
-            Coral Server Connection
-          </CardTitle>
-          <CardDescription>
-            Connection status to {serverStatus.url}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2">
-                {serverStatus.connected ? (
-                  <CheckCircle className="h-5 w-5 text-green-500" />
-                ) : (
-                  <XCircle className="h-5 w-5 text-red-500" />
-                )}
-                <span className="font-medium">
-                  {serverStatus.connected ? 'Connected' : 'Disconnected'}
-                </span>
-              </div>
-              <Separator orientation="vertical" className="h-6" />
-              <div className="flex items-center gap-2">
-                <Users className="h-4 w-4 text-muted-foreground" />
-                <span className="text-sm text-muted-foreground">
-                  {serverStatus.activeSessions} active agents
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <MessageSquare className="h-4 w-4 text-muted-foreground" />
-                <span className="text-sm text-muted-foreground">
-                  {serverStatus.totalMessages} total messages
-                </span>
-              </div>
-            </div>
           </div>
         </CardContent>
       </Card>
