@@ -39,6 +39,10 @@ export function ContentCalendar() {
       const day = startDate.getDay()
       startDate.setDate(startDate.getDate() - day)
       endDate.setDate(endDate.getDate() + (6 - day))
+    } else if (viewMode === "day") {
+      // For day view, set start to beginning of day and end to end of day
+      startDate.setHours(0, 0, 0, 0)
+      endDate.setHours(23, 59, 59, 999)
     }
     
     return {
