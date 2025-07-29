@@ -14,7 +14,6 @@ import {
   Twitter,
   Users,
   Zap,
-  Bug,
   Database,
 } from "lucide-react"
 import { CoralIcon } from "./coral-icon"
@@ -74,11 +73,6 @@ const items = [
     title: "X API Usage",
     href: "/x-api",
     icon: Gauge,
-  },
-  {
-    title: "Debug Tools",
-    href: "/debug",
-    icon: Bug,
   },
   {
     title: "System Config",
