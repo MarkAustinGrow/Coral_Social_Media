@@ -145,6 +145,44 @@ export function ContentCalendar() {
         eventDate.getFullYear() === date.getFullYear()
     })
   }
+
+  // Calculate responsive height based on content
+  const getResponsiveHeight = (eventCount: number) => {
+    if (viewMode === 'day') {
+      // Day view: expand to show all content without scrolling
+      if (eventCount === 0) return { minHeight: '200px', maxHeight: 'none' }
+      const calculatedHeight = Math.max(200, 80 + (eventCount * 85))
+      return { minHeight: `${calculatedHeight}px`, maxHeight: 'none' }
+    } else if (viewMode === 'week') {
+      // Week view: responsive but with reasonable limits
+      if (eventCount === 0) return { minHeight: '100px', maxHeight: '120px' }
+      if (eventCount <= 2) return { minHeight: '120px', maxHeight: '140px' }
+      if (eventCount <= 4) return { minHeight: '160px', maxHeight: '180px' }
+      return { minHeight: '180px', maxHeight: '220px' }
+    } else {
+      // Month view: compact but responsive
+      if (eventCount === 0) return { minHeight: '80px', maxHeight: '90px' }
+      if (eventCount <= 2) return { minHeight: '100px', maxHeight: '120px' }
+      if (eventCount <= 3) return { minHeight: '120px', maxHeight: '140px' }
+      return { minHeight: '140px', maxHeight: '160px' }
+    }
+  }
+
+  // Get content area height for scrolling
+  const getContentHeight = (eventCount: number) => {
+    if (viewMode === 'day') {
+      return 'auto' // No scrolling in day view
+    } else if (viewMode === 'week') {
+      if (eventCount <= 2) return '100px'
+      if (eventCount <= 4) return '140px'
+      return '180px'
+    } else {
+      // Month view
+      if (eventCount <= 2) return '80px'
+      if (eventCount <= 3) return '100px'
+      return '120px'
+    }
+  }
   
   // Navigate to previous period
   const goToPrevious = () => {
@@ -370,24 +408,37 @@ export function ContentCalendar() {
         {days.map((day, i) => {
           const dayEvents = getEventsForDay(day)
           const isCurrentMonthDay = isCurrentMonth(day)
+          const responsiveHeight = getResponsiveHeight(dayEvents.length)
+          const contentHeight = getContentHeight(dayEvents.length)
           
           return (
             <div
               key={i}
-              className={`border rounded-md p-2 ${
-                viewMode === 'week' ? 'min-h-[180px]' : 'min-h-[140px]'
-              } ${
+              className={`border rounded-md p-2 transition-all duration-200 ease-in-out ${
                 isToday(day) ? 'bg-blue-50 dark:bg-blue-950 border-blue-200 dark:border-blue-800' : 
                 !isCurrentMonthDay && viewMode === 'month' ? 'bg-muted/50 text-muted-foreground' : ''
               }`}
+              style={{
+                minHeight: responsiveHeight.minHeight,
+                maxHeight: responsiveHeight.maxHeight
+              }}
             >
               <div className="text-right text-sm font-medium mb-2">
                 {formatDate(day)}
               </div>
-              <div className="space-y-1 overflow-y-auto" style={{ maxHeight: viewMode === 'week' ? '140px' : '100px' }}>
+              <div 
+                className={`space-y-1 ${viewMode === 'day' ? '' : 'overflow-y-auto'}`}
+                style={{ 
+                  maxHeight: contentHeight,
+                  overflowY: viewMode === 'day' ? 'visible' : 'auto'
+                }}
+              >
                 {dayEvents.map(event => renderEvent(event))}
                 {dayEvents.length === 0 && (
-                  <div className="text-xs text-center text-muted-foreground py-6">
+                  <div className={`text-xs text-center text-muted-foreground ${
+                    viewMode === 'day' ? 'py-8' : 
+                    viewMode === 'week' ? 'py-4' : 'py-2'
+                  }`}>
                     No events
                   </div>
                 )}
