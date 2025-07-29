@@ -33,7 +33,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Calendar, Edit, ExternalLink, MoreHorizontal, Send, Trash2, MessageSquare, RefreshCw } from "lucide-react"
-import { useTweetData, postTweet, postThread, deleteTweet, updateTweet, Tweet } from "@/hooks/use-tweet-data"
+import { useTweetData, postTweet, postThread, deleteTweet, updateTweet, rescheduleTweet, Tweet } from "@/hooks/use-tweet-data"
 import { DataState } from "@/components/ui/data-state"
 import { useToast } from "@/hooks/use-toast"
 
@@ -48,11 +48,15 @@ export function TweetList({ status }: TweetListProps) {
   const [postingTweetIds, setPostingTweetIds] = useState<number[]>([])
   const [deletingTweetIds, setDeletingTweetIds] = useState<number[]>([])
   const [updatingTweetIds, setUpdatingTweetIds] = useState<number[]>([])
+  const [reschedulingTweetIds, setReschedulingTweetIds] = useState<number[]>([])
   const [tweetToDelete, setTweetToDelete] = useState<Tweet | null>(null)
   const [tweetToEdit, setTweetToEdit] = useState<Tweet | null>(null)
+  const [tweetToReschedule, setTweetToReschedule] = useState<Tweet | null>(null)
   const [editedContent, setEditedContent] = useState<string>("")
+  const [newScheduledTime, setNewScheduledTime] = useState<string>("")
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [editDialogOpen, setEditDialogOpen] = useState(false)
+  const [rescheduleDialogOpen, setRescheduleDialogOpen] = useState(false)
   const [userEmail, setUserEmail] = useState<string | null>(null)
   
   // Get the current user's email
@@ -318,6 +322,56 @@ export function TweetList({ status }: TweetListProps) {
     }
   }
 
+  const handleRescheduleClick = (tweet: Tweet) => {
+    setTweetToReschedule(tweet)
+    // Set current scheduled time as default, or current time + 1 hour if no scheduled time
+    const currentTime = tweet.scheduled_for 
+      ? new Date(tweet.scheduled_for)
+      : new Date(Date.now() + 60 * 60 * 1000) // 1 hour from now
+    
+    // Format for datetime-local input (YYYY-MM-DDTHH:MM)
+    const formattedTime = currentTime.toISOString().slice(0, 16)
+    setNewScheduledTime(formattedTime)
+    setRescheduleDialogOpen(true)
+  }
+
+  const handleRescheduleConfirm = async () => {
+    if (!tweetToReschedule || !newScheduledTime) return
+    
+    const tweetId = tweetToReschedule.id
+    setReschedulingTweetIds(prev => [...prev, tweetId])
+    setRescheduleDialogOpen(false)
+    
+    try {
+      const result = await rescheduleTweet(tweetId, newScheduledTime)
+      
+      if (result.success) {
+        toast({
+          title: "Tweet rescheduled",
+          description: "The tweet has been rescheduled successfully.",
+        })
+        
+        // Refresh the list
+        setRefreshKey(prev => prev + 1)
+      } else {
+        toast({
+          title: "Failed to reschedule tweet",
+          description: result.message,
+          variant: "destructive",
+        })
+      }
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "An error occurred while rescheduling the tweet",
+        variant: "destructive",
+      })
+    } finally {
+      setReschedulingTweetIds(prev => prev.filter(id => id !== tweetId))
+      setTweetToReschedule(null)
+    }
+  }
+
   const groupedTweets = tweets ? groupTweets(tweets) : []
 
   return (
@@ -476,9 +530,12 @@ export function TweetList({ status }: TweetListProps) {
                                 </DropdownMenuItem>
                               )}
                               {tweet.status === 'scheduled' && (
-                                <DropdownMenuItem>
+                                <DropdownMenuItem 
+                                  onClick={() => handleRescheduleClick(tweet)}
+                                  disabled={reschedulingTweetIds.includes(tweet.id)}
+                                >
                                   <Calendar className="mr-2 h-4 w-4" />
-                                  Reschedule
+                                  {reschedulingTweetIds.includes(tweet.id) ? 'Rescheduling...' : 'Reschedule'}
                                 </DropdownMenuItem>
                               )}
                               {tweet.status !== 'posted' && (
@@ -561,6 +618,47 @@ export function TweetList({ status }: TweetListProps) {
               disabled={!editedContent.trim() || editedContent === tweetToEdit?.content}
             >
               Save Changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      
+      {/* Reschedule dialog */}
+      <Dialog open={rescheduleDialogOpen} onOpenChange={setRescheduleDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reschedule Tweet</DialogTitle>
+            <DialogDescription>
+              Select a new date and time for this tweet to be posted.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <div className="space-y-2">
+              <label htmlFor="scheduled-time" className="text-sm font-medium">
+                Scheduled Time
+              </label>
+              <input
+                id="scheduled-time"
+                type="datetime-local"
+                value={newScheduledTime}
+                onChange={(e) => setNewScheduledTime(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                min={new Date().toISOString().slice(0, 16)}
+              />
+              <p className="text-xs text-muted-foreground">
+                The tweet will be posted at the specified time.
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRescheduleDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleRescheduleConfirm} 
+              disabled={!newScheduledTime || new Date(newScheduledTime) <= new Date()}
+            >
+              Reschedule Tweet
             </Button>
           </DialogFooter>
         </DialogContent>
