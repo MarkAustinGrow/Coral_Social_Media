@@ -154,17 +154,17 @@ export function ContentCalendar() {
       const calculatedHeight = Math.max(200, 80 + (eventCount * 85))
       return { minHeight: `${calculatedHeight}px`, maxHeight: 'none' }
     } else if (viewMode === 'week') {
-      // Week view: responsive but with reasonable limits
-      if (eventCount === 0) return { minHeight: '100px', maxHeight: '120px' }
-      if (eventCount <= 2) return { minHeight: '120px', maxHeight: '140px' }
-      if (eventCount <= 4) return { minHeight: '160px', maxHeight: '180px' }
-      return { minHeight: '180px', maxHeight: '220px' }
+      // Week view: more balanced heights with subtle differences
+      if (eventCount === 0) return { minHeight: '120px', maxHeight: '130px' }
+      if (eventCount <= 2) return { minHeight: '130px', maxHeight: '140px' }
+      if (eventCount <= 4) return { minHeight: '145px', maxHeight: '155px' }
+      return { minHeight: '160px', maxHeight: '170px' }
     } else {
-      // Month view: compact but responsive
-      if (eventCount === 0) return { minHeight: '80px', maxHeight: '90px' }
-      if (eventCount <= 2) return { minHeight: '100px', maxHeight: '120px' }
-      if (eventCount <= 3) return { minHeight: '120px', maxHeight: '140px' }
-      return { minHeight: '140px', maxHeight: '160px' }
+      // Month view: compact with minimal height variation
+      if (eventCount === 0) return { minHeight: '95px', maxHeight: '100px' }
+      if (eventCount <= 2) return { minHeight: '105px', maxHeight: '110px' }
+      if (eventCount <= 3) return { minHeight: '115px', maxHeight: '120px' }
+      return { minHeight: '125px', maxHeight: '130px' }
     }
   }
 
@@ -173,14 +173,15 @@ export function ContentCalendar() {
     if (viewMode === 'day') {
       return 'auto' // No scrolling in day view
     } else if (viewMode === 'week') {
-      if (eventCount <= 2) return '100px'
-      if (eventCount <= 4) return '140px'
-      return '180px'
+      // More balanced content heights for week view
+      if (eventCount <= 2) return '90px'
+      if (eventCount <= 4) return '110px'
+      return '130px'
     } else {
-      // Month view
-      if (eventCount <= 2) return '80px'
-      if (eventCount <= 3) return '100px'
-      return '120px'
+      // Month view - compact content heights
+      if (eventCount <= 2) return '65px'
+      if (eventCount <= 3) return '80px'
+      return '95px'
     }
   }
   
