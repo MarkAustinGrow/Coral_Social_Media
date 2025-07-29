@@ -1,7 +1,10 @@
-import { NextResponse } from 'next/server';
-import { getSupabaseClient } from '@/lib/supabase';
+import { NextRequest, NextResponse } from 'next/server';
+import { getSupabaseClient, getSupabaseServerClient } from '@/lib/supabase';
+import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
+import { cookies } from 'next/headers'
+import type { Database } from '@/types/database'
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const startDate = searchParams.get('startDate');
@@ -16,7 +19,38 @@ export async function GET(request: Request) {
       );
     }
     
-    const supabase = await getSupabaseClient();
+    // Get authenticated user
+    const authClient = createRouteHandlerClient<Database>({ cookies })
+    const { data: { session }, error: sessionError } = await authClient.auth.getSession()
+    
+    if (sessionError) {
+      console.error('Session error:', sessionError)
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: 'Authentication error', 
+          details: sessionError.message 
+        },
+        { status: 401 }
+      )
+    }
+    
+    if (!session?.user) {
+      console.error('No authenticated user found')
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: 'Not authenticated', 
+          details: 'Please log in to access this resource' 
+        },
+        { status: 401 }
+      )
+    }
+    
+    const userId = session.user.id
+    console.log(`Fetching calendar events for user ${userId} with params:`, { startDate, endDate, status })
+    
+    const supabase = getSupabaseServerClient();
     
     if (!supabase) {
       return NextResponse.json(
@@ -25,10 +59,11 @@ export async function GET(request: Request) {
       );
     }
     
-    // Build query for potential_tweets table
+    // Build query for potential_tweets table with user filtering
     let query = supabase
       .from('potential_tweets')
       .select('*')
+      .eq('user_id', userId)  // Filter by authenticated user
       .gte('scheduled_for', startDate)
       .lte('scheduled_for', endDate);
     

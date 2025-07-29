@@ -1,7 +1,10 @@
-import { NextResponse } from 'next/server';
-import { getSupabaseClient } from '@/lib/supabase';
+import { NextRequest, NextResponse } from 'next/server';
+import { getSupabaseClient, getSupabaseServerClient } from '@/lib/supabase';
+import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
+import { cookies } from 'next/headers'
+import type { Database } from '@/types/database'
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { id, isThread, blogPostId } = body;
@@ -14,7 +17,38 @@ export async function POST(request: Request) {
       );
     }
     
-    const supabase = await getSupabaseClient();
+    // Get authenticated user
+    const authClient = createRouteHandlerClient<Database>({ cookies })
+    const { data: { session }, error: sessionError } = await authClient.auth.getSession()
+    
+    if (sessionError) {
+      console.error('Session error:', sessionError)
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: 'Authentication error', 
+          details: sessionError.message 
+        },
+        { status: 401 }
+      )
+    }
+    
+    if (!session?.user) {
+      console.error('No authenticated user found')
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: 'Not authenticated', 
+          details: 'Please log in to access this resource' 
+        },
+        { status: 401 }
+      )
+    }
+    
+    const userId = session.user.id
+    console.log(`Deleting content for user ${userId}`)
+    
+    const supabase = getSupabaseServerClient();
     
     if (!supabase) {
       return NextResponse.json(
@@ -30,6 +64,7 @@ export async function POST(request: Request) {
         .from('potential_tweets')
         .delete()
         .eq('blog_post_id', blogPostId)
+        .eq('user_id', userId)
         .eq('status', 'scheduled');
       
       if (error) {
@@ -50,6 +85,7 @@ export async function POST(request: Request) {
         .from('potential_tweets')
         .delete()
         .eq('id', id)
+        .eq('user_id', userId)
         .eq('status', 'scheduled');
       
       if (error) {

@@ -1,7 +1,10 @@
-import { NextResponse } from 'next/server';
-import { getSupabaseClient } from '@/lib/supabase';
+import { NextRequest, NextResponse } from 'next/server';
+import { getSupabaseClient, getSupabaseServerClient } from '@/lib/supabase';
+import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
+import { cookies } from 'next/headers'
+import type { Database } from '@/types/database'
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { content, scheduledFor, blogPostId, position, isThread } = body;
@@ -21,7 +24,38 @@ export async function POST(request: Request) {
       );
     }
     
-    const supabase = await getSupabaseClient();
+    // Get authenticated user
+    const authClient = createRouteHandlerClient<Database>({ cookies })
+    const { data: { session }, error: sessionError } = await authClient.auth.getSession()
+    
+    if (sessionError) {
+      console.error('Session error:', sessionError)
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: 'Authentication error', 
+          details: sessionError.message 
+        },
+        { status: 401 }
+      )
+    }
+    
+    if (!session?.user) {
+      console.error('No authenticated user found')
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: 'Not authenticated', 
+          details: 'Please log in to access this resource' 
+        },
+        { status: 401 }
+      )
+    }
+    
+    const userId = session.user.id
+    console.log(`Scheduling content for user ${userId}`)
+    
+    const supabase = getSupabaseServerClient();
     
     if (!supabase) {
       return NextResponse.json(
@@ -49,7 +83,8 @@ export async function POST(request: Request) {
             status: 'scheduled',
             scheduled_for: scheduledFor,
             blog_post_id: blogPostId,
-            position: index
+            position: index,
+            user_id: userId
           });
       });
       
@@ -79,7 +114,8 @@ export async function POST(request: Request) {
           status: 'scheduled',
           scheduled_for: scheduledFor,
           blog_post_id: blogPostId || null,
-          position: position || null
+          position: position || null,
+          user_id: userId
         })
         .select()
         .single();
