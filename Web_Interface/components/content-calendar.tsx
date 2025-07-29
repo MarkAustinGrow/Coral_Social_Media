@@ -199,46 +199,74 @@ export function ContentCalendar() {
   
   // Render event card
   const renderEvent = (event: CalendarEvent) => {
+    // Better title generation for threads
+    const getEventTitle = () => {
+      if (event.type === 'thread') {
+        const tweetCount = event.tweets?.length || 0
+        if (event.blog_post_id) {
+          return `Thread (${tweetCount} tweets) - Blog #${event.blog_post_id}`
+        }
+        return `Thread (${tweetCount} tweets)`
+      }
+      return event.title || (event.content ? event.content.substring(0, 40) + '...' : 'Tweet')
+    }
+
+    // Get preview content for threads
+    const getPreviewContent = () => {
+      if (event.type === 'thread' && event.tweets && event.tweets.length > 0) {
+        const firstTweet = event.tweets[0]
+        return firstTweet.content ? firstTweet.content.substring(0, 60) + '...' : ''
+      }
+      return event.content ? event.content.substring(0, 60) + '...' : ''
+    }
+
     return (
-      <Card key={event.id} className={`p-2 mb-1 text-xs border-l-4 ${
+      <Card key={event.id} className={`p-2 mb-1 text-xs border-l-4 hover:shadow-md transition-shadow cursor-pointer ${
         event.type === 'thread' 
-          ? 'border-l-blue-500 bg-blue-50 dark:bg-blue-950' 
-          : 'border-l-green-500 bg-green-50 dark:bg-green-950'
+          ? 'border-l-blue-500 bg-blue-50 dark:bg-blue-950 hover:bg-blue-100 dark:hover:bg-blue-900' 
+          : 'border-l-green-500 bg-green-50 dark:bg-green-950 hover:bg-green-100 dark:hover:bg-green-900'
       }`}>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-1 truncate">
+        <div className="flex items-start justify-between gap-1">
+          <div className="flex items-start gap-1 flex-1 min-w-0">
             {event.type === 'thread' ? (
-              <MessageSquare className="h-3 w-3 flex-shrink-0" />
+              <MessageSquare className="h-3 w-3 flex-shrink-0 mt-0.5" />
             ) : (
-              <FileText className="h-3 w-3 flex-shrink-0" />
+              <FileText className="h-3 w-3 flex-shrink-0 mt-0.5" />
             )}
-            <span className="font-medium truncate">
-              {event.title || (event.content ? event.content.substring(0, 30) + '...' : 'Untitled')}
-            </span>
+            <div className="flex-1 min-w-0">
+              <div className="font-medium text-xs leading-tight mb-1">
+                {getEventTitle()}
+              </div>
+              {getPreviewContent() && (
+                <div className="text-[10px] text-muted-foreground leading-tight line-clamp-2">
+                  {getPreviewContent()}
+                </div>
+              )}
+            </div>
           </div>
           {event.status === 'scheduled' && (
             <Button 
               variant="ghost" 
               size="icon" 
-              className="h-5 w-5 ml-1" 
+              className="h-4 w-4 ml-1 flex-shrink-0" 
               onClick={(e) => {
                 e.stopPropagation()
                 handleDeleteClick(event)
               }}
             >
-              <Trash2 className="h-3 w-3" />
+              <Trash2 className="h-2.5 w-2.5" />
             </Button>
           )}
         </div>
-        <div className="flex justify-between items-center mt-1">
+        <div className="flex justify-between items-center mt-2">
           <Badge variant={
             event.status === 'posted' ? 'default' :
             event.status === 'scheduled' ? 'outline' :
             event.status === 'failed' ? 'destructive' : 'secondary'
-          } className="text-[10px] px-1 py-0 h-4">
+          } className="text-[9px] px-1 py-0 h-3.5">
             {event.status}
           </Badge>
-          <span className="text-[10px] text-muted-foreground">
+          <span className="text-[9px] text-muted-foreground">
             {new Date(event.date).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
           </span>
         </div>
@@ -342,18 +370,20 @@ export function ContentCalendar() {
           return (
             <div
               key={i}
-              className={`border rounded-md p-2 min-h-[120px] ${
+              className={`border rounded-md p-2 ${
+                viewMode === 'week' ? 'min-h-[180px]' : 'min-h-[140px]'
+              } ${
                 isToday(day) ? 'bg-blue-50 dark:bg-blue-950 border-blue-200 dark:border-blue-800' : 
                 !isCurrentMonthDay && viewMode === 'month' ? 'bg-muted/50 text-muted-foreground' : ''
               }`}
             >
-              <div className="text-right text-sm font-medium mb-1">
+              <div className="text-right text-sm font-medium mb-2">
                 {formatDate(day)}
               </div>
-              <div className="space-y-1 overflow-y-auto max-h-[200px]">
+              <div className="space-y-1 overflow-y-auto" style={{ maxHeight: viewMode === 'week' ? '140px' : '100px' }}>
                 {dayEvents.map(event => renderEvent(event))}
                 {dayEvents.length === 0 && (
-                  <div className="text-xs text-center text-muted-foreground py-4">
+                  <div className="text-xs text-center text-muted-foreground py-6">
                     No events
                   </div>
                 )}
