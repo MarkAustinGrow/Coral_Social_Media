@@ -1,7 +1,13 @@
 "use client"
 
 import { useState, useEffect } from 'react'
-import { DataState } from '@/lib/supabase'
+
+// Define the DataState type
+export interface DataState<T> {
+  data: T | null
+  isLoading: boolean
+  error: { message: string } | null
+}
 
 // Define types for tweets based on the potential_tweets table
 export interface Tweet {
@@ -220,6 +226,35 @@ export async function updateTweet(tweetId: number, content: string): Promise<{ s
     return { 
       success: false, 
       message: error.message || 'An error occurred while updating the tweet' 
+    }
+  }
+}
+
+// Function to reschedule a tweet
+export async function rescheduleTweet(tweetId: number, scheduledFor: string): Promise<{ success: boolean; message: string }> {
+  try {
+    const response = await fetch(`/api/tweets/reschedule`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ tweetId, scheduledFor }),
+    })
+    
+    const result = await response.json()
+    
+    if (!response.ok) {
+      throw new Error(result.error || 'Failed to reschedule tweet')
+    }
+    
+    return { 
+      success: true, 
+      message: result.message || 'Tweet rescheduled successfully' 
+    }
+  } catch (error: any) {
+    return { 
+      success: false, 
+      message: error.message || 'An error occurred while rescheduling the tweet' 
     }
   }
 }
