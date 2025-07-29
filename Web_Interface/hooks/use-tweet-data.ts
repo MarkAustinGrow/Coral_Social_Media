@@ -231,14 +231,18 @@ export async function updateTweet(tweetId: number, content: string): Promise<{ s
 }
 
 // Function to reschedule a tweet
-export async function rescheduleTweet(tweetId: number, scheduledFor: string): Promise<{ success: boolean; message: string }> {
+export async function rescheduleTweet(
+  tweetId: number, 
+  scheduledFor: string, 
+  applyToThread?: boolean
+): Promise<{ success: boolean; message: string }> {
   try {
     const response = await fetch(`/api/tweets/reschedule`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ tweetId, scheduledFor }),
+      body: JSON.stringify({ tweetId, scheduledFor, applyToThread }),
     })
     
     const result = await response.json()

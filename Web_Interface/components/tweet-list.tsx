@@ -54,6 +54,7 @@ export function TweetList({ status }: TweetListProps) {
   const [tweetToReschedule, setTweetToReschedule] = useState<Tweet | null>(null)
   const [editedContent, setEditedContent] = useState<string>("")
   const [newScheduledTime, setNewScheduledTime] = useState<string>("")
+  const [applyToThread, setApplyToThread] = useState<boolean>(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [editDialogOpen, setEditDialogOpen] = useState(false)
   const [rescheduleDialogOpen, setRescheduleDialogOpen] = useState(false)
@@ -332,6 +333,10 @@ export function TweetList({ status }: TweetListProps) {
     // Format for datetime-local input (YYYY-MM-DDTHH:MM)
     const formattedTime = currentTime.toISOString().slice(0, 16)
     setNewScheduledTime(formattedTime)
+    
+    // Reset the apply to thread checkbox
+    setApplyToThread(false)
+    
     setRescheduleDialogOpen(true)
   }
 
@@ -343,12 +348,16 @@ export function TweetList({ status }: TweetListProps) {
     setRescheduleDialogOpen(false)
     
     try {
-      const result = await rescheduleTweet(tweetId, newScheduledTime)
+      const result = await rescheduleTweet(tweetId, newScheduledTime, applyToThread)
       
       if (result.success) {
+        const message = applyToThread 
+          ? "Thread rescheduled successfully" 
+          : "Tweet rescheduled successfully"
+        
         toast({
-          title: "Tweet rescheduled",
-          description: "The tweet has been rescheduled successfully.",
+          title: message,
+          description: result.message,
         })
         
         // Refresh the list
@@ -369,6 +378,7 @@ export function TweetList({ status }: TweetListProps) {
     } finally {
       setReschedulingTweetIds(prev => prev.filter(id => id !== tweetId))
       setTweetToReschedule(null)
+      setApplyToThread(false)
     }
   }
 
@@ -633,21 +643,49 @@ export function TweetList({ status }: TweetListProps) {
             </DialogDescription>
           </DialogHeader>
           <div className="py-4">
-            <div className="space-y-2">
-              <label htmlFor="scheduled-time" className="text-sm font-medium">
-                Scheduled Time
-              </label>
-              <input
-                id="scheduled-time"
-                type="datetime-local"
-                value={newScheduledTime}
-                onChange={(e) => setNewScheduledTime(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                min={new Date().toISOString().slice(0, 16)}
-              />
-              <p className="text-xs text-muted-foreground">
-                The tweet will be posted at the specified time.
-              </p>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label htmlFor="scheduled-time" className="text-sm font-medium">
+                  Scheduled Time
+                </label>
+                <input
+                  id="scheduled-time"
+                  type="datetime-local"
+                  value={newScheduledTime}
+                  onChange={(e) => setNewScheduledTime(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  min={new Date().toISOString().slice(0, 16)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  The tweet will be posted at the specified time.
+                </p>
+              </div>
+              
+              {/* Thread checkbox - only show if tweet is part of a thread */}
+              {tweetToReschedule && tweetToReschedule.blog_post_id && (() => {
+                const currentGroup = groupedTweets.find(group => 
+                  group.some(tweet => tweet.id === tweetToReschedule.id)
+                )
+                const isPartOfThread = currentGroup && currentGroup.length > 1
+                
+                if (isPartOfThread) {
+                  return (
+                    <div className="flex items-center space-x-2 p-3 bg-blue-50 rounded-md border border-blue-200">
+                      <input
+                        id="apply-to-thread"
+                        type="checkbox"
+                        checked={applyToThread}
+                        onChange={(e) => setApplyToThread(e.target.checked)}
+                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                      />
+                      <label htmlFor="apply-to-thread" className="text-sm font-medium">
+                        Apply to entire thread ({currentGroup.length} tweets)
+                      </label>
+                    </div>
+                  )
+                }
+                return null
+              })()}
             </div>
           </div>
           <DialogFooter>

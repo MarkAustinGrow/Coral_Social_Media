@@ -8,7 +8,7 @@ export async function POST(request: NextRequest) {
   try {
     // Parse request body
     const body = await request.json()
-    const { tweetId, scheduledFor } = body
+    const { tweetId, scheduledFor, applyToThread } = body
     
     if (!tweetId) {
       return NextResponse.json(
@@ -142,22 +142,62 @@ export async function POST(request: NextRequest) {
       )
     }
     
-    // Update the tweet's scheduled time (with user_id filter for extra security)
-    const { error: updateError } = await supabase
+    // Determine if we're rescheduling a single tweet or entire thread
+    let updateQuery = supabase
       .from('potential_tweets')
       .update({ 
         scheduled_for: scheduledFor,
         status: 'scheduled'  // Ensure status is set to scheduled
       })
-      .eq('id', tweetId)
-      .eq('user_id', userId)  // CRITICAL: Double-check user ownership during update
+      .eq('user_id', userId)  // CRITICAL: Always filter by user ownership
+    
+    let affectedTweets = 1
+    let message = 'Tweet rescheduled successfully'
+    
+    if (applyToThread && tweet.blog_post_id) {
+      // Apply to entire thread - update all tweets with same blog_post_id
+      console.log(`User ${userId} rescheduling entire thread for blog_post_id: ${tweet.blog_post_id}`)
+      
+      // First, count how many tweets will be affected
+      const { data: threadTweets, error: countError } = await supabase
+        .from('potential_tweets')
+        .select('id')
+        .eq('blog_post_id', tweet.blog_post_id)
+        .eq('user_id', userId)
+        .in('status', ['scheduled', 'failed'])  // Only reschedule tweets that can be rescheduled
+      
+      if (countError) {
+        console.error('Error counting thread tweets:', countError)
+        return NextResponse.json(
+          { 
+            success: false, 
+            error: 'Failed to count thread tweets',
+            details: handleSupabaseError(countError) 
+          },
+          { status: 500 }
+        )
+      }
+      
+      affectedTweets = threadTweets?.length || 0
+      message = `Thread rescheduled successfully (${affectedTweets} tweets)`
+      
+      // Update all tweets in the thread
+      updateQuery = updateQuery
+        .eq('blog_post_id', tweet.blog_post_id)
+        .in('status', ['scheduled', 'failed'])  // Only reschedule tweets that can be rescheduled
+    } else {
+      // Apply to single tweet only
+      updateQuery = updateQuery.eq('id', tweetId)
+    }
+    
+    const { error: updateError } = await updateQuery
     
     if (updateError) {
-      console.error('Error rescheduling tweet:', updateError)
+      console.error('Error rescheduling tweet(s):', updateError)
       return NextResponse.json(
         { 
           success: false, 
-          error: 'Failed to reschedule tweet',
+          error: 'Failed to reschedule tweet(s)',
           details: handleSupabaseError(updateError) 
         },
         { status: 500 }
@@ -167,9 +207,11 @@ export async function POST(request: NextRequest) {
     // Return success response
     return NextResponse.json({
       success: true,
-      message: 'Tweet rescheduled successfully',
+      message,
       tweetId,
-      newScheduledFor: scheduledFor
+      newScheduledFor: scheduledFor,
+      affectedTweets,
+      appliedToThread: !!applyToThread
     })
   } catch (error: any) {
     console.error('Error in reschedule tweet API:', error)
