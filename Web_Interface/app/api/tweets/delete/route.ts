@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getSupabaseClient, handleSupabaseError } from '@/lib/supabase'
+import { getSupabaseClient, getSupabaseServerClient, handleSupabaseError } from '@/lib/supabase'
+import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
+import { cookies } from 'next/headers'
+import type { Database } from '@/types/database'
 
 export async function POST(request: NextRequest) {
   try {
@@ -17,10 +20,39 @@ export async function POST(request: NextRequest) {
       )
     }
     
-    console.log(`Deleting tweet with ID: ${tweetId}`)
+    // Get authenticated user
+    const authClient = createRouteHandlerClient<Database>({ cookies })
+    const { data: { session }, error: sessionError } = await authClient.auth.getSession()
+    
+    if (sessionError) {
+      console.error('Session error:', sessionError)
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: 'Authentication error', 
+          details: sessionError.message 
+        },
+        { status: 401 }
+      )
+    }
+    
+    if (!session?.user) {
+      console.error('No authenticated user found')
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: 'Not authenticated', 
+          details: 'Please log in to access this resource' 
+        },
+        { status: 401 }
+      )
+    }
+    
+    const userId = session.user.id
+    console.log(`User ${userId} deleting tweet with ID: ${tweetId}`)
     
     // Get Supabase client
-    const supabase = await getSupabaseClient()
+    const supabase = getSupabaseServerClient()
     
     if (!supabase) {
       return NextResponse.json(
@@ -32,11 +64,12 @@ export async function POST(request: NextRequest) {
       )
     }
     
-    // Fetch the tweet to make sure it exists
+    // Fetch the tweet to make sure it exists AND belongs to the current user
     const { data: tweet, error: tweetError } = await supabase
       .from('potential_tweets')
       .select('*')
       .eq('id', tweetId)
+      .eq('user_id', userId)  // CRITICAL: Only allow users to delete their own tweets
       .single()
     
     if (tweetError) {
@@ -55,7 +88,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { 
           success: false, 
-          error: 'Tweet not found' 
+          error: 'Tweet not found or you do not have permission to delete this tweet' 
         },
         { status: 404 }
       )
@@ -75,11 +108,12 @@ export async function POST(request: NextRequest) {
       )
     }
     
-    // Delete the tweet
+    // Delete the tweet (with user_id filter for extra security)
     const { error: deleteError } = await supabase
       .from('potential_tweets')
       .delete()
       .eq('id', tweetId)
+      .eq('user_id', userId)  // CRITICAL: Double-check user ownership during delete
     
     if (deleteError) {
       console.error('Error deleting tweet:', deleteError)
