@@ -7,14 +7,14 @@ import { ApiKeysPanel } from "@/components/api-keys-panel"
 import { Save, Download, Upload } from "lucide-react"
 
 export const metadata: Metadata = {
-  title: "API Configuration | Coral Social Media Infrastructure",
-  description: "Manage API keys and external service configurations",
+  title: "X/Twitter Configuration | Coral Social Media Infrastructure",
+  description: "Configure your personal X/Twitter API credentials",
 }
 
 export default function ConfigPage() {
   return (
     <DashboardShell>
-      <DashboardHeader heading="API Configuration" text="Manage API keys and external service configurations.">
+      <DashboardHeader heading="X/Twitter Configuration" text="Configure your personal X/Twitter API credentials.">
         <div className="flex items-center gap-2">
           <Button variant="outline">
             <Download className="mr-2 h-4 w-4" />
@@ -33,14 +33,14 @@ export default function ConfigPage() {
       <div className="space-y-4">
         <Card>
           <CardHeader>
-            <CardTitle>API Keys</CardTitle>
-            <CardDescription>Manage API keys for external services</CardDescription>
+            <CardTitle>X/Twitter API Credentials</CardTitle>
+            <CardDescription>Configure your personal X Developer account credentials</CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
             <ApiKeysPanel />
           </CardContent>
           <CardFooter className="border-t px-6 py-4">
-            <Button>Save API Keys</Button>
+            <Button>Save X/Twitter Credentials</Button>
           </CardFooter>
         </Card>
       </div>
