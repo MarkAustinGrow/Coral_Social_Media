@@ -1,23 +1,20 @@
 import type { Metadata } from "next"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { DashboardHeader } from "@/components/dashboard-header"
 import { DashboardShell } from "@/components/dashboard-shell"
-import { SystemConfigPanel } from "@/components/system-config-panel"
 import { ApiKeysPanel } from "@/components/api-keys-panel"
-import { DatabaseConfigPanel } from "@/components/database-config-panel"
 import { Save, Download, Upload } from "lucide-react"
 
 export const metadata: Metadata = {
-  title: "System Configuration | Macro Economics Expert Agentic System",
-  description: "Manage system-wide settings and configurations",
+  title: "API Configuration | Coral Social Media Infrastructure",
+  description: "Manage API keys and external service configurations",
 }
 
 export default function ConfigPage() {
   return (
     <DashboardShell>
-      <DashboardHeader heading="System Configuration" text="Manage system-wide settings and configurations.">
+      <DashboardHeader heading="API Configuration" text="Manage API keys and external service configurations.">
         <div className="flex items-center gap-2">
           <Button variant="outline">
             <Download className="mr-2 h-4 w-4" />
@@ -33,55 +30,20 @@ export default function ConfigPage() {
           </Button>
         </div>
       </DashboardHeader>
-      <Tabs defaultValue="general" className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="general">General</TabsTrigger>
-          <TabsTrigger value="api-keys">API Keys</TabsTrigger>
-          <TabsTrigger value="database">Database</TabsTrigger>
-        </TabsList>
-        <TabsContent value="general" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>General Settings</CardTitle>
-              <CardDescription>Configure general system settings</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <SystemConfigPanel />
-            </CardContent>
-            <CardFooter className="border-t px-6 py-4">
-              <Button>Save General Settings</Button>
-            </CardFooter>
-          </Card>
-        </TabsContent>
-        <TabsContent value="api-keys" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>API Keys</CardTitle>
-              <CardDescription>Manage API keys for external services</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <ApiKeysPanel />
-            </CardContent>
-            <CardFooter className="border-t px-6 py-4">
-              <Button>Save API Keys</Button>
-            </CardFooter>
-          </Card>
-        </TabsContent>
-        <TabsContent value="database" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Database Configuration</CardTitle>
-              <CardDescription>Configure database connections and settings</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <DatabaseConfigPanel />
-            </CardContent>
-            <CardFooter className="border-t px-6 py-4">
-              <Button>Save Database Settings</Button>
-            </CardFooter>
-          </Card>
-        </TabsContent>
-      </Tabs>
+      <div className="space-y-4">
+        <Card>
+          <CardHeader>
+            <CardTitle>API Keys</CardTitle>
+            <CardDescription>Manage API keys for external services</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <ApiKeysPanel />
+          </CardContent>
+          <CardFooter className="border-t px-6 py-4">
+            <Button>Save API Keys</Button>
+          </CardFooter>
+        </Card>
+      </div>
     </DashboardShell>
   )
 }
