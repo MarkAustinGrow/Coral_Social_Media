@@ -448,11 +448,18 @@ def get_scheduled_tweets(limit: int = 10):
         # Get current time
         now = datetime.now()
         
-        # Query the potential_tweets table in Supabase with user_id filtering
+        # FIXED: Query for tweets that are ready to be posted (scheduled for now or earlier)
         # Order by blog_post_id first, then position to ensure threads are grouped and ordered correctly
+        logger.info(f"🔍 SCHEDULING: Looking for tweets scheduled for {now.isoformat()} or earlier")
+        
         result = supabase_client.table("potential_tweets").select("*").eq("status", "scheduled").eq("user_id", user_id).lte("scheduled_for", now.isoformat()).order("blog_post_id", desc=False).order("position", desc=False).limit(limit).execute()
         
         tweets = result.data if result.data else []
+        
+        # DEBUGGING: Log what we found
+        logger.info(f"🔍 SCHEDULING: Found {len(tweets)} scheduled tweets for user {user_id}")
+        for tweet in tweets:
+            logger.info(f"🔍 SCHEDULING: Tweet {tweet.get('id')} - Position {tweet.get('position')} - Scheduled for {tweet.get('scheduled_for')} - Content: {tweet.get('content', '')[:50]}...")
         
         # Group tweets by blog_post_id to identify threads
         threads = {}
@@ -462,9 +469,10 @@ def get_scheduled_tweets(limit: int = 10):
                 threads[blog_post_id] = []
             threads[blog_post_id].append(tweet)
         
-        # Sort tweets in each thread by position
+        # Sort tweets in each thread by position to ensure proper order (1, 2, 3, 4...)
         for blog_post_id in threads:
             threads[blog_post_id].sort(key=lambda x: x.get("position", 0))
+            logger.info(f"🔍 SCHEDULING: Thread {blog_post_id} has {len(threads[blog_post_id])} tweets in order: {[t.get('position') for t in threads[blog_post_id]]}")
         
         log_to_database("info", f"Retrieved {len(tweets)} scheduled tweets for user {user_id}", {"thread_count": len(threads)})
         return {
