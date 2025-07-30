@@ -1099,7 +1099,18 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Twitter Posting Agent (Multi-User)")
     parser.add_argument("--tweet_id", type=int, help="ID of the tweet to post")
     parser.add_argument("--thread", type=str, choices=["true", "false"], help="Whether this is a thread")
+    parser.add_argument("--user_id", type=str, help="User ID for multiuser context")
+    parser.add_argument("user_id_positional", nargs='?', help="User ID passed as positional argument")
     args = parser.parse_args()
+    
+    # Handle user ID from either named argument or positional argument
+    if args.user_id_positional and not args.user_id:
+        args.user_id = args.user_id_positional
+    
+    # Set user context if provided via command line
+    if args.user_id:
+        logger.info(f"Setting user context from command line argument: {args.user_id}")
+        amu.set_user_context(args.user_id)
     
     try:
         # If tweet_id is provided, post the tweet directly
