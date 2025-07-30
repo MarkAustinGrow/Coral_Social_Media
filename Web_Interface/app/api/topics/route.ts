@@ -28,16 +28,6 @@ export async function GET(request: NextRequest) {
     }
     
     const userId = session.user.id
-    const userEmail = session.user.email
-    
-    // DEBUGGING: Log detailed user information
-    console.log('=== ENGAGEMENT METRICS DEBUG ===')
-    console.log(`Session User ID: ${userId}`)
-    console.log(`Session User Email: ${userEmail}`)
-    console.log(`Expected User ID for mark@itcambridge.co.uk: 99d3ff50-dcb5-4389-8e76-2ecd626902bc`)
-    console.log(`User ID Match: ${userId === '99d3ff50-dcb5-4389-8e76-2ecd626902bc'}`)
-    console.log(`Full session user object:`, JSON.stringify(session.user, null, 2))
-    console.log('================================')
     
     console.log(`Fetching engagement metrics for user: ${userId}`)
     
@@ -49,43 +39,6 @@ export async function GET(request: NextRequest) {
         { status: 500 }
       )
     }
-    
-    // ENHANCED DATABASE DEBUGGING
-    console.log('=== DATABASE CONNECTION DEBUG ===')
-    console.log('Supabase client created successfully')
-    console.log('Supabase URL:', process.env.NEXT_PUBLIC_SUPABASE_URL?.substring(0, 30) + '...')
-    console.log('Supabase Key length:', process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.length)
-    
-    // Test basic connection with a simple query first
-    console.log('Testing basic database connection...')
-    const { data: testData, error: testError } = await supabase
-      .from('engagement_metrics')
-      .select('id')
-      .limit(1)
-    
-    if (testError) {
-      console.error('Basic connection test failed:', testError)
-    } else {
-      console.log('Basic connection test successful - found records:', testData?.length || 0)
-    }
-    
-    // Test if table exists and has any data
-    console.log('Checking table structure and data...')
-    const { data: allData, error: allError } = await supabase
-      .from('engagement_metrics')
-      .select('id, user_id, topic')
-      .limit(5)
-    
-    if (allError) {
-      console.error('Table structure check failed:', allError)
-    } else {
-      console.log('Sample table data:', allData)
-      console.log(`Total sample records found: ${allData?.length || 0}`)
-    }
-    
-    // Check specifically for our user_id
-    console.log(`Searching for records with user_id: ${userId}`)
-    console.log('================================')
     
     // Filter by user_id to ensure user isolation
     const { data, error } = await supabase
