@@ -1,9 +1,35 @@
 import { getSupabaseClient } from '@/lib/supabase'
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
+import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
+import { cookies } from 'next/headers'
+import type { Database } from '@/types/database'
 
-// GET handler to fetch all topics
-export async function GET() {
+// GET handler to fetch all topics for the authenticated user
+export async function GET(request: NextRequest) {
   try {
+    // Get authenticated user
+    const authClient = createRouteHandlerClient<Database>({ cookies })
+    const { data: { session }, error: sessionError } = await authClient.auth.getSession()
+    
+    if (sessionError) {
+      console.error('Session error:', sessionError)
+      return NextResponse.json(
+        { error: 'Authentication error' },
+        { status: 401 }
+      )
+    }
+    
+    if (!session?.user) {
+      console.error('No authenticated user found')
+      return NextResponse.json(
+        { error: 'Not authenticated' },
+        { status: 401 }
+      )
+    }
+    
+    const userId = session.user.id
+    console.log(`Fetching engagement metrics for user: ${userId}`)
+    
     const supabase = await getSupabaseClient()
     
     if (!supabase) {
@@ -13,9 +39,11 @@ export async function GET() {
       )
     }
     
+    // Filter by user_id to ensure user isolation
     const { data, error } = await supabase
       .from('engagement_metrics')
       .select('*')
+      .eq('user_id', userId)
       .order('engagement_score', { ascending: false })
     
     if (error) {
@@ -26,6 +54,7 @@ export async function GET() {
       )
     }
     
+    console.log(`Found ${data?.length || 0} engagement metrics for user ${userId}`)
     return NextResponse.json(data)
   } catch (error) {
     console.error('Unexpected error fetching topics:', error)
@@ -36,9 +65,31 @@ export async function GET() {
   }
 }
 
-// POST handler to add a new topic
-export async function POST(request: Request) {
+// POST handler to add a new topic for the authenticated user
+export async function POST(request: NextRequest) {
   try {
+    // Get authenticated user
+    const authClient = createRouteHandlerClient<Database>({ cookies })
+    const { data: { session }, error: sessionError } = await authClient.auth.getSession()
+    
+    if (sessionError) {
+      console.error('Session error:', sessionError)
+      return NextResponse.json(
+        { error: 'Authentication error' },
+        { status: 401 }
+      )
+    }
+    
+    if (!session?.user) {
+      console.error('No authenticated user found')
+      return NextResponse.json(
+        { error: 'Not authenticated' },
+        { status: 401 }
+      )
+    }
+    
+    const userId = session.user.id
+    
     const body = await request.json()
     const { topic, topic_description, category, subtopics } = body
     
@@ -49,6 +100,8 @@ export async function POST(request: Request) {
       )
     }
     
+    console.log(`Adding new topic for user ${userId}: ${topic}`)
+    
     const supabase = await getSupabaseClient()
     
     if (!supabase) {
@@ -58,6 +111,7 @@ export async function POST(request: Request) {
       )
     }
     
+    // Include user_id in the insert to ensure proper user association
     const { data, error } = await supabase
       .from('engagement_metrics')
       .insert([
@@ -68,7 +122,8 @@ export async function POST(request: Request) {
           subtopics: subtopics || [],
           engagement_score: 50, // Default score
           is_active: true, // Default to active
-          last_updated: new Date().toISOString()
+          last_updated: new Date().toISOString(),
+          user_id: userId // CRITICAL: Associate with current user
         }
       ])
       .select()
@@ -81,6 +136,7 @@ export async function POST(request: Request) {
       )
     }
     
+    console.log(`Successfully added topic for user ${userId}`)
     return NextResponse.json(data[0])
   } catch (error) {
     console.error('Unexpected error adding topic:', error)
