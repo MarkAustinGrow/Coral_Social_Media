@@ -245,6 +245,7 @@ def report_error_with_user(agent_name: str, error_message: str, health: int = 30
 def mark_agent_started_with_user(agent_name: str) -> bool:
     """
     Mark an agent as started (with user context).
+    Automatically clears any previous errors on startup.
     
     Args:
         agent_name: The name of the agent
@@ -255,17 +256,19 @@ def mark_agent_started_with_user(agent_name: str) -> bool:
     # Log the start
     log_to_database(agent_name, "info", "Agent started")
     
-    # Update status
+    # Update status and clear any previous errors
     return update_agent_status_with_user(
         agent_name=agent_name,
         status="running",
         health=100,
-        last_activity="Agent started"
+        last_activity="Agent started",
+        last_error=None  # Clear previous errors on startup
     )
 
 def mark_agent_stopped_with_user(agent_name: str) -> bool:
     """
     Mark an agent as stopped (with user context).
+    Automatically clears errors when stopping (stopped agents don't have active errors).
     
     Args:
         agent_name: The name of the agent
@@ -276,12 +279,56 @@ def mark_agent_stopped_with_user(agent_name: str) -> bool:
     # Log the stop
     log_to_database(agent_name, "info", "Agent stopped")
     
-    # Update status
+    # Update status and clear errors
     return update_agent_status_with_user(
         agent_name=agent_name,
         status="stopped",
         health=0,
-        last_activity="Agent stopped"
+        last_activity="Agent stopped",
+        last_error=None  # Clear errors when stopping
+    )
+
+def clear_error_with_user(agent_name: str) -> bool:
+    """
+    Clear any error for an agent (with user context).
+    This allows agents to clear their own errors when they recover.
+    
+    Args:
+        agent_name: The name of the agent
+        
+    Returns:
+        bool: True if the error was cleared successfully, False otherwise
+    """
+    # Log the error clearing
+    log_to_database(agent_name, "info", "Error cleared by agent")
+    
+    # Update status to clear error
+    return update_agent_status_with_user(
+        agent_name=agent_name,
+        status="running",
+        health=100,
+        last_activity="Error cleared",
+        last_error=None  # Clear the error
+    )
+
+def send_healthy_heartbeat_with_user(agent_name: str, health: int = 100) -> bool:
+    """
+    Send a healthy heartbeat for an agent and clear any previous errors.
+    Use this when an agent is running normally and any previous errors should be cleared.
+    
+    Args:
+        agent_name: The name of the agent
+        health: The health of the agent (0-100)
+        
+    Returns:
+        bool: True if the heartbeat was successful, False otherwise
+    """
+    return update_agent_status_with_user(
+        agent_name=agent_name,
+        status="running",
+        health=health,
+        last_activity="Healthy heartbeat",
+        last_error=None  # Clear errors on healthy heartbeat
     )
 
 # Example usage in an agent script:

@@ -3,7 +3,7 @@
 import { useState } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
-import { CheckCircle, AlertCircle, XCircle, RefreshCw, ServerCrash, Play, Square, Info, AlertTriangle } from "lucide-react"
+import { CheckCircle, AlertCircle, XCircle, RefreshCw, ServerCrash, Play, Square, Info, AlertTriangle, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { 
   DropdownMenu,
@@ -38,6 +38,7 @@ export function SystemStatusPanel() {
   const [isStarting, setIsStarting] = useState<Record<string, boolean>>({})
   const [isStopping, setIsStopping] = useState<Record<string, boolean>>({})
   const [isForceUpdating, setIsForceUpdating] = useState<Record<string, boolean>>({})
+  const [isClearingErrors, setIsClearingErrors] = useState<Record<string, boolean>>({})
   
   // Fetch agent status from the agent_status table
   const agentStatusResult = useSupabaseData<AgentStatus>(
@@ -165,6 +166,33 @@ export function SystemStatusPanel() {
       toast.error(`Failed to force update ${agentName} status: ${error.message}`)
     } finally {
       setIsForceUpdating(prev => ({ ...prev, [agentName]: false }))
+    }
+  }
+  
+  // Handle clearing errors for an agent
+  const handleClearErrors = async (agentName: string) => {
+    try {
+      setIsClearingErrors(prev => ({ ...prev, [agentName]: true }))
+      
+      // Call the API to clear errors for the agent
+      const response = await fetch('/api/agents/clear-errors', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ agentName })
+      })
+      
+      const data = await response.json()
+      
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to clear agent errors')
+      }
+      
+      toast.success(`Errors cleared for ${agentName}`)
+      handleRefresh()
+    } catch (error: any) {
+      toast.error(`Failed to clear errors for ${agentName}: ${error.message}`)
+    } finally {
+      setIsClearingErrors(prev => ({ ...prev, [agentName]: false }))
     }
   }
   
@@ -428,6 +456,25 @@ export function SystemStatusPanel() {
                         </>
                       )}
                     </DropdownMenuItem>
+                    {agent.last_error && (
+                      <DropdownMenuItem
+                        onClick={() => handleClearErrors(agent.agent_name)}
+                        disabled={isClearingErrors[agent.agent_name]}
+                        className="text-blue-600 focus:text-blue-600"
+                      >
+                        {isClearingErrors[agent.agent_name] ? (
+                          <>
+                            <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                            Clearing...
+                          </>
+                        ) : (
+                          <>
+                            <X className="h-4 w-4 mr-2" />
+                            Clear Errors
+                          </>
+                        )}
+                      </DropdownMenuItem>
+                    )}
                   </DropdownMenuContent>
                 </DropdownMenu>
                 

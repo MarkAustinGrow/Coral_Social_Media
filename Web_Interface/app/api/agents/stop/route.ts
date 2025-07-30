@@ -69,12 +69,14 @@ export async function POST(request: NextRequest) {
     console.log('✅ Stop Agent API: Agent process stopped successfully')
     
     // Update agent status to stopped in the database (only for this user's agent)
+    // Clear any errors when stopping (stopped agents don't have active errors)
     const { error: updateError } = await supabase
       .from('agent_status')
       .update({
         status: 'stopped',
         health: 0,
         last_activity: 'Agent stopped via API',
+        last_error: null, // Clear errors when stopping
         updated_at: new Date().toISOString()
       })
       .eq('agent_name', agentName)

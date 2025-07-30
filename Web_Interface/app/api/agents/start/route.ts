@@ -69,12 +69,14 @@ export async function POST(request: NextRequest) {
     console.log('✅ Start Agent API: Agent process started successfully')
     
     // Update agent status to running in the database (only for this user's agent)
+    // Clear any previous errors when starting fresh
     const { error: updateError } = await supabase
       .from('agent_status')
       .update({
         status: 'running',
         health: 100,
         last_activity: 'Agent started via API',
+        last_error: null, // Clear previous errors on fresh start
         updated_at: new Date().toISOString()
       })
       .eq('agent_name', agentName)
