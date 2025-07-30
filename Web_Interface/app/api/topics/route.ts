@@ -60,13 +60,13 @@ export async function GET(request: NextRequest) {
     console.log('Testing basic database connection...')
     const { data: testData, error: testError } = await supabase
       .from('engagement_metrics')
-      .select('count(*)')
+      .select('id')
       .limit(1)
     
     if (testError) {
       console.error('Basic connection test failed:', testError)
     } else {
-      console.log('Basic connection test successful:', testData)
+      console.log('Basic connection test successful - found records:', testData?.length || 0)
     }
     
     // Test if table exists and has any data
