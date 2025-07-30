@@ -56,6 +56,8 @@ export function BlogCritiqueDialog({ blog, open, onOpenChange }: BlogCritiqueDia
         <DialogHeader>
           <DialogTitle className="text-xl">{blog.title}</DialogTitle>
           <DialogDescription className="flex items-center gap-2 text-sm">
+            <span>ID: {blog.id}</span>
+            <span>•</span>
             <span>Created: {formatDate(blog.created_at)}</span>
             {blog.published_at && (
               <>
@@ -63,8 +65,6 @@ export function BlogCritiqueDialog({ blog, open, onOpenChange }: BlogCritiqueDia
                 <span>Published: {formatDate(blog.published_at)}</span>
               </>
             )}
-            <span>•</span>
-            <span>{blog.word_count} words</span>
             <span>•</span>
             <span>Status: {blog.status}</span>
             {blog.review_status && (
@@ -109,7 +109,7 @@ export function BlogCritiqueDialog({ blog, open, onOpenChange }: BlogCritiqueDia
             {blog.content && blog.content.length > 500 && !showFullContent && (
               <div className="mt-2 pt-2 border-t border-muted">
                 <p className="text-xs text-muted-foreground">
-                  Showing first 500 characters of {blog.word_count} word blog post
+                  Showing first 500 characters of blog post
                 </p>
               </div>
             )}

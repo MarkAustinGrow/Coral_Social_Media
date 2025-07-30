@@ -188,8 +188,6 @@ export function BlogList({ status, withCritiques }: BlogListProps) {
                   <div className="font-medium">{blog.title}</div>
                   <div className="flex items-center gap-2 text-sm text-muted-foreground">
                     <span>{formatDate(blog.created_at)}</span>
-                    <span>•</span>
-                    <span>{blog.word_count} words</span>
                   </div>
                   <div className="flex flex-wrap gap-1 mt-1">
                     {getConsolidatedStatusBadge(blog)}
