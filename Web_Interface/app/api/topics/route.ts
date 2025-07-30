@@ -28,6 +28,17 @@ export async function GET(request: NextRequest) {
     }
     
     const userId = session.user.id
+    const userEmail = session.user.email
+    
+    // DEBUGGING: Log detailed user information
+    console.log('=== ENGAGEMENT METRICS DEBUG ===')
+    console.log(`Session User ID: ${userId}`)
+    console.log(`Session User Email: ${userEmail}`)
+    console.log(`Expected User ID for mark@itcambridge.co.uk: 99d3ff50-dcb5-4389-8e76-2ecd626902bc`)
+    console.log(`User ID Match: ${userId === '99d3ff50-dcb5-4389-8e76-2ecd626902bc'}`)
+    console.log(`Full session user object:`, JSON.stringify(session.user, null, 2))
+    console.log('================================')
+    
     console.log(`Fetching engagement metrics for user: ${userId}`)
     
     const supabase = await getSupabaseClient()
