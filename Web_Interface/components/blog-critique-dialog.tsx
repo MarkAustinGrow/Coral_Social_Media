@@ -3,9 +3,7 @@
 import { useState } from "react"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
 import { BlogWithCritique } from "@/hooks/use-blog-data"
-import { CheckCircle, XCircle } from "lucide-react"
 
 interface BlogCritiqueDialogProps {
   blog: BlogWithCritique | null
@@ -14,6 +12,8 @@ interface BlogCritiqueDialogProps {
 }
 
 export function BlogCritiqueDialog({ blog, open, onOpenChange }: BlogCritiqueDialogProps) {
+  const [showFullContent, setShowFullContent] = useState(false)
+  
   if (!blog) return null
 
   const formatDate = (dateString: string) => {
@@ -32,21 +32,19 @@ export function BlogCritiqueDialog({ blog, open, onOpenChange }: BlogCritiqueDia
       case "approve":
         return (
           <Badge className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
-            <CheckCircle className="mr-1 h-3 w-3" />
-            Approved
+            ✅ Approved
           </Badge>
         )
       case "reject":
         return (
           <Badge className="bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200">
-            <XCircle className="mr-1 h-3 w-3" />
-            Rejected
+            ❌ Rejected
           </Badge>
         )
       default:
         return (
           <Badge className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200">
-            Pending
+            ⏳ Pending
           </Badge>
         )
     }
@@ -79,19 +77,42 @@ export function BlogCritiqueDialog({ blog, open, onOpenChange }: BlogCritiqueDia
         </DialogHeader>
 
         <div className="space-y-4 mt-4">
-          {/* Blog content preview */}
+          {/* Blog content with expandable functionality */}
           <div className="border rounded-md p-4 bg-muted/30">
-            <h3 className="text-sm font-medium mb-2">Blog Content Preview</h3>
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-medium">
+                📖 {showFullContent ? "Full Blog Content" : "Blog Content Preview"}
+              </h3>
+              {blog.content && blog.content.length > 500 && (
+                <button
+                  onClick={() => setShowFullContent(!showFullContent)}
+                  className="text-xs px-2 py-1 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded transition-colors"
+                >
+                  {showFullContent ? "▲ Show Less" : "▼ Show More"}
+                </button>
+              )}
+            </div>
             <div className="text-sm text-muted-foreground">
               {blog.content ? (
-                <div className="max-h-40 overflow-y-auto">
-                  {blog.content.substring(0, 500)}
-                  {blog.content.length > 500 && "..."}
+                <div className={showFullContent ? "max-h-96 overflow-y-auto" : "max-h-40 overflow-y-auto"}>
+                  <div className="whitespace-pre-wrap leading-relaxed text-gray-700 dark:text-gray-300">
+                    {showFullContent 
+                      ? blog.content 
+                      : `${blog.content.substring(0, 500)}${blog.content.length > 500 ? "..." : ""}`
+                    }
+                  </div>
                 </div>
               ) : (
                 <p className="italic">No content available</p>
               )}
             </div>
+            {blog.content && blog.content.length > 500 && !showFullContent && (
+              <div className="mt-2 pt-2 border-t border-muted">
+                <p className="text-xs text-muted-foreground">
+                  Showing first 500 characters of {blog.word_count} word blog post
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Critique section */}
@@ -124,14 +145,12 @@ export function BlogCritiqueDialog({ blog, open, onOpenChange }: BlogCritiqueDia
               {/* Action buttons */}
               {blog.critique.decision !== "approve" && blog.critique.decision !== "reject" && (
                 <div className="flex justify-end gap-2 mt-4">
-                  <Button variant="outline" className="border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700">
-                    <XCircle className="mr-2 h-4 w-4" />
-                    Reject
-                  </Button>
-                  <Button className="bg-green-600 hover:bg-green-700">
-                    <CheckCircle className="mr-2 h-4 w-4" />
-                    Approve
-                  </Button>
+                  <button className="px-4 py-2 border border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700 rounded transition-colors">
+                    ❌ Reject
+                  </button>
+                  <button className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded transition-colors">
+                    ✅ Approve
+                  </button>
                 </div>
               )}
             </div>
@@ -139,9 +158,9 @@ export function BlogCritiqueDialog({ blog, open, onOpenChange }: BlogCritiqueDia
             <div className="border rounded-md p-6 text-center">
               <p className="text-muted-foreground">No critique available for this blog post.</p>
               {blog.status === "draft" && (
-                <Button className="mt-4">
+                <button className="mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors">
                   Submit for Review
-                </Button>
+                </button>
               )}
             </div>
           )}
