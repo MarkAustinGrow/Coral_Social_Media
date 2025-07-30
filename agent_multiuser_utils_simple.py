@@ -25,6 +25,24 @@ def get_user_context():
     # Try multiple environment variable names for flexibility
     return os.getenv("AGENT_USER_ID") or os.getenv("USER_ID") or os.getenv("CURRENT_USER_ID")
 
+def set_user_context(user_id: str) -> bool:
+    """
+    Set the user context for the current process.
+    
+    Args:
+        user_id: The user ID to set as context
+        
+    Returns:
+        bool: True if context was set successfully
+    """
+    try:
+        os.environ["AGENT_USER_ID"] = user_id
+        logger.info(f"User context set to: {user_id}")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to set user context: {str(e)}")
+        return False
+
 def log_to_database(agent_name: str, level: str, message: str, metadata: Optional[Dict[str, Any]] = None) -> bool:
     """
     Log agent activity to the agent_logs table in Supabase with user context.
