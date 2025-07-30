@@ -15,31 +15,31 @@ export default function PersonaPage() {
   return (
     <DashboardShell>
       <DashboardHeader heading="Persona Configuration" text="Configure the system's persona and tone.">
-        <div className="flex items-center gap-2">
-          <Button variant="outline">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+          <Button variant="outline" className="w-full sm:w-auto">
             <RotateCcw className="mr-2 h-4 w-4" />
             Reset
           </Button>
-          <Button variant="outline">
+          <Button variant="outline" className="w-full sm:w-auto">
             <Download className="mr-2 h-4 w-4" />
             Export
           </Button>
-          <Button variant="outline">
+          <Button variant="outline" className="w-full sm:w-auto">
             <Upload className="mr-2 h-4 w-4" />
             Import
           </Button>
-          <Button>
+          <Button className="w-full sm:w-auto">
             <Save className="mr-2 h-4 w-4" />
             Save Changes
           </Button>
         </div>
       </DashboardHeader>
       <Tabs defaultValue="editor" className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="editor">Editor</TabsTrigger>
-          <TabsTrigger value="preview">Preview</TabsTrigger>
-          <TabsTrigger value="templates">Templates</TabsTrigger>
-          <TabsTrigger value="history">Version History</TabsTrigger>
+        <TabsList className="grid w-full grid-cols-2 md:grid-cols-4 md:w-auto">
+          <TabsTrigger value="editor" className="text-xs sm:text-sm">Editor</TabsTrigger>
+          <TabsTrigger value="preview" className="text-xs sm:text-sm">Preview</TabsTrigger>
+          <TabsTrigger value="templates" className="text-xs sm:text-sm">Templates</TabsTrigger>
+          <TabsTrigger value="history" className="text-xs sm:text-sm">History</TabsTrigger>
         </TabsList>
         <TabsContent value="editor" className="space-y-4">
           <Card>

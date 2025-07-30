@@ -82,8 +82,8 @@ export default function LogsPage() {
   return (
     <DashboardShell>
       <DashboardHeader heading="Agent Status & Logs" text="Monitor agent status and view system logs.">
-        <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={handleRefresh}>
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+          <Button variant="outline" onClick={handleRefresh} className="w-full sm:w-auto">
             <RefreshCw className="mr-2 h-4 w-4" />
             Refresh
           </Button>
@@ -91,6 +91,7 @@ export default function LogsPage() {
             variant="outline" 
             onClick={handleExportLogs}
             disabled={isExporting}
+            className="w-full sm:w-auto"
           >
             <Download className="mr-2 h-4 w-4" />
             {isExporting ? 'Exporting...' : 'Export Logs'}
@@ -113,11 +114,11 @@ export default function LogsPage() {
             <CardDescription>View and filter system logs</CardDescription>
           </CardHeader>
           <Tabs defaultValue="all" className="px-6">
-            <TabsList className="w-full md:w-auto">
-              <TabsTrigger value="all">All Logs</TabsTrigger>
-              <TabsTrigger value="info">Info</TabsTrigger>
-              <TabsTrigger value="warning">Warning</TabsTrigger>
-              <TabsTrigger value="error">Error</TabsTrigger>
+            <TabsList className="grid w-full grid-cols-4 md:w-auto md:grid-cols-none md:flex">
+              <TabsTrigger value="all" className="text-xs sm:text-sm">All Logs</TabsTrigger>
+              <TabsTrigger value="info" className="text-xs sm:text-sm">Info</TabsTrigger>
+              <TabsTrigger value="warning" className="text-xs sm:text-sm">Warning</TabsTrigger>
+              <TabsTrigger value="error" className="text-xs sm:text-sm">Error</TabsTrigger>
             </TabsList>
             <TabsContent value="all" className="p-0 pt-4">
               <LogViewer key={`logs-all-${refreshKey}`} />
