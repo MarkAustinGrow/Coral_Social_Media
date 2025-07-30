@@ -406,6 +406,9 @@ export function TweetList({ status }: TweetListProps) {
           description: result.message,
         })
         
+        // Track deletion for calendar synchronization
+        localStorage.setItem('lastTweetDeletion', Date.now().toString())
+        
         // Refresh the list
         setRefreshKey(prev => prev + 1)
       } else {

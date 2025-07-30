@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { toast } from "@/hooks/use-toast"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -25,6 +26,7 @@ export function ContentCalendar() {
   const [refreshKey, setRefreshKey] = useState(0)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [eventToDelete, setEventToDelete] = useState<CalendarEvent | null>(null)
+  const [isRefreshing, setIsRefreshing] = useState(false)
   
   // Calculate start and end dates based on current date and view mode
   const getDateRange = () => {
@@ -217,8 +219,21 @@ export function ContentCalendar() {
   }
   
   // Handle refresh button click
-  const handleRefresh = () => {
-    setRefreshKey(prev => prev + 1)
+  const handleRefresh = async () => {
+    console.log('🔄 Calendar: Refresh button clicked')
+    setIsRefreshing(true)
+    
+    try {
+      // Force refresh using the hook's refresh function
+      await refreshEvents()
+      console.log('✅ Calendar: Refresh completed successfully')
+    } catch (error) {
+      console.error('❌ Calendar: Refresh failed:', error)
+    } finally {
+      setIsRefreshing(false)
+      // Also increment refresh key as fallback
+      setRefreshKey(prev => prev + 1)
+    }
   }
   
   // Handle delete button click
@@ -235,10 +250,51 @@ export function ContentCalendar() {
       await deleteEvent(eventToDelete)
       setDeleteDialogOpen(false)
       setEventToDelete(null)
+      
+      // Show success toast
+      toast({
+        title: "Event deleted",
+        description: "The event has been successfully removed from your calendar.",
+      })
     } catch (error) {
       console.error('Error deleting event:', error)
+      
+      // Show error toast
+      toast({
+        title: "Delete failed",
+        description: "Failed to delete the event. Please try again.",
+        variant: "destructive",
+      })
     }
   }
+
+  // Add page visibility listener to auto-refresh when user returns to calendar
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        console.log('🔄 Calendar: Page became visible, checking for updates')
+        
+        // Check if there were any deletions in other parts of the app
+        const lastDeletion = localStorage.getItem('lastTweetDeletion')
+        const lastCalendarRefresh = localStorage.getItem('lastCalendarRefresh')
+        
+        if (lastDeletion && (!lastCalendarRefresh || lastDeletion > lastCalendarRefresh)) {
+          console.log('🔄 Calendar: Detected recent deletions, auto-refreshing')
+          handleRefresh()
+          localStorage.setItem('lastCalendarRefresh', Date.now().toString())
+        }
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    
+    // Also check on component mount
+    handleVisibilityChange()
+    
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [])
   
   // Render event card
   const renderEvent = (event: CalendarEvent) => {
@@ -374,8 +430,9 @@ export function ContentCalendar() {
           </Button>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={handleRefresh}>
-            <RefreshCw className="h-4 w-4" />
+          <Button variant="outline" size="sm" onClick={handleRefresh} disabled={isRefreshing}>
+            <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+            {isRefreshing && <span className="ml-1 text-xs">Refreshing...</span>}
           </Button>
           <Select
             value={viewMode}

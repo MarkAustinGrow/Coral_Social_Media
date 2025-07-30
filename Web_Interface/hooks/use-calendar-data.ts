@@ -96,7 +96,14 @@ export function useCalendarData(
 
   // Function to refresh events
   const refreshEvents = useCallback(async () => {
-    await fetchEvents()
+    console.log('🔄 Calendar: Manual refresh triggered')
+    try {
+      await fetchEvents()
+      console.log('✅ Calendar: Manual refresh completed successfully')
+    } catch (error) {
+      console.error('❌ Calendar: Manual refresh failed:', error)
+      throw error
+    }
   }, [fetchEvents])
 
   // Function to schedule a new event
