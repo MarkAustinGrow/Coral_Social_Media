@@ -262,3 +262,32 @@ export async function rescheduleTweet(
     }
   }
 }
+
+// Function to delete a thread
+export async function deleteThread(threadIds: number[]): Promise<{ success: boolean; message: string }> {
+  try {
+    const response = await fetch(`/api/tweets/delete-thread`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ threadIds }),
+    })
+    
+    const result = await response.json()
+    
+    if (!response.ok) {
+      throw new Error(result.error || 'Failed to delete thread')
+    }
+    
+    return { 
+      success: true, 
+      message: result.message || 'Thread deleted successfully' 
+    }
+  } catch (error: any) {
+    return { 
+      success: false, 
+      message: error.message || 'An error occurred while deleting the thread' 
+    }
+  }
+}

@@ -33,7 +33,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Calendar, Edit, ExternalLink, MoreHorizontal, Send, Trash2, MessageSquare, RefreshCw } from "lucide-react"
-import { useTweetData, postTweet, postThread, deleteTweet, updateTweet, rescheduleTweet, Tweet } from "@/hooks/use-tweet-data"
+import { useTweetData, postTweet, postThread, deleteTweet, updateTweet, rescheduleTweet, deleteThread, Tweet } from "@/hooks/use-tweet-data"
 import { DataState } from "@/components/ui/data-state"
 import { useToast } from "@/hooks/use-toast"
 
@@ -49,15 +49,18 @@ export function TweetList({ status }: TweetListProps) {
   const [deletingTweetIds, setDeletingTweetIds] = useState<number[]>([])
   const [updatingTweetIds, setUpdatingTweetIds] = useState<number[]>([])
   const [reschedulingTweetIds, setReschedulingTweetIds] = useState<number[]>([])
+  const [deletingThreadIds, setDeletingThreadIds] = useState<number[]>([])
   const [tweetToDelete, setTweetToDelete] = useState<Tweet | null>(null)
   const [tweetToEdit, setTweetToEdit] = useState<Tweet | null>(null)
   const [tweetToReschedule, setTweetToReschedule] = useState<Tweet | null>(null)
+  const [threadToDelete, setThreadToDelete] = useState<Tweet[] | null>(null)
   const [editedContent, setEditedContent] = useState<string>("")
   const [newScheduledTime, setNewScheduledTime] = useState<string>("")
   const [applyToThread, setApplyToThread] = useState<boolean>(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [editDialogOpen, setEditDialogOpen] = useState(false)
   const [rescheduleDialogOpen, setRescheduleDialogOpen] = useState(false)
+  const [deleteThreadDialogOpen, setDeleteThreadDialogOpen] = useState(false)
   const [userEmail, setUserEmail] = useState<string | null>(null)
   
   // Get the current user's email
@@ -382,6 +385,48 @@ export function TweetList({ status }: TweetListProps) {
     }
   }
 
+  const handleDeleteThreadClick = (thread: Tweet[]) => {
+    setThreadToDelete(thread)
+    setDeleteThreadDialogOpen(true)
+  }
+
+  const handleDeleteThreadConfirm = async () => {
+    if (!threadToDelete) return
+    
+    const threadIds = threadToDelete.map(tweet => tweet.id)
+    setDeletingThreadIds(prev => [...prev, ...threadIds])
+    setDeleteThreadDialogOpen(false)
+    
+    try {
+      const result = await deleteThread(threadIds)
+      
+      if (result.success) {
+        toast({
+          title: "Thread deleted",
+          description: result.message,
+        })
+        
+        // Refresh the list
+        setRefreshKey(prev => prev + 1)
+      } else {
+        toast({
+          title: "Failed to delete thread",
+          description: result.message,
+          variant: "destructive",
+        })
+      }
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "An error occurred while deleting the thread",
+        variant: "destructive",
+      })
+    } finally {
+      setDeletingThreadIds(prev => prev.filter(id => !threadIds.includes(id)))
+      setThreadToDelete(null)
+    }
+  }
+
   const groupedTweets = tweets ? groupTweets(tweets) : []
 
   return (
@@ -457,15 +502,27 @@ export function TweetList({ status }: TweetListProps) {
                       </div>
                       
                       {!allPosted && (
-                        <Button 
-                          variant="outline" 
-                          size="sm" 
-                          onClick={() => handlePostThread(threadIds)}
-                          disabled={anyPosting}
-                        >
-                          <Send className="mr-2 h-4 w-4" />
-                          {anyPosting ? 'Posting...' : 'Post Thread'}
-                        </Button>
+                        <div className="flex gap-2">
+                          <Button 
+                            variant="outline" 
+                            size="sm" 
+                            onClick={() => handlePostThread(threadIds)}
+                            disabled={anyPosting}
+                          >
+                            <Send className="mr-2 h-4 w-4" />
+                            {anyPosting ? 'Posting...' : 'Post Thread'}
+                          </Button>
+                          <Button 
+                            variant="outline" 
+                            size="sm" 
+                            onClick={() => handleDeleteThreadClick(group)}
+                            disabled={anyPosting || deletingThreadIds.some(id => threadIds.includes(id))}
+                            className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                          >
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            {deletingThreadIds.some(id => threadIds.includes(id)) ? 'Deleting...' : 'Delete Thread'}
+                          </Button>
+                        </div>
                       )}
                     </div>
                   )}
@@ -701,6 +758,29 @@ export function TweetList({ status }: TweetListProps) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      
+      {/* Delete Thread confirmation dialog */}
+      <AlertDialog open={deleteThreadDialogOpen} onOpenChange={setDeleteThreadDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you sure you want to delete this thread?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. The entire thread ({threadToDelete?.length || 0} tweets) will be permanently deleted from the database.
+              {threadToDelete && threadToDelete.some(tweet => tweet.status === 'posted') && (
+                <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded text-yellow-800">
+                  <strong>Warning:</strong> This thread contains posted tweets that cannot be deleted.
+                </div>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteThreadConfirm} className="bg-red-600 hover:bg-red-700">
+              Delete Thread
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   )
 }
