@@ -50,6 +50,43 @@ export async function GET(request: NextRequest) {
       )
     }
     
+    // ENHANCED DATABASE DEBUGGING
+    console.log('=== DATABASE CONNECTION DEBUG ===')
+    console.log('Supabase client created successfully')
+    console.log('Supabase URL:', process.env.NEXT_PUBLIC_SUPABASE_URL?.substring(0, 30) + '...')
+    console.log('Supabase Key length:', process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.length)
+    
+    // Test basic connection with a simple query first
+    console.log('Testing basic database connection...')
+    const { data: testData, error: testError } = await supabase
+      .from('engagement_metrics')
+      .select('count(*)')
+      .limit(1)
+    
+    if (testError) {
+      console.error('Basic connection test failed:', testError)
+    } else {
+      console.log('Basic connection test successful:', testData)
+    }
+    
+    // Test if table exists and has any data
+    console.log('Checking table structure and data...')
+    const { data: allData, error: allError } = await supabase
+      .from('engagement_metrics')
+      .select('id, user_id, topic')
+      .limit(5)
+    
+    if (allError) {
+      console.error('Table structure check failed:', allError)
+    } else {
+      console.log('Sample table data:', allData)
+      console.log(`Total sample records found: ${allData?.length || 0}`)
+    }
+    
+    // Check specifically for our user_id
+    console.log(`Searching for records with user_id: ${userId}`)
+    console.log('================================')
+    
     // Filter by user_id to ensure user isolation
     const { data, error } = await supabase
       .from('engagement_metrics')
@@ -59,6 +96,7 @@ export async function GET(request: NextRequest) {
     
     if (error) {
       console.error('Error fetching topics:', error)
+      console.error('Error details:', JSON.stringify(error, null, 2))
       return NextResponse.json(
         { error: 'Failed to fetch topics' },
         { status: 500 }
@@ -66,6 +104,13 @@ export async function GET(request: NextRequest) {
     }
     
     console.log(`Found ${data?.length || 0} engagement metrics for user ${userId}`)
+    if (data && data.length > 0) {
+      console.log('Sample found records:', data.slice(0, 3).map(record => ({
+        id: record.id,
+        topic: record.topic,
+        user_id: record.user_id
+      })))
+    }
     return NextResponse.json(data)
   } catch (error) {
     console.error('Unexpected error fetching topics:', error)
