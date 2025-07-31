@@ -185,11 +185,10 @@ function CoralStudioPageContent() {
     if (!messageContent.trim() || !currentSession) return
 
     try {
-      await sendMessage({
-        content: messageContent,
-        sessionId: currentSession.id,
-        targetAgents: selectedAgents.length > 0 ? selectedAgents : ['interface_agent']
-      })
+      await sendMessage(
+        messageContent,
+        selectedAgents.length > 0 ? selectedAgents : ['interface_agent']
+      )
       
       setMessageContent("")
       setSelectedAgents([])
