@@ -1,14 +1,14 @@
-// EventSource polyfill for server-side - use dynamic import to avoid TypeScript conflicts
+// EventSource handling for both client and server
 let EventSourceClass: any
-if (typeof window === 'undefined') {
-  try {
-    EventSourceClass = require('eventsource')
-  } catch (e) {
-    console.warn('EventSource polyfill not available, will use browser EventSource')
-    EventSourceClass = EventSource
-  }
-} else {
+
+// Check if we're in a browser environment
+if (typeof window !== 'undefined') {
+  // Browser environment - use native EventSource
   EventSourceClass = EventSource
+} else {
+  // Server environment - disable EventSource functionality
+  EventSourceClass = null
+  console.log('[Coral Bridge] Server-side environment detected - EventSource disabled')
 }
 
 export interface CoralMessage {
@@ -65,6 +65,12 @@ export class CoralProtocolBridge {
     try {
       console.log(`[Coral Bridge] Connecting for user ${this.userId}...`)
       
+      // Check if EventSource is available (client-side only)
+      if (!EventSourceClass) {
+        console.log(`[Coral Bridge] EventSource not available in server environment, skipping connection`)
+        return false
+      }
+      
       // Build SSE endpoint URL
       const params = new URLSearchParams({
         waitForAgents: '2',
@@ -76,7 +82,7 @@ export class CoralProtocolBridge {
       console.log(`[Coral Bridge] SSE URL: ${sseUrl}`)
 
       // Create EventSource connection
-      this.eventSource = new EventSource(sseUrl)
+      this.eventSource = new EventSourceClass(sseUrl)
       
       return new Promise((resolve, reject) => {
         if (!this.eventSource) {
