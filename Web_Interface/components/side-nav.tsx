@@ -15,6 +15,7 @@ import {
   Users,
   Zap,
   Database,
+  Sparkles,
 } from "lucide-react"
 import { CoralIcon } from "./coral-icon"
 
@@ -28,6 +29,11 @@ const items = [
     title: "Coral Inspector",
     href: "/coral-inspector",
     icon: CoralIcon,
+  },
+  {
+    title: "Coral Studio",
+    href: "/coral-studio",
+    icon: Sparkles,
   },
   {
     title: "X Accounts",
