@@ -1,11 +1,12 @@
 "use client"
 
-import { useState, useEffect, useCallback } from 'react'
-import { Socket } from 'socket.io-client'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { useAuth } from '@/contexts/AuthContext'
 
-interface Session {
+export interface CoralSession {
   id: string
   name: string
+  userId: string
   created: string
   lastActive: string
   messageCount: number
@@ -13,16 +14,7 @@ interface Session {
   status: 'active' | 'idle' | 'archived'
 }
 
-interface AgentStatus {
-  agentId: string
-  status: 'online' | 'offline' | 'error' | 'connecting'
-  lastSeen?: string
-  messageCount?: number
-  sessionId?: string
-  responseTime?: number
-}
-
-interface CoralMessage {
+export interface CoralMessage {
   id: string
   sessionId: string
   fromAgentId: string
@@ -33,273 +25,327 @@ interface CoralMessage {
   metadata?: any
 }
 
-interface SendMessageParams {
-  content: string
-  sessionId: string
-  targetAgents?: string[]
+export interface AgentStatus {
+  agentId: string
+  status: 'online' | 'offline' | 'error' | 'busy'
+  lastSeen: string
+  messageCount?: number
+  responseTime?: number
 }
 
 interface UseCoralStudioReturn {
-  sessions: Session[]
-  currentSession: Session | null
+  // Session Management
+  sessions: CoralSession[]
+  currentSession: CoralSession | null
   createSession: (name: string) => Promise<void>
   switchSession: (sessionId: string) => void
   archiveSession: (sessionId: string) => Promise<void>
-  sendMessage: (params: SendMessageParams) => Promise<void>
+  
+  // Messaging
   messages: CoralMessage[]
+  sendMessage: (content: string, targetAgents?: string[]) => Promise<void>
+  
+  // Agent Status
   agentStatuses: AgentStatus[]
   refreshAgentStatuses: () => Promise<void>
+  
+  // State
   isLoading: boolean
   error: string | null
+  
+  // Real-time updates
+  refreshMessages: () => Promise<void>
+  refreshSessions: () => Promise<void>
 }
 
-export function useCoralStudio(socket: Socket | null, user: any): UseCoralStudioReturn {
-  const [sessions, setSessions] = useState<Session[]>([])
-  const [currentSession, setCurrentSession] = useState<Session | null>(null)
+export function useCoralStudio(socket: any, user: any): UseCoralStudioReturn {
+  const { user: authUser } = useAuth()
+  const currentUser = user || authUser
+
+  const [sessions, setSessions] = useState<CoralSession[]>([])
+  const [currentSession, setCurrentSession] = useState<CoralSession | null>(null)
   const [messages, setMessages] = useState<CoralMessage[]>([])
   const [agentStatuses, setAgentStatuses] = useState<AgentStatus[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  
+  const refreshIntervalRef = useRef<NodeJS.Timeout>()
+  const messagePollingRef = useRef<NodeJS.Timeout>()
 
-  // Initialize with default session
-  useEffect(() => {
-    if (user && sessions.length === 0) {
-      const defaultSession: Session = {
-        id: `default_${user.id}`,
-        name: 'Default Session',
-        created: new Date().toISOString(),
-        lastActive: new Date().toISOString(),
-        messageCount: 0,
-        agents: ['interface_agent'],
-        status: 'active'
-      }
-      setSessions([defaultSession])
-      setCurrentSession(defaultSession)
-    }
-  }, [user, sessions.length])
-
-  // Socket event handlers
-  useEffect(() => {
-    if (!socket || !user) return
-
-    const handleMessage = (data: any) => {
-      const message: CoralMessage = {
-        id: data.id || `msg_${Date.now()}_${Math.random()}`,
-        sessionId: data.sessionId || currentSession?.id || 'default',
-        fromAgentId: data.fromAgentId || 'unknown',
-        toAgentId: data.toAgentId,
-        content: data.content || data.message || '',
-        timestamp: data.timestamp || new Date().toISOString(),
-        type: data.type || 'message',
-        metadata: data.metadata
-      }
-
-      setMessages(prev => [...prev, message])
-
-      // Update session message count
-      if (currentSession && message.sessionId === currentSession.id) {
-        setSessions(prev => prev.map(session => 
-          session.id === message.sessionId
-            ? { ...session, messageCount: session.messageCount + 1, lastActive: message.timestamp }
-            : session
-        ))
-      }
-    }
-
-    const handleAgentStatus = (data: any) => {
-      setAgentStatuses(prev => {
-        const existing = prev.find(status => status.agentId === data.agentId)
-        if (existing) {
-          return prev.map(status => 
-            status.agentId === data.agentId 
-              ? { ...status, ...data }
-              : status
-          )
-        } else {
-          return [...prev, data]
-        }
-      })
-    }
-
-    const handleSessionUpdate = (data: any) => {
-      setSessions(prev => prev.map(session => 
-        session.id === data.sessionId
-          ? { ...session, ...data }
-          : session
-      ))
-    }
-
-    // Register event listeners
-    socket.on('coral-message', handleMessage)
-    socket.on('agent-status', handleAgentStatus)
-    socket.on('session-update', handleSessionUpdate)
-    socket.on('error', (error: any) => {
-      console.error('[Coral Studio] Socket error:', error)
-      setError(error.message || 'Socket connection error')
-    })
-
-    return () => {
-      socket.off('coral-message', handleMessage)
-      socket.off('agent-status', handleAgentStatus)
-      socket.off('session-update', handleSessionUpdate)
-      socket.off('error')
-    }
-  }, [socket, user, currentSession])
-
-  const createSession = useCallback(async (name: string) => {
-    if (!user) return
+  // Initialize default session
+  const initializeDefaultSession = useCallback(async () => {
+    if (!currentUser) return
 
     try {
-      setIsLoading(true)
-      setError(null)
-
-      const newSession: Session = {
-        id: `session_${Date.now()}_${user.id}`,
-        name,
-        created: new Date().toISOString(),
-        lastActive: new Date().toISOString(),
-        messageCount: 0,
-        agents: ['interface_agent'],
-        status: 'active'
+      const response = await fetch(`/api/socket.io?action=get-sessions&userId=${currentUser.id}`)
+      const data = await response.json()
+      
+      if (response.ok) {
+        let userSessions = data.sessions || []
+        
+        // If no sessions exist, create a default one
+        if (userSessions.length === 0) {
+          const createResponse = await fetch('/api/socket.io', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'create-session',
+              userId: currentUser.id,
+              sessionName: 'Default Session'
+            })
+          })
+          
+          if (createResponse.ok) {
+            const createData = await createResponse.json()
+            userSessions = [createData.session]
+          }
+        }
+        
+        setSessions(userSessions)
+        
+        // Set the first session as current if none is selected
+        if (!currentSession && userSessions.length > 0) {
+          setCurrentSession(userSessions[0])
+        }
       }
+    } catch (err) {
+      console.error('[Coral Studio] Failed to initialize sessions:', err)
+      setError(err instanceof Error ? err.message : 'Failed to initialize sessions')
+    }
+  }, [currentUser, currentSession])
 
-      setSessions(prev => [...prev, newSession])
-      setCurrentSession(newSession)
+  // Load sessions
+  const refreshSessions = useCallback(async () => {
+    if (!currentUser) return
 
-      // Notify server about new session
-      if (socket) {
-        socket.emit('create-session', {
-          sessionId: newSession.id,
-          sessionName: name,
-          userId: user.id
+    try {
+      const response = await fetch(`/api/socket.io?action=get-sessions&userId=${currentUser.id}`)
+      const data = await response.json()
+      
+      if (response.ok) {
+        setSessions(data.sessions || [])
+      } else {
+        throw new Error(data.error || 'Failed to load sessions')
+      }
+    } catch (err) {
+      console.error('[Coral Studio] Failed to refresh sessions:', err)
+      setError(err instanceof Error ? err.message : 'Failed to refresh sessions')
+    }
+  }, [currentUser])
+
+  // Load messages for current session
+  const refreshMessages = useCallback(async () => {
+    if (!currentUser || !currentSession) return
+
+    try {
+      const response = await fetch(`/api/socket.io?action=get-messages&userId=${currentUser.id}&sessionId=${currentSession.id}`)
+      const data = await response.json()
+      
+      if (response.ok) {
+        setMessages(data.messages || [])
+      } else {
+        throw new Error(data.error || 'Failed to load messages')
+      }
+    } catch (err) {
+      console.error('[Coral Studio] Failed to refresh messages:', err)
+      setError(err instanceof Error ? err.message : 'Failed to refresh messages')
+    }
+  }, [currentUser, currentSession])
+
+  // Load agent statuses
+  const refreshAgentStatuses = useCallback(async () => {
+    if (!currentUser) return
+
+    try {
+      const response = await fetch(`/api/socket.io?action=get-agent-statuses&userId=${currentUser.id}`)
+      const data = await response.json()
+      
+      if (response.ok) {
+        setAgentStatuses(data.statuses || [])
+      } else {
+        throw new Error(data.error || 'Failed to load agent statuses')
+      }
+    } catch (err) {
+      console.error('[Coral Studio] Failed to refresh agent statuses:', err)
+      setError(err instanceof Error ? err.message : 'Failed to refresh agent statuses')
+    }
+  }, [currentUser])
+
+  // Create new session
+  const createSession = useCallback(async (name: string) => {
+    if (!currentUser) return
+
+    setIsLoading(true)
+    setError(null)
+
+    try {
+      const response = await fetch('/api/socket.io', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'create-session',
+          userId: currentUser.id,
+          sessionName: name
         })
-      }
+      })
 
-    } catch (err: any) {
-      setError(err.message || 'Failed to create session')
+      const data = await response.json()
+
+      if (response.ok) {
+        const newSession = data.session
+        setSessions(prev => [...prev, newSession])
+        setCurrentSession(newSession)
+        setMessages([]) // Clear messages for new session
+      } else {
+        throw new Error(data.error || 'Failed to create session')
+      }
+    } catch (err) {
+      console.error('[Coral Studio] Failed to create session:', err)
+      setError(err instanceof Error ? err.message : 'Failed to create session')
     } finally {
       setIsLoading(false)
     }
-  }, [user, socket])
+  }, [currentUser])
 
+  // Switch to different session
   const switchSession = useCallback((sessionId: string) => {
     const session = sessions.find(s => s.id === sessionId)
     if (session) {
       setCurrentSession(session)
-      
-      // Load messages for this session
-      setMessages(prev => prev.filter(msg => msg.sessionId === sessionId))
-      
-      // Notify server about session switch
-      if (socket) {
-        socket.emit('switch-session', {
-          sessionId,
-          userId: user?.id
-        })
-      }
+      setMessages([]) // Clear messages, they'll be loaded by the effect
     }
-  }, [sessions, socket, user])
+  }, [sessions])
 
+  // Archive session
   const archiveSession = useCallback(async (sessionId: string) => {
+    if (!currentUser) return
+
+    setIsLoading(true)
+    setError(null)
+
     try {
-      setIsLoading(true)
-      setError(null)
-
-      setSessions(prev => prev.map(session => 
-        session.id === sessionId
-          ? { ...session, status: 'archived' as const }
-          : session
-      ))
-
-      // If archiving current session, switch to another active session
-      if (currentSession?.id === sessionId) {
-        const activeSession = sessions.find(s => s.id !== sessionId && s.status === 'active')
-        if (activeSession) {
-          setCurrentSession(activeSession)
-        }
-      }
-
-      // Notify server
-      if (socket) {
-        socket.emit('archive-session', {
-          sessionId,
-          userId: user?.id
+      const response = await fetch('/api/socket.io', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'archive-session',
+          userId: currentUser.id,
+          sessionId
         })
-      }
-
-    } catch (err: any) {
-      setError(err.message || 'Failed to archive session')
-    } finally {
-      setIsLoading(false)
-    }
-  }, [sessions, currentSession, socket, user])
-
-  const sendMessage = useCallback(async (params: SendMessageParams) => {
-    if (!socket || !user || !currentSession) return
-
-    try {
-      setError(null)
-
-      const message: CoralMessage = {
-        id: `msg_${Date.now()}_${Math.random()}`,
-        sessionId: params.sessionId,
-        fromAgentId: `user_${user.id}`,
-        toAgentId: params.targetAgents?.[0],
-        content: params.content,
-        timestamp: new Date().toISOString(),
-        type: 'message'
-      }
-
-      // Add message to local state immediately
-      setMessages(prev => [...prev, message])
-
-      // Send via Socket.IO
-      socket.emit('send-message', {
-        ...params,
-        userId: user.id,
-        messageId: message.id,
-        timestamp: message.timestamp
       })
 
-    } catch (err: any) {
-      setError(err.message || 'Failed to send message')
-    }
-  }, [socket, user, currentSession])
-
-  const refreshAgentStatuses = useCallback(async () => {
-    if (!user) return
-
-    try {
-      setIsLoading(true)
-      setError(null)
-
-      // Fetch agent statuses from API
-      const response = await fetch(`/api/coral/agent-status?userId=${user.id}`)
-      if (!response.ok) {
-        throw new Error('Failed to fetch agent statuses')
+      if (response.ok) {
+        setSessions(prev => prev.map(s => 
+          s.id === sessionId ? { ...s, status: 'archived' as const } : s
+        ))
+        
+        // If archiving current session, switch to another active session
+        if (currentSession?.id === sessionId) {
+          const activeSession = sessions.find(s => s.id !== sessionId && s.status === 'active')
+          setCurrentSession(activeSession || null)
+        }
+      } else {
+        const data = await response.json()
+        throw new Error(data.error || 'Failed to archive session')
       }
-
-      const data = await response.json()
-      setAgentStatuses(data.statuses || [])
-
-      // Also request via Socket.IO for real-time updates
-      if (socket) {
-        socket.emit('get-agent-statuses', { userId: user.id })
-      }
-
-    } catch (err: any) {
-      setError(err.message || 'Failed to refresh agent statuses')
+    } catch (err) {
+      console.error('[Coral Studio] Failed to archive session:', err)
+      setError(err instanceof Error ? err.message : 'Failed to archive session')
     } finally {
       setIsLoading(false)
     }
-  }, [user, socket])
+  }, [currentUser, currentSession, sessions])
 
-  // Initial load of agent statuses
-  useEffect(() => {
-    if (user) {
-      refreshAgentStatuses()
+  // Send message
+  const sendMessage = useCallback(async (content: string, targetAgents?: string[]) => {
+    if (!currentUser || !currentSession) return
+
+    setIsLoading(true)
+    setError(null)
+
+    try {
+      const response = await fetch('/api/socket.io', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'send-message',
+          userId: currentUser.id,
+          sessionId: currentSession.id,
+          message: content,
+          targetAgents
+        })
+      })
+
+      const data = await response.json()
+
+      if (response.ok) {
+        // Refresh messages to get the new message and any responses
+        setTimeout(() => {
+          refreshMessages()
+        }, 500) // Small delay to allow for message processing
+        
+        // Also refresh after a longer delay to catch agent responses
+        setTimeout(() => {
+          refreshMessages()
+        }, 3000)
+      } else {
+        throw new Error(data.error || 'Failed to send message')
+      }
+    } catch (err) {
+      console.error('[Coral Studio] Failed to send message:', err)
+      setError(err instanceof Error ? err.message : 'Failed to send message')
+    } finally {
+      setIsLoading(false)
     }
-  }, [user, refreshAgentStatuses])
+  }, [currentUser, currentSession, refreshMessages])
+
+  // Initialize when user changes
+  useEffect(() => {
+    if (currentUser) {
+      initializeDefaultSession()
+      refreshAgentStatuses()
+    } else {
+      setSessions([])
+      setCurrentSession(null)
+      setMessages([])
+      setAgentStatuses([])
+    }
+  }, [currentUser, initializeDefaultSession, refreshAgentStatuses])
+
+  // Load messages when current session changes
+  useEffect(() => {
+    if (currentSession) {
+      refreshMessages()
+    } else {
+      setMessages([])
+    }
+  }, [currentSession, refreshMessages])
+
+  // Set up periodic refresh for real-time updates
+  useEffect(() => {
+    if (currentUser) {
+      // Refresh agent statuses every 30 seconds
+      refreshIntervalRef.current = setInterval(() => {
+        refreshAgentStatuses()
+      }, 30000)
+
+      // Poll for new messages every 5 seconds if we have an active session
+      if (currentSession) {
+        messagePollingRef.current = setInterval(() => {
+          refreshMessages()
+        }, 5000)
+      }
+    }
+
+    return () => {
+      if (refreshIntervalRef.current) {
+        clearInterval(refreshIntervalRef.current)
+      }
+      if (messagePollingRef.current) {
+        clearInterval(messagePollingRef.current)
+      }
+    }
+  }, [currentUser, currentSession, refreshAgentStatuses, refreshMessages])
 
   return {
     sessions,
@@ -307,11 +353,13 @@ export function useCoralStudio(socket: Socket | null, user: any): UseCoralStudio
     createSession,
     switchSession,
     archiveSession,
-    sendMessage,
     messages,
+    sendMessage,
     agentStatuses,
     refreshAgentStatuses,
     isLoading,
-    error
+    error,
+    refreshMessages,
+    refreshSessions
   }
 }

@@ -1,13 +1,12 @@
 "use client"
 
 import { useEffect, useState, useRef } from 'react'
-import { io, Socket } from 'socket.io-client'
 import { useAuth } from '@/contexts/AuthContext'
 
 export type ConnectionStatus = 'connected' | 'connecting' | 'disconnected' | 'error'
 
 interface UseSocketReturn {
-  socket: Socket | null
+  socket: null // Keeping for compatibility, but using REST API instead
   isConnected: boolean
   connectionStatus: ConnectionStatus
   error: string | null
@@ -16,85 +15,41 @@ interface UseSocketReturn {
 
 export function useSocket(): UseSocketReturn {
   const { user } = useAuth()
-  const [socket, setSocket] = useState<Socket | null>(null)
   const [isConnected, setIsConnected] = useState(false)
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('disconnected')
   const [error, setError] = useState<string | null>(null)
+  const healthCheckIntervalRef = useRef<NodeJS.Timeout>()
   const reconnectTimeoutRef = useRef<NodeJS.Timeout>()
   const reconnectAttemptsRef = useRef(0)
   const maxReconnectAttempts = 5
 
-  const connect = () => {
+  const checkConnection = async () => {
     if (!user) return
 
-    setConnectionStatus('connecting')
-    setError(null)
-
-    // Create Socket.IO connection
-    const newSocket = io({
-      path: '/api/socket.io',
-      addTrailingSlash: false,
-      transports: ['websocket', 'polling'],
-      timeout: 10000,
-      auth: {
-        userId: user.id,
-        userEmail: user.email
-      }
-    })
-
-    // Connection event handlers
-    newSocket.on('connect', () => {
-      console.log('[Socket.IO] Connected:', newSocket.id)
-      setIsConnected(true)
-      setConnectionStatus('connected')
-      setError(null)
-      reconnectAttemptsRef.current = 0
+    try {
+      const response = await fetch(`/api/socket.io?action=get-agent-statuses&userId=${user.id}`)
       
-      // Join user-specific room
-      newSocket.emit('join-user-room', user.id)
-    })
-
-    newSocket.on('disconnect', (reason) => {
-      console.log('[Socket.IO] Disconnected:', reason)
-      setIsConnected(false)
-      setConnectionStatus('disconnected')
-      
-      // Auto-reconnect for certain disconnect reasons
-      if (reason === 'io server disconnect') {
-        // Server initiated disconnect, don't reconnect automatically
-        setError('Server disconnected the connection')
+      if (response.ok) {
+        if (!isConnected) {
+          console.log('[Socket API] Connected successfully')
+          setIsConnected(true)
+          setConnectionStatus('connected')
+          setError(null)
+          reconnectAttemptsRef.current = 0
+        }
       } else {
-        // Client-side disconnect, attempt to reconnect
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+      }
+    } catch (err) {
+      console.error('[Socket API] Connection check failed:', err)
+      
+      if (isConnected) {
+        setIsConnected(false)
+        setConnectionStatus('error')
+        setError(err instanceof Error ? err.message : 'Connection failed')
         attemptReconnect()
       }
-    })
-
-    newSocket.on('connect_error', (err) => {
-      console.error('[Socket.IO] Connection error:', err)
-      setIsConnected(false)
-      setConnectionStatus('error')
-      setError(err.message)
-      attemptReconnect()
-    })
-
-    newSocket.on('reconnect', (attemptNumber) => {
-      console.log('[Socket.IO] Reconnected after', attemptNumber, 'attempts')
-      setError(null)
-      reconnectAttemptsRef.current = 0
-    })
-
-    newSocket.on('reconnect_error', (err) => {
-      console.error('[Socket.IO] Reconnection error:', err)
-      setError(`Reconnection failed: ${err.message}`)
-    })
-
-    newSocket.on('reconnect_failed', () => {
-      console.error('[Socket.IO] Reconnection failed after maximum attempts')
-      setConnectionStatus('error')
-      setError('Failed to reconnect after maximum attempts')
-    })
-
-    setSocket(newSocket)
+    }
   }
 
   const attemptReconnect = () => {
@@ -107,37 +62,49 @@ export function useSocket(): UseSocketReturn {
     const delay = Math.min(1000 * Math.pow(2, reconnectAttemptsRef.current), 30000) // Exponential backoff, max 30s
     reconnectAttemptsRef.current++
 
-    console.log(`[Socket.IO] Attempting reconnect ${reconnectAttemptsRef.current}/${maxReconnectAttempts} in ${delay}ms`)
+    console.log(`[Socket API] Attempting reconnect ${reconnectAttemptsRef.current}/${maxReconnectAttempts} in ${delay}ms`)
+    setConnectionStatus('connecting')
     
     reconnectTimeoutRef.current = setTimeout(() => {
-      if (socket && !socket.connected) {
-        socket.connect()
-      }
+      checkConnection()
     }, delay)
   }
 
-  const reconnect = () => {
-    if (socket) {
-      socket.disconnect()
-    }
-    reconnectAttemptsRef.current = 0
+  const connect = () => {
+    if (!user) return
+
+    setConnectionStatus('connecting')
     setError(null)
-    connect()
+    
+    // Initial connection check
+    checkConnection()
+    
+    // Set up periodic health checks (every 30 seconds)
+    healthCheckIntervalRef.current = setInterval(checkConnection, 30000)
   }
 
   const disconnect = () => {
-    if (reconnectTimeoutRef.current) {
-      clearTimeout(reconnectTimeoutRef.current)
+    if (healthCheckIntervalRef.current) {
+      clearInterval(healthCheckIntervalRef.current)
     }
     
-    if (socket) {
-      socket.disconnect()
-      setSocket(null)
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current)
     }
     
     setIsConnected(false)
     setConnectionStatus('disconnected')
     setError(null)
+    reconnectAttemptsRef.current = 0
+  }
+
+  const reconnect = () => {
+    disconnect()
+    setTimeout(() => {
+      if (user) {
+        connect()
+      }
+    }, 1000)
   }
 
   // Initialize connection when user is available
@@ -161,7 +128,7 @@ export function useSocket(): UseSocketReturn {
   }, [])
 
   return {
-    socket,
+    socket: null, // Keeping for compatibility
     isConnected,
     connectionStatus,
     error,
