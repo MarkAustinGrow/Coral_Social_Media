@@ -5,7 +5,7 @@
  * Tests the exact same connection that Coral Studio uses
  */
 
-const EventSource = require('eventsource');
+const { EventSource } = require('eventsource');
 
 // Test configuration - matches Coral Studio exactly
 const testConfig = {

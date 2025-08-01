@@ -9,7 +9,7 @@ if (typeof window !== 'undefined') {
 } else {
   // Server environment - use eventsource library
   try {
-    const EventSource = require('eventsource')
+    const { EventSource } = require('eventsource')
     EventSourceClass = EventSource
     console.log('[Coral Bridge] Server environment detected - using eventsource library')
   } catch (error) {
