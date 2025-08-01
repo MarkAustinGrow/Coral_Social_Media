@@ -156,17 +156,26 @@ export function useCoralStudio(socket: any, user: any): UseCoralStudioReturn {
   const refreshAgentStatuses = useCallback(async () => {
     if (!currentUser) return
 
+    console.log(`[Coral Studio Hook] 🔄 Refreshing agent statuses for user ${currentUser.id}`)
+
     try {
-      const response = await fetch(`/api/socket.io?action=get-agent-statuses&userId=${currentUser.id}`)
+      const url = `/api/socket.io?action=get-agent-statuses&userId=${currentUser.id}`
+      console.log(`[Coral Studio Hook] 🌐 Making request to: ${url}`)
+      
+      const response = await fetch(url)
+      console.log(`[Coral Studio Hook] 📡 Response status: ${response.status}`)
+      
       const data = await response.json()
+      console.log(`[Coral Studio Hook] 📋 Response data:`, data)
       
       if (response.ok) {
         setAgentStatuses(data.statuses || [])
+        console.log(`[Coral Studio Hook] ✅ Agent statuses updated: ${data.statuses?.length || 0} agents`)
       } else {
         throw new Error(data.error || 'Failed to load agent statuses')
       }
     } catch (err) {
-      console.error('[Coral Studio] Failed to refresh agent statuses:', err)
+      console.error('[Coral Studio Hook] ❌ Failed to refresh agent statuses:', err)
       setError(err instanceof Error ? err.message : 'Failed to refresh agent statuses')
     }
   }, [currentUser])
@@ -260,39 +269,52 @@ export function useCoralStudio(socket: any, user: any): UseCoralStudioReturn {
   const sendMessage = useCallback(async (content: string, targetAgents?: string[]) => {
     if (!currentUser || !currentSession) return
 
+    console.log(`[Coral Studio Hook] 💬 Sending message to agents:`, { content, targetAgents, sessionId: currentSession.id })
+
     setIsLoading(true)
     setError(null)
 
     try {
+      const requestBody = {
+        action: 'send-message',
+        userId: currentUser.id,
+        sessionId: currentSession.id,
+        message: content,
+        targetAgents
+      }
+      
+      console.log(`[Coral Studio Hook] 📤 Request body:`, requestBody)
+
       const response = await fetch('/api/socket.io', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'send-message',
-          userId: currentUser.id,
-          sessionId: currentSession.id,
-          message: content,
-          targetAgents
-        })
+        body: JSON.stringify(requestBody)
       })
 
+      console.log(`[Coral Studio Hook] 📡 Send message response status: ${response.status}`)
+
       const data = await response.json()
+      console.log(`[Coral Studio Hook] 📋 Send message response data:`, data)
 
       if (response.ok) {
+        console.log(`[Coral Studio Hook] ✅ Message sent successfully, waiting for responses...`)
+        
         // Refresh messages to get the new message and any responses
         setTimeout(() => {
+          console.log(`[Coral Studio Hook] 🔄 Refreshing messages after 500ms`)
           refreshMessages()
         }, 500) // Small delay to allow for message processing
         
         // Also refresh after a longer delay to catch agent responses
         setTimeout(() => {
+          console.log(`[Coral Studio Hook] 🔄 Refreshing messages after 3s for agent responses`)
           refreshMessages()
         }, 3000)
       } else {
         throw new Error(data.error || 'Failed to send message')
       }
     } catch (err) {
-      console.error('[Coral Studio] Failed to send message:', err)
+      console.error('[Coral Studio Hook] ❌ Failed to send message:', err)
       setError(err instanceof Error ? err.message : 'Failed to send message')
     } finally {
       setIsLoading(false)
