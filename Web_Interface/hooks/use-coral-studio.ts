@@ -72,8 +72,8 @@ export function useCoralStudio(socket: any, user: any): UseCoralStudioReturn {
   const refreshIntervalRef = useRef<NodeJS.Timeout>()
   const messagePollingRef = useRef<NodeJS.Timeout>()
 
-  // Get Coral API base URL from environment variable
-  const coralApiBaseUrl = process.env.NEXT_PUBLIC_CORAL_API_BASE_URL || 'https://coral.8interns.com'
+  // Get Coral API base URL from environment variable - default to same origin to avoid CORS
+  const coralApiBaseUrl = process.env.NEXT_PUBLIC_CORAL_API_BASE_URL || ''
 
   // Initialize default session
   const initializeDefaultSession = useCallback(async () => {
