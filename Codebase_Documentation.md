@@ -19,6 +19,132 @@ This document provides a comprehensive overview of the Coral Social Media Infras
 13. [Troubleshooting](#troubleshooting)
 14. [Future Enhancements](#future-enhancements)
 
+## 🚨 Current Critical Issue: Coral Studio CORS Configuration (January 8, 2025)
+
+### **CORS Policy Blocking - Production Deployment Issue**
+
+The Coral Studio integration is experiencing **critical CORS (Cross-Origin Resource Sharing) issues** that completely block functionality when deployed to production. This represents the current primary blocker for the Coral Studio feature.
+
+#### **Error Details**
+
+**Primary CORS Error:**
+```
+Access to fetch at 'https://coral.8interns.com/api/socket.io?action=get-sessions&userId=99d3ff50-dcb5-4389-8e76-2ecd626902bc' 
+from origin 'https://8interns.com' has been blocked by CORS policy: 
+No 'Access-Control-Allow-Origin' header is present on the requested resource.
+```
+
+**Associated 404 Errors:**
+```
+GET https://coral.8interns.com/api/socket.io?action=get-sessions&userId=99d3ff50-dcb5-4389-8e76-2ecd626902bc 
+net::ERR_FAILED 404 (Not Found)
+
+GET https://coral.8interns.com/api/socket.io?action=get-agent-statuses&userId=99d3ff50-dcb5-4389-8e76-2ecd626902bc 
+net::ERR_FAILED 404 (Not Found)
+```
+
+**Infinite Retry Loop:**
+The failed requests trigger an infinite retry loop causing severe browser performance degradation with hundreds of failed requests per second.
+
+#### **Root Cause Analysis**
+
+**1. Missing CORS Headers**
+- The Coral server at `coral.8interns.com` is not configured to allow requests from `8interns.com`
+- No `Access-Control-Allow-Origin` header is being returned by the server
+- Cross-origin requests are being blocked by browser security policies
+
+**2. Missing API Endpoints**
+- The socket.io API endpoints (`/api/socket.io`) are returning 404 Not Found errors
+- This suggests the endpoints may not be properly deployed or configured on the Coral server
+- The URL pattern may not match the server's expected endpoint structure
+
+**3. Client-Side Error Handling**
+- The client is not properly handling failed requests, leading to infinite retry loops
+- No circuit breaker or backoff strategy is implemented for failed CORS requests
+
+#### **Impact Assessment**
+
+**User Experience:**
+- ❌ **Coral Studio completely non-functional** in production environment
+- ❌ **Browser performance severely degraded** due to infinite retry loops
+- ❌ **Console flooded with error messages** making debugging difficult
+- ❌ **No agent session management** or real-time monitoring available
+
+**System Status:**
+- ✅ **Core agents still functional** - underlying agent system continues to work
+- ✅ **Database operations working** - data persistence unaffected
+- ✅ **Authentication working** - user sessions and security intact
+- ❌ **Coral Studio interface broken** - no real-time agent monitoring
+
+#### **Required Fixes**
+
+**Priority 1: Server-Side CORS Configuration**
+```nginx
+# Required CORS headers for coral.8interns.com
+Access-Control-Allow-Origin: https://8interns.com
+Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS
+Access-Control-Allow-Headers: Content-Type, Authorization, X-User-ID
+Access-Control-Allow-Credentials: true
+```
+
+**Priority 2: API Endpoint Verification**
+- Verify socket.io API endpoints are deployed and accessible
+- Check URL routing configuration on the Coral server
+- Ensure proper endpoint mapping for `/api/socket.io` routes
+
+**Priority 3: Client-Side Error Handling**
+- Implement circuit breaker pattern for failed requests
+- Add exponential backoff for retry attempts
+- Provide user-friendly error messages when CORS fails
+
+#### **Investigation Steps**
+
+**Server Configuration Check:**
+1. Verify Coral server deployment status at `coral.8interns.com`
+2. Check web server (nginx/Apache) CORS configuration
+3. Validate API endpoint routing and availability
+4. Test direct API access from server-side tools
+
+**Client-Side Debugging:**
+1. Implement request logging to track CORS failures
+2. Add fallback UI states for when Coral Studio is unavailable
+3. Test with different origin configurations
+
+**Network Analysis:**
+1. Use browser dev tools to analyze request/response headers
+2. Test API endpoints directly with curl/Postman
+3. Verify DNS resolution and SSL certificate validity
+
+#### **Temporary Workarounds**
+
+**For Development:**
+- Use local development server without CORS restrictions
+- Implement proxy configuration to bypass CORS during development
+- Use browser flags to disable CORS for testing (development only)
+
+**For Production:**
+- Disable Coral Studio features until CORS is resolved
+- Provide clear user messaging about temporary unavailability
+- Implement graceful degradation for affected UI components
+
+#### **Status and Priority**
+
+**Current Status:** 🔴 **Critical - Production Blocking**
+**Priority:** **P0 - Immediate Resolution Required**
+**Assigned:** **Infrastructure/DevOps Team**
+**ETA:** **Pending server configuration access**
+
+**Next Steps:**
+1. **Immediate**: Contact server administrator for CORS configuration
+2. **Short-term**: Implement client-side error handling to prevent infinite loops
+3. **Long-term**: Establish proper CORS policies for all cross-origin requests
+
+**Last Updated:** January 8, 2025, 4:40 PM UTC
+**Reporter:** System monitoring and user reports
+**Environment:** Production deployment (https://8interns.com → https://coral.8interns.com)
+
+---
+
 ## 🎉 Today's Major Breakthrough Achievements (July 28, 2025)
 
 ### **Production-Ready Coral Inspector - COMPLETE SUCCESS**
