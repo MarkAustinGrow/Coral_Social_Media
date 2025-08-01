@@ -62,7 +62,7 @@ export class CoralProtocolBridge {
   constructor(userId: string) {
     this.userId = userId
     this.bridgeAgentId = `coral_studio_bridge_${userId}`
-    this.baseUrl = 'http://coral.8interns.com/devmode/exampleApplication/privkey/session1'
+    this.baseUrl = 'https://coral.8interns.com/devmode/exampleApplication/privkey/session1'
   }
 
   /**
