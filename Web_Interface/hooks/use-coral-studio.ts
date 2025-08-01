@@ -72,12 +72,15 @@ export function useCoralStudio(socket: any, user: any): UseCoralStudioReturn {
   const refreshIntervalRef = useRef<NodeJS.Timeout>()
   const messagePollingRef = useRef<NodeJS.Timeout>()
 
+  // Get Coral API base URL from environment variable
+  const coralApiBaseUrl = process.env.NEXT_PUBLIC_CORAL_API_BASE_URL || 'https://coral.8interns.com'
+
   // Initialize default session
   const initializeDefaultSession = useCallback(async () => {
     if (!currentUser) return
 
     try {
-      const response = await fetch(`/api/socket.io?action=get-sessions&userId=${currentUser.id}`)
+      const response = await fetch(`${coralApiBaseUrl}/api/socket.io?action=get-sessions&userId=${currentUser.id}`)
       const data = await response.json()
       
       if (response.ok) {
@@ -85,7 +88,7 @@ export function useCoralStudio(socket: any, user: any): UseCoralStudioReturn {
         
         // If no sessions exist, create a default one
         if (userSessions.length === 0) {
-          const createResponse = await fetch('/api/socket.io', {
+          const createResponse = await fetch(`${coralApiBaseUrl}/api/socket.io`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -112,14 +115,14 @@ export function useCoralStudio(socket: any, user: any): UseCoralStudioReturn {
       console.error('[Coral Studio] Failed to initialize sessions:', err)
       setError(err instanceof Error ? err.message : 'Failed to initialize sessions')
     }
-  }, [currentUser, currentSession])
+  }, [currentUser, currentSession, coralApiBaseUrl])
 
   // Load sessions
   const refreshSessions = useCallback(async () => {
     if (!currentUser) return
 
     try {
-      const response = await fetch(`/api/socket.io?action=get-sessions&userId=${currentUser.id}`)
+      const response = await fetch(`${coralApiBaseUrl}/api/socket.io?action=get-sessions&userId=${currentUser.id}`)
       const data = await response.json()
       
       if (response.ok) {
@@ -131,14 +134,14 @@ export function useCoralStudio(socket: any, user: any): UseCoralStudioReturn {
       console.error('[Coral Studio] Failed to refresh sessions:', err)
       setError(err instanceof Error ? err.message : 'Failed to refresh sessions')
     }
-  }, [currentUser])
+  }, [currentUser, coralApiBaseUrl])
 
   // Load messages for current session
   const refreshMessages = useCallback(async () => {
     if (!currentUser || !currentSession) return
 
     try {
-      const response = await fetch(`/api/socket.io?action=get-messages&userId=${currentUser.id}&sessionId=${currentSession.id}`)
+      const response = await fetch(`${coralApiBaseUrl}/api/socket.io?action=get-messages&userId=${currentUser.id}&sessionId=${currentSession.id}`)
       const data = await response.json()
       
       if (response.ok) {
@@ -150,7 +153,7 @@ export function useCoralStudio(socket: any, user: any): UseCoralStudioReturn {
       console.error('[Coral Studio] Failed to refresh messages:', err)
       setError(err instanceof Error ? err.message : 'Failed to refresh messages')
     }
-  }, [currentUser, currentSession])
+  }, [currentUser, currentSession, coralApiBaseUrl])
 
   // Load agent statuses
   const refreshAgentStatuses = useCallback(async () => {
@@ -159,7 +162,7 @@ export function useCoralStudio(socket: any, user: any): UseCoralStudioReturn {
     console.log(`[Coral Studio Hook] 🔄 Refreshing agent statuses for user ${currentUser.id}`)
 
     try {
-      const url = `/api/socket.io?action=get-agent-statuses&userId=${currentUser.id}`
+      const url = `${coralApiBaseUrl}/api/socket.io?action=get-agent-statuses&userId=${currentUser.id}`
       console.log(`[Coral Studio Hook] 🌐 Making request to: ${url}`)
       
       const response = await fetch(url)
@@ -178,7 +181,7 @@ export function useCoralStudio(socket: any, user: any): UseCoralStudioReturn {
       console.error('[Coral Studio Hook] ❌ Failed to refresh agent statuses:', err)
       setError(err instanceof Error ? err.message : 'Failed to refresh agent statuses')
     }
-  }, [currentUser])
+  }, [currentUser, coralApiBaseUrl])
 
   // Create new session
   const createSession = useCallback(async (name: string) => {
@@ -188,7 +191,7 @@ export function useCoralStudio(socket: any, user: any): UseCoralStudioReturn {
     setError(null)
 
     try {
-      const response = await fetch('/api/socket.io', {
+      const response = await fetch(`${coralApiBaseUrl}/api/socket.io`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -214,7 +217,7 @@ export function useCoralStudio(socket: any, user: any): UseCoralStudioReturn {
     } finally {
       setIsLoading(false)
     }
-  }, [currentUser])
+  }, [currentUser, coralApiBaseUrl])
 
   // Switch to different session
   const switchSession = useCallback((sessionId: string) => {
@@ -233,7 +236,7 @@ export function useCoralStudio(socket: any, user: any): UseCoralStudioReturn {
     setError(null)
 
     try {
-      const response = await fetch('/api/socket.io', {
+      const response = await fetch(`${coralApiBaseUrl}/api/socket.io`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -263,7 +266,7 @@ export function useCoralStudio(socket: any, user: any): UseCoralStudioReturn {
     } finally {
       setIsLoading(false)
     }
-  }, [currentUser, currentSession, sessions])
+  }, [currentUser, currentSession, sessions, coralApiBaseUrl])
 
   // Send message
   const sendMessage = useCallback(async (content: string, targetAgents?: string[]) => {
@@ -285,7 +288,7 @@ export function useCoralStudio(socket: any, user: any): UseCoralStudioReturn {
       
       console.log(`[Coral Studio Hook] 📤 Request body:`, requestBody)
 
-      const response = await fetch('/api/socket.io', {
+      const response = await fetch(`${coralApiBaseUrl}/api/socket.io`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(requestBody)
@@ -326,7 +329,7 @@ export function useCoralStudio(socket: any, user: any): UseCoralStudioReturn {
     } finally {
       setIsLoading(false)
     }
-  }, [currentUser, currentSession, refreshMessages])
+  }, [currentUser, currentSession, refreshMessages, coralApiBaseUrl])
 
   // Initialize when user changes
   useEffect(() => {
