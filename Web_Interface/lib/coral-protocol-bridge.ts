@@ -63,11 +63,12 @@ export class CoralProtocolBridge {
    */
   async connect(): Promise<boolean> {
     try {
-      console.log(`[Coral Bridge] Connecting for user ${this.userId}...`)
+      console.log(`[Coral Bridge] 🚀 Starting connection for user ${this.userId}...`)
+      console.log(`[Coral Bridge] 🔗 Base URL: ${this.baseUrl}`)
       
       // Check if EventSource is available (client-side only)
       if (!EventSourceClass) {
-        console.log(`[Coral Bridge] EventSource not available in server environment, skipping connection`)
+        console.log(`[Coral Bridge] ❌ EventSource not available in server environment, skipping connection`)
         return false
       }
       
@@ -79,9 +80,12 @@ export class CoralProtocolBridge {
       })
       
       const sseUrl = `${this.baseUrl}/sse?${params.toString()}`
-      console.log(`[Coral Bridge] SSE URL: ${sseUrl}`)
+      console.log(`[Coral Bridge] 🌐 Full SSE URL: ${sseUrl}`)
+      console.log(`[Coral Bridge] 🔧 Bridge Agent ID: ${this.bridgeAgentId}`)
+      console.log(`[Coral Bridge] 📋 URL Parameters:`, Object.fromEntries(params))
 
       // Create EventSource connection
+      console.log(`[Coral Bridge] 🔌 Creating EventSource connection...`)
       this.eventSource = new EventSourceClass(sseUrl)
       
       return new Promise((resolve, reject) => {
@@ -91,8 +95,10 @@ export class CoralProtocolBridge {
         }
 
         // Handle successful connection
-        this.eventSource.onopen = () => {
-          console.log(`[Coral Bridge] Connected to Coral protocol for user ${this.userId}`)
+        this.eventSource.onopen = (event) => {
+          console.log(`[Coral Bridge] ✅ Successfully connected to Coral protocol for user ${this.userId}`)
+          console.log(`[Coral Bridge] 🔗 Connection event:`, event)
+          console.log(`[Coral Bridge] 📊 EventSource readyState:`, this.eventSource?.readyState)
           this.isConnected = true
           this.reconnectAttempts = 0
           resolve(true)
@@ -100,22 +106,44 @@ export class CoralProtocolBridge {
 
         // Handle incoming messages
         this.eventSource.onmessage = (event) => {
+          console.log(`[Coral Bridge] 📨 Received SSE message:`, {
+            data: event.data,
+            lastEventId: event.lastEventId,
+            origin: event.origin,
+            type: event.type
+          })
+          
           try {
             const data = JSON.parse(event.data)
+            console.log(`[Coral Bridge] 📋 Parsed message data:`, data)
             this.handleCoralMessage(data)
           } catch (error) {
-            console.error('[Coral Bridge] Error parsing message:', error)
+            console.error('[Coral Bridge] ❌ Error parsing message:', error)
+            console.error('[Coral Bridge] 📄 Raw message data:', event.data)
           }
         }
 
         // Handle connection errors
         this.eventSource.onerror = (error) => {
-          console.error('[Coral Bridge] SSE connection error:', error)
+          console.error('[Coral Bridge] ❌ SSE connection error:', error)
+          console.error('[Coral Bridge] 📊 EventSource readyState:', this.eventSource?.readyState)
+          console.error('[Coral Bridge] 🔗 EventSource URL:', this.eventSource?.url)
+          
+          // Log readyState meanings for debugging
+          const readyStateMap = {
+            0: 'CONNECTING',
+            1: 'OPEN', 
+            2: 'CLOSED'
+          }
+          console.error('[Coral Bridge] 📊 ReadyState meaning:', readyStateMap[this.eventSource?.readyState as keyof typeof readyStateMap] || 'UNKNOWN')
+          
           this.isConnected = false
           
           if (this.reconnectAttempts < this.maxReconnectAttempts) {
+            console.log(`[Coral Bridge] 🔄 Scheduling reconnection attempt ${this.reconnectAttempts + 1}/${this.maxReconnectAttempts}`)
             this.scheduleReconnect()
           } else {
+            console.error('[Coral Bridge] ❌ Max reconnection attempts reached, giving up')
             reject(new Error('Max reconnection attempts reached'))
           }
         }

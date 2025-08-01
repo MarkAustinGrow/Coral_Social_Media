@@ -28,24 +28,36 @@ const sessionMessages = new Map<string, Array<{
 const bridgeConnections = new Map<string, { bridge: CoralProtocolBridge, connected: boolean }>()
 
 async function ensureBridgeConnection(userId: string): Promise<CoralProtocolBridge> {
+  console.log(`[Socket.IO API] 🔍 Ensuring bridge connection for user ${userId}`)
+  
   let connection = bridgeConnections.get(userId)
   
   if (!connection) {
+    console.log(`[Socket.IO API] 🆕 Creating new bridge connection for user ${userId}`)
     const bridge = getCoralBridge(userId)
     connection = { bridge, connected: false }
     bridgeConnections.set(userId, connection)
+  } else {
+    console.log(`[Socket.IO API] 📋 Existing bridge connection found for user ${userId}, connected: ${connection.connected}`)
   }
 
   if (!connection.connected) {
     try {
-      console.log(`[Socket.IO API] Connecting Coral bridge for user ${userId}`)
+      console.log(`[Socket.IO API] 🔌 Attempting to connect Coral bridge for user ${userId}`)
       await connection.bridge.connect()
       connection.connected = true
-      console.log(`[Socket.IO API] Coral bridge connected for user ${userId}`)
+      console.log(`[Socket.IO API] ✅ Coral bridge successfully connected for user ${userId}`)
     } catch (error) {
-      console.error(`[Socket.IO API] Failed to connect Coral bridge for user ${userId}:`, error)
+      console.error(`[Socket.IO API] ❌ Failed to connect Coral bridge for user ${userId}:`, error)
+      console.error(`[Socket.IO API] 📊 Error details:`, {
+        name: error instanceof Error ? error.name : 'Unknown',
+        message: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined
+      })
       // Don't throw - we'll fall back to simulated mode
     }
+  } else {
+    console.log(`[Socket.IO API] ✅ Bridge already connected for user ${userId}`)
   }
 
   return connection.bridge
