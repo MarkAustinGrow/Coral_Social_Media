@@ -275,29 +275,14 @@ export async function POST(req: NextRequest) {
           console.error(`[Socket.IO API] Error sending message via Coral bridge for user ${userId}:`, error)
         }
         
-        // Fallback to simulated response
-        setTimeout(() => {
-          const agentResponse = {
-            id: `msg_${Date.now()}_${Math.random()}`,
-            sessionId,
-            fromAgentId: targetAgents?.[0] || 'interface_agent',
-            toAgentId: `user_${userId}`,
-            content: `I received your message: "${message}". This is a simulated response from ${targetAgents?.[0] || 'interface_agent'}. Coral Protocol Bridge was not available.`,
-            timestamp: new Date().toISOString(),
-            type: 'message' as const,
-            metadata: { isSimulated: true, coralUnavailable: true }
-          }
-
-          sessionMessages.get(sessionId)!.push(agentResponse)
-          
-          if (session) {
-            session.messageCount++
-            session.lastActive = agentResponse.timestamp
-            activeSessions.set(sessionId, session)
-          }
-        }, 1000 + Math.random() * 2000) // Random delay 1-3 seconds
-
-        return Response.json({ success: true, message: messageData, sentViaCoral: false })
+        // No fallback - throw error if Coral Protocol Bridge is not available
+        const errorMessage = 'Failed to send message: Coral Protocol Bridge is not connected. Please ensure agents are running and the Coral server is accessible.'
+        console.error(`[Socket.IO API] ${errorMessage}`)
+        return Response.json({ 
+          error: errorMessage,
+          details: 'Coral Protocol Bridge connection failed',
+          coralConnected: false
+        }, { status: 503 })
 
       case 'create-session':
         if (!sessionName) {

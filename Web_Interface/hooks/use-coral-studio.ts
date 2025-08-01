@@ -311,7 +311,14 @@ export function useCoralStudio(socket: any, user: any): UseCoralStudioReturn {
           refreshMessages()
         }, 3000)
       } else {
-        throw new Error(data.error || 'Failed to send message')
+        // Handle specific error cases
+        if (response.status === 503) {
+          const errorMessage = data.error || 'Coral Protocol Bridge is not connected'
+          console.error(`[Coral Studio Hook] ❌ Coral Bridge Connection Error:`, errorMessage)
+          throw new Error(`Connection Error: ${errorMessage}`)
+        } else {
+          throw new Error(data.error || 'Failed to send message')
+        }
       }
     } catch (err) {
       console.error('[Coral Studio Hook] ❌ Failed to send message:', err)

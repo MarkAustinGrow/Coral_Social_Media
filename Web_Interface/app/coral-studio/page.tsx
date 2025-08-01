@@ -156,7 +156,9 @@ function CoralStudioPageContent() {
     sendMessage,
     messages,
     agentStatuses,
-    refreshAgentStatuses
+    refreshAgentStatuses,
+    isLoading,
+    error
   } = useCoralStudio(socket, user)
 
   // UI State
@@ -368,6 +370,21 @@ function CoralStudioPageContent() {
           </CardContent>
         )}
       </Card>
+
+      {/* Error Display */}
+      {error && (
+        <Card className="border-red-200 bg-red-50">
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-3 text-red-800">
+              <XCircle className="h-5 w-5 text-red-500" />
+              <div>
+                <p className="font-medium">Connection Error</p>
+                <p className="text-sm text-red-600 mt-1">{error}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Main Interface */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
