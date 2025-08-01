@@ -5,10 +5,17 @@ let EventSourceClass: any
 if (typeof window !== 'undefined') {
   // Browser environment - use native EventSource
   EventSourceClass = EventSource
+  console.log('[Coral Bridge] Browser environment detected - using native EventSource')
 } else {
-  // Server environment - disable EventSource functionality
-  EventSourceClass = null
-  console.log('[Coral Bridge] Server-side environment detected - EventSource disabled')
+  // Server environment - use eventsource library
+  try {
+    const EventSource = require('eventsource')
+    EventSourceClass = EventSource
+    console.log('[Coral Bridge] Server environment detected - using eventsource library')
+  } catch (error) {
+    console.error('[Coral Bridge] Failed to load eventsource library:', error)
+    EventSourceClass = null
+  }
 }
 
 export interface CoralMessage {
