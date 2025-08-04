@@ -72,45 +72,99 @@ interface CoralSession {
 }
 
 export default function CoralStudioPage() {
+  const [socket, setSocket] = useState<any>(null)
   const [connection, setConnection] = useState<CoralConnection | null>(null)
   const [registry, setRegistry] = useState<Record<string, RegistryAgent> | null>(null)
   const [sessions, setSessions] = useState<string[]>([])
   const [currentSession, setCurrentSession] = useState<CoralSession | null>(null)
   const [connecting, setConnecting] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [serverHost, setServerHost] = useState('coral.8interns.com')
+  const [serverHost, setServerHost] = useState('localhost:3001')
+  const [socketSecret, setSocketSecret] = useState<string | null>(null)
 
-  // Connection management
+  // Get current user ID (you'll need to implement this based on your auth system)
+  const getCurrentUserId = () => {
+    // TODO: Get actual user ID from your auth system
+    return 'user_' + Math.random().toString(36).substr(2, 9)
+  }
+
+  // Socket.IO connection management (Official Coral Studio pattern)
   const connectToServer = async (host: string) => {
     try {
       setConnecting(true)
       setError(null)
       setRegistry(null)
       
-      const newConnection: CoralConnection = {
-        host,
-        appId: 'exampleApplication',
-        privacyKey: 'privkey'
-      }
+      // First, get the socket secret from our bridge server
+      const secretResponse = await fetch(`http://${host}/socket-secret`)
+      if (!secretResponse.ok) throw new Error('Failed to get socket secret')
       
-      setConnection(newConnection)
+      const { socketSecret: secret } = await secretResponse.json()
+      setSocketSecret(secret)
       
-      // Fetch agent registry
-      const agentsResponse = await fetch(`https://${host}/api/v1/registry`)
-      if (!agentsResponse.ok) throw new Error(`Failed to fetch agents: ${agentsResponse.status}`)
-      
-      const agents = await agentsResponse.json() as RegistryAgent[]
-      const agentRegistry = Object.fromEntries(agents.map((agent) => [agent.id, agent]))
-      setRegistry(agentRegistry)
+      // Create Socket.IO connection (like official Coral Studio)
+      const io = await import('socket.io-client')
+      const newSocket = io.io(`http://${host}`, {
+        path: '/socket.io',
+        auth: {
+          userId: getCurrentUserId()
+        }
+      })
 
-      // Fetch available sessions
-      const sessionsResponse = await fetch(`https://${host}/api/v1/sessions`)
-      if (!sessionsResponse.ok) throw new Error(`Failed to fetch sessions: ${sessionsResponse.status}`)
+      // Set up event listeners (official pattern)
+      newSocket.on('connect', () => {
+        console.log('Connected to Coral Studio bridge')
+        setConnecting(false)
+        
+        const newConnection: CoralConnection = {
+          host,
+          appId: 'exampleApplication',
+          privacyKey: 'privkey'
+        }
+        setConnection(newConnection)
+        
+        // Request agent list
+        newSocket.emit('list_agents')
+      })
+
+      newSocket.on('disconnect', () => {
+        console.log('Disconnected from Coral Studio bridge')
+        setConnection(null)
+        setRegistry(null)
+        setCurrentSession(null)
+      })
+
+      newSocket.on('agents_list', (agents: RegistryAgent[]) => {
+        console.log('Received agents list:', agents)
+        const agentRegistry = Object.fromEntries(agents.map((agent) => [agent.id, agent]))
+        setRegistry(agentRegistry)
+      })
+
+      newSocket.on('session_created', (sessionData: any) => {
+        console.log('Session created:', sessionData)
+        const session: CoralSession = {
+          id: sessionData.sessionId,
+          name: sessionData.sessionId,
+          connected: true,
+          agents: registry || {},
+          threads: []
+        }
+        setCurrentSession(session)
+      })
+
+      newSocket.on('error', (errorData: any) => {
+        console.error('Socket error:', errorData)
+        setError(errorData.message || 'Socket connection error')
+      })
+
+      newSocket.on('connect_error', (err: any) => {
+        console.error('Connection error:', err)
+        setConnecting(false)
+        setError(`Connection failed: ${err.message}`)
+      })
+
+      setSocket(newSocket)
       
-      const sessionList = await sessionsResponse.json() as string[]
-      setSessions(sessionList)
-      
-      setConnecting(false)
     } catch (e) {
       setConnecting(false)
       setRegistry(null)
@@ -119,26 +173,17 @@ export default function CoralStudioPage() {
   }
 
   const createSession = async (sessionName: string) => {
-    if (!connection) return
+    if (!socket || !connection) return
     
     try {
-      const response = await fetch(`https://${connection.host}/api/v1/sessions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          session: sessionName,
-          appId: connection.appId,
-          privacyKey: connection.privacyKey
-        })
+      // Create session through Socket.IO (official pattern)
+      socket.emit('create_session', {
+        sessionName,
+        applicationId: connection.appId,
+        privacyKey: connection.privacyKey,
+        agentId: `coral_studio_${getCurrentUserId()}`,
+        userId: getCurrentUserId()
       })
-      
-      if (!response.ok) throw new Error(`Failed to create session: ${response.status}`)
-      
-      // Refresh sessions list
-      await connectToServer(connection.host)
-      
-      // Connect to the new session
-      connectToSession(sessionName)
     } catch (e) {
       setError(`Failed to create session: ${e}`)
     }
@@ -159,10 +204,19 @@ export default function CoralStudioPage() {
   }
 
   const refreshConnection = () => {
-    if (connection) {
-      connectToServer(connection.host)
+    if (socket) {
+      socket.emit('list_agents')
     }
   }
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (socket) {
+        socket.disconnect()
+      }
+    }
+  }, [socket])
 
   return (
     <div className="container mx-auto p-6 max-w-7xl">
