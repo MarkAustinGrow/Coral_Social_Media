@@ -2,6 +2,7 @@
 import http from 'http';
 import express from 'express';
 import { Server } from 'socket.io';
+import crypto from 'crypto';
 import injectSocketIO from './Web_Interface/lib/coral-studio-socketio-bridge.js';
 
 const app = express();
