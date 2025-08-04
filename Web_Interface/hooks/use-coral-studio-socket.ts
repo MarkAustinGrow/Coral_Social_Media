@@ -50,13 +50,12 @@ export function useCoralStudioSocket() {
 
       const initData = await initResponse.json();
       const serverSocketSecret = socketSecret || initData.socketSecret;
-      const port = initData.port || 3001;
 
-      // Connect to Socket.IO server
-      const socketUrl = `${window.location.protocol}//${window.location.hostname}:${port}`;
+      // Connect to Socket.IO server on the same domain as the web app
+      const socketUrl = `${window.location.protocol}//${window.location.host}`;
       
       const newSocket = io(socketUrl, {
-        path: '/socket.io',
+        path: '/api/socket.io',
         auth: {
           secret: serverSocketSecret
         }

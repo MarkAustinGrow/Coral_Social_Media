@@ -12,7 +12,7 @@ interface CoralSession {
   privacyKey: string;
   agentId: string;
   userId: string;
-  eventSource?: EventSource;
+  sseController?: AbortController;
   messageEndpoint?: string;
 }
 
@@ -245,9 +245,9 @@ export class CoralProtocolBridge {
     const session = this.activeSessions[socketId];
     if (session) {
       console.log('Cleaning up session for socket:', socketId);
-      // Close EventSource if it exists
-      if (session.eventSource) {
-        session.eventSource.close();
+      // Abort SSE controller if it exists
+      if (session.sseController) {
+        session.sseController.abort();
       }
       delete this.activeSessions[socketId];
     }
