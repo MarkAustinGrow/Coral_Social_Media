@@ -37,7 +37,7 @@ load_dotenv()
 user_id = amu.get_user_context()
 
 # Use centralized multi-user Coral server
-base_url = "http://coral.8interns.com/devmode/exampleApplication/privkey/session1/sse"
+base_url = "https://coral.8interns.com/devmode/exampleApplication/privkey/session1/sse"
 params = {
     "waitForAgents": 2,
     "agentId": f"tweet_scraping_agent_{user_id}",
