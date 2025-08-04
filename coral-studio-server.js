@@ -20,20 +20,20 @@ const io = new Server(server, {
 });
 
 // Inject our Socket.IO bridge with MCP integration
-const socketSecret = injectSocketIO(io);
+injectSocketIO(io);
 
 // Basic health check endpoint
 app.get('/health', (req, res) => {
   res.json({ 
     status: 'ok', 
     service: 'Coral Studio Socket.IO Bridge',
-    socketSecret: socketSecret
+    socketSecret: globalThis.socketSecret
   });
 });
 
-// Serve socket secret for client authentication
+// Serve socket secret for client authentication (like official Coral Studio)
 app.get('/socket-secret', (req, res) => {
-  res.json({ socketSecret });
+  res.json({ socketSecret: globalThis.socketSecret });
 });
 
 const port = process.env.CORAL_STUDIO_PORT || '3001';
@@ -41,6 +41,6 @@ const host = process.env.HOST || '0.0.0.0';
 
 server.listen(port, host, () => {
   console.log(`\x1b[36mCoral Studio Socket.IO Bridge running on http://${host}:${port}\x1b[0m`);
-  console.log(`Socket Secret: ${socketSecret}`);
+  console.log(`Socket Secret: ${globalThis.socketSecret}`);
   console.log('Ready to accept Coral Studio connections');
 });
