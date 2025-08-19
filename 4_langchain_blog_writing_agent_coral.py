@@ -38,7 +38,7 @@ load_dotenv()
 user_id = amu.get_user_context()
 
 # Use centralized multi-user Coral server
-base_url = "http://coral.8interns.com/devmode/exampleApplication/privkey/session1/sse"
+base_url = "https://coral.8interns.com/devmode/exampleApplication/privkey/session1/sse"
 params = {
     "waitForAgents": 7,  # Total number of agents in the system
     "agentId": f"blog_writing_agent_{user_id}",

@@ -42,7 +42,7 @@ if user_id is None:
     print(f"⚠️  No user context found, using default test user: {user_id}")
 
 # Use centralized multi-user Coral server
-base_url = "http://coral.8interns.com/devmode/exampleApplication/privkey/session1/sse"
+base_url = "https://coral.8interns.com/devmode/exampleApplication/privkey/session1/sse"
 params = {
     "waitForAgents": 2,
     "agentId": f"tweet_research_agent_{user_id}",
