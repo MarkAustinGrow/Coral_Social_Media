@@ -6,7 +6,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -736,164 +735,28 @@ function CoralInspectorPageContent() {
         </CardHeader>
       </Card>
 
-      {/* Main Tabs */}
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-3">
-          <TabsTrigger value="tools" className="flex items-center gap-2">
-            <Settings className="h-4 w-4" />
-            Chat
-          </TabsTrigger>
-          <TabsTrigger value="threads" className="flex items-center gap-2">
-            <MessageCircle className="h-4 w-4" />
-            Threads
-          </TabsTrigger>
-          <TabsTrigger value="logs" className="flex items-center gap-2">
-            <FileText className="h-4 w-4" />
-            Logs
-          </TabsTrigger>
-        </TabsList>
-
-
-        {/* Threads Tab */}
-        <TabsContent value="threads" className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-2xl font-semibold">Agent Threads</h2>
-            <div className="flex items-center gap-2">
-              <Button className="text-xs py-1 px-2 bg-transparent border border-gray-200 hover:bg-gray-100" onClick={exportMessages}>
-                <Download className="h-4 w-4 mr-2" />
-                Export
-              </Button>
+      {/* Help button - collapsed by default */}
+      <Button
+        onClick={() => setShowInstructions(!showInstructions)}
+        className="w-full justify-between bg-transparent border border-gray-200 hover:bg-gray-100"
+      >
+        <div className="flex items-center gap-2">
+          <HelpCircle className="h-5 w-5" />
+          <span className="font-semibold">Help</span>
+        </div>
+        {showInstructions ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+      </Button>
+      
+      {showInstructions && (
+        <Card className="mt-2">
+          <CardContent className="pt-4">
+            <div className="space-y-2 text-sm">
+              <p>Type your request in the text area above and click Send Message.</p>
+              <p>The system will automatically route your request to the appropriate agent.</p>
             </div>
-          </div>
-
-          {/* Filters */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Filter className="h-5 w-5" />
-                Filters
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid gap-4 md:grid-cols-2">
-                <div>
-                  <Label htmlFor="thread-filter">Thread ID</Label>
-                  <Input
-                    id="thread-filter"
-                    placeholder="Filter by thread ID..."
-                    value={threadFilter}
-                    onChange={(e) => setThreadFilter(e.target.value)}
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="agent-filter">Agent</Label>
-                  <Input
-                    id="agent-filter"
-                    placeholder="Filter by agent ID..."
-                    value={agentFilter}
-                    onChange={(e) => setAgentFilter(e.target.value)}
-                  />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Messages */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Messages ({filteredMessages.length})</CardTitle>
-              <CardDescription>
-                Real-time agent communications
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <ScrollArea className="h-96 w-full">
-                <div className="space-y-4">
-                  {filteredMessages.length === 0 ? (
-                    <div className="text-center text-muted-foreground py-8">
-                      No messages yet. Messages will appear here in real-time.
-                    </div>
-                  ) : (
-                    filteredMessages.map((message) => (
-                      <div key={message.id} className="border rounded-lg p-4">
-                        <div className="flex items-center justify-between mb-2">
-                          <div className="flex items-center gap-2">
-                            <Badge className="bg-gray-100">{message.type}</Badge>
-                            <span className="text-sm text-muted-foreground">
-                              {message.fromAgentId} → {message.toAgentId}
-                            </span>
-                          </div>
-                          <span className="text-xs text-muted-foreground">
-                            {new Date(message.timestamp).toLocaleTimeString()}
-                          </span>
-                        </div>
-                        <div className="text-sm">
-                          <strong>Thread:</strong> {message.threadId}
-                        </div>
-                        <div className="mt-2 p-2 bg-muted rounded text-sm">
-                          {message.content}
-                        </div>
-                      </div>
-                    ))
-                  )}
-                  <div ref={messagesEndRef} />
-                </div>
-              </ScrollArea>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Tools Tab - Help Sections Only */}
-        <TabsContent value="tools" className="space-y-6">
-          {/* Help button - collapsed by default */}
-          <Button
-            onClick={() => setShowInstructions(!showInstructions)}
-            className="w-full justify-between bg-transparent border border-gray-200 hover:bg-gray-100"
-          >
-            <div className="flex items-center gap-2">
-              <HelpCircle className="h-5 w-5" />
-              <span className="font-semibold">Help</span>
-            </div>
-            {showInstructions ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-          </Button>
-          
-          {showInstructions && (
-            <Card className="mt-2">
-              <CardContent className="pt-4">
-                <div className="space-y-2 text-sm">
-                  <p>Type your request in the text area above and click Send Message.</p>
-                  <p>The system will automatically route your request to the appropriate agent.</p>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-        </TabsContent>
-
-        {/* Logs Tab */}
-        <TabsContent value="logs" className="space-y-4">
-          <div>
-            <h2 className="text-2xl font-semibold mb-4">System Logs</h2>
-            <p className="text-muted-foreground mb-6">
-              Real-time Coral server logs and system events
-            </p>
-          </div>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Coming Soon</CardTitle>
-              <CardDescription>
-                Real-time log streaming will be implemented in a future update
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="text-center text-muted-foreground py-8">
-                <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                <p>Log streaming functionality will be added here</p>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+          </CardContent>
+        </Card>
+      )}
     </div>
   )
 }
