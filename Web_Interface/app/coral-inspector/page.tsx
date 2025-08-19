@@ -154,6 +154,7 @@ function CoralInspectorPageContent() {
   const [threadId, setThreadId] = useState<string>("")
   const [toolResponse, setToolResponse] = useState<string>("")
   const [sessionId, setSessionId] = useState<string>("")
+  const responseEndRef = useRef<HTMLDivElement>(null)
 
   // Help sections state
   const [showModeHelp, setShowModeHelp] = useState(false)
@@ -348,10 +349,17 @@ function CoralInspectorPageContent() {
     return () => eventSource.close()
   }, [user, activeTab])
 
-  // Scroll to bottom when new messages arrive
+  // Scroll to bottom when new messages arrive in threads view
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
+
+  // Auto-scroll to bottom when new content is added to the response window
+  useEffect(() => {
+    if (toolResponse) {
+      responseEndRef.current?.scrollIntoView({ behavior: 'auto' })
+    }
+  }, [toolResponse])
 
   useEffect(() => {
     fetchAgentStatuses()
@@ -718,6 +726,7 @@ function CoralInspectorPageContent() {
               <ScrollArea className="h-[300px] w-full mt-2">
                 <pre className="text-sm bg-muted p-4 rounded">
                   {toolResponse}
+                  <div ref={responseEndRef} />
                 </pre>
               </ScrollArea>
             </div>
