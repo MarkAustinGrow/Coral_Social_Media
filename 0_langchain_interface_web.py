@@ -34,7 +34,7 @@ if len(sys.argv) < 2:
 user_id = sys.argv[1]
 
 # Use centralized multi-user Coral server
-base_url = "http://coral.8interns.com/devmode/exampleApplication/privkey/session1/sse"
+base_url = "https://coral.8interns.com/devmode/exampleApplication/privkey/session1/sse"
 params = {
     "waitForAgents": 2,
     "agentId": f"user_interface_agent_{user_id}",
