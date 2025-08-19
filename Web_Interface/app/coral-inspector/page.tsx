@@ -520,10 +520,10 @@ function CoralInspectorPageContent() {
             }
           }
         }
-      } catch (streamError) {
+      } catch (streamError: any) {
         console.error('[FRONTEND] Stream reading error:', streamError)
-        console.error('[FRONTEND] Error type:', streamError.constructor.name)
-        console.error('[FRONTEND] Error message:', streamError.message)
+        console.error('[FRONTEND] Error type:', streamError.constructor?.name)
+        console.error('[FRONTEND] Error message:', streamError.message || 'Unknown error')
         throw streamError
       } finally {
         console.log('[FRONTEND] Releasing reader lock')
@@ -532,12 +532,12 @@ function CoralInspectorPageContent() {
       
       console.log('[FRONTEND] Interface Agent session completed successfully')
       setToolResponse(prev => `${prev}✅ Interface Agent session completed.\n`)
-    } catch (error) {
+    } catch (error: any) {
       console.error('[FRONTEND] Interface Agent error:', error)
-      console.error('[FRONTEND] Error type:', error.constructor.name)
-      console.error('[FRONTEND] Error message:', error.message)
+      console.error('[FRONTEND] Error type:', error.constructor?.name)
+      console.error('[FRONTEND] Error message:', error.message || 'Unknown error')
       console.error('[FRONTEND] Error stack:', error.stack)
-      setToolResponse(prev => `${prev}❌ Error: ${error.message || error}\n`)
+      setToolResponse(prev => `${prev}❌ Error: ${error.message || String(error)}\n`)
     }
   }
 
@@ -691,32 +691,24 @@ function CoralInspectorPageContent() {
             <Send className="h-6 w-6" />
             Chat Interface
           </CardTitle>
-          <CardDescription className="text-base">
-            Send messages directly to your Interface Agent - it will automatically route them to the right agents
-          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {/* Simple message input - no agent selection */}
           <div>
-            <Label htmlFor="message-content" className="text-base font-medium">What would you like me to help you with?</Label>
             <Textarea
               id="message-content"
-              placeholder="Type your request here... e.g., 'Are there any new tweets to scrape?' or 'Write a blog about the latest tech trends'"
+              placeholder="Type your request here..."
               value={messageContent}
               onChange={(e) => setMessageContent(e.target.value)}
               rows={4}
               className="mt-2 text-base"
             />
-            <p className="text-sm text-muted-foreground mt-2">
-              Examples: "Check for new tweets", "Write a blog about AI", "What's trending on social media?"
-            </p>
           </div>
 
           <Button 
             onClick={handleSendMessage} 
             disabled={!messageContent}
             className="w-full h-12 text-base"
-            size="lg"
           >
             <Send className="h-5 w-5 mr-2" />
             Send Message
@@ -724,8 +716,7 @@ function CoralInspectorPageContent() {
 
           {toolResponse && (
             <div>
-              <Label className="text-base font-medium">Response</Label>
-              <ScrollArea className="h-40 w-full mt-2">
+              <ScrollArea className="h-[300px] w-full mt-2">
                 <pre className="text-sm bg-muted p-4 rounded">
                   {toolResponse}
                 </pre>
@@ -735,37 +726,14 @@ function CoralInspectorPageContent() {
         </CardContent>
       </Card>
 
-      {/* Mode Switch Architecture Info */}
-      <Card className={agentMode === 'coral' ? 'border-green-200 bg-green-50' : 'border-blue-200 bg-blue-50'}>
-        <CardHeader>
-          <CardTitle className={`flex items-center gap-2 ${agentMode === 'coral' ? 'text-green-800' : 'text-blue-800'}`}>
+      {/* Simplified Mode Indicator */}
+      <Card className="border-gray-200 bg-gray-50">
+        <CardHeader className="py-2">
+          <CardTitle className="flex items-center gap-2 text-sm">
             <div className={`w-3 h-3 rounded-full ${agentMode === 'coral' ? 'bg-green-500' : 'bg-blue-500'}`} />
-            {agentMode === 'coral' ? 'Coral Mode - Multi-Agent Communication' : 'Auto Mode - Independent Agents'}
+            {agentMode === 'coral' ? 'Coral Mode' : 'Auto Mode'}
           </CardTitle>
-          <CardDescription className={agentMode === 'coral' ? 'text-green-700' : 'text-blue-700'}>
-            {agentMode === 'coral' 
-              ? 'Agents communicate with each other through the Coral Protocol for coordinated tasks'
-              : 'Agents work independently without inter-agent communication'
-            }
-          </CardDescription>
         </CardHeader>
-        <CardContent>
-          <div className={`text-sm ${agentMode === 'coral' ? 'text-green-800' : 'text-blue-800'}`}>
-            {agentMode === 'coral' ? (
-              <div className="space-y-2">
-                <p><strong>How it works:</strong> Interface Agent coordinates with other agents via Coral Protocol</p>
-                <p><strong>Best for:</strong> Complex tasks requiring multiple agents (research + writing + posting)</p>
-                <p><strong>Communication:</strong> Real-time agent-to-agent messaging and coordination</p>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                <p><strong>How it works:</strong> Each agent operates independently based on its configuration</p>
-                <p><strong>Best for:</strong> Simple, single-purpose tasks (just scraping, just writing, etc.)</p>
-                <p><strong>Communication:</strong> No inter-agent communication, direct user interaction only</p>
-              </div>
-            )}
-          </div>
-        </CardContent>
       </Card>
 
       {/* Main Tabs */}
@@ -791,7 +759,7 @@ function CoralInspectorPageContent() {
           <div className="flex items-center justify-between">
             <h2 className="text-2xl font-semibold">Agent Threads</h2>
             <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" onClick={exportMessages}>
+              <Button className="text-xs py-1 px-2 bg-transparent border border-gray-200 hover:bg-gray-100" onClick={exportMessages}>
                 <Download className="h-4 w-4 mr-2" />
                 Export
               </Button>
@@ -850,7 +818,7 @@ function CoralInspectorPageContent() {
                       <div key={message.id} className="border rounded-lg p-4">
                         <div className="flex items-center justify-between mb-2">
                           <div className="flex items-center gap-2">
-                            <Badge variant="outline">{message.type}</Badge>
+                            <Badge className="bg-gray-100">{message.type}</Badge>
                             <span className="text-sm text-muted-foreground">
                               {message.fromAgentId} → {message.toAgentId}
                             </span>
@@ -877,95 +845,28 @@ function CoralInspectorPageContent() {
 
         {/* Tools Tab - Help Sections Only */}
         <TabsContent value="tools" className="space-y-6">
-          {/* Note about main chat interface */}
-          <Card className="border-blue-200 bg-blue-50">
-            <CardContent className="pt-6">
-              <div className="text-center text-blue-800">
-                <MessageCircle className="h-8 w-8 mx-auto mb-2" />
-                <p className="font-medium">The main chat interface is located at the top of this page</p>
-                <p className="text-sm text-blue-600 mt-1">Scroll up to start chatting with your Interface Agent</p>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Collapsible Help Sections */}
-          <div className="space-y-3">
-            {/* Architecture Info - Collapsible */}
-            <Card className="border-green-200 bg-green-50">
-              <CardHeader className="pb-3">
-                <Button
-                  variant="ghost"
-                  onClick={() => setShowArchitectureInfo(!showArchitectureInfo)}
-                  className="w-full justify-between p-0 h-auto text-green-800 hover:bg-green-100"
-                >
-                  <div className="flex items-center gap-2">
-                    <MessageCircle className="h-5 w-5" />
-                    <span className="font-semibold">How Coral Protocol Works</span>
-                  </div>
-                  {showArchitectureInfo ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                </Button>
-              </CardHeader>
-              {showArchitectureInfo && (
-                <CardContent className="pt-0">
-                  <div className="text-sm text-green-800 space-y-2">
-                    <p>
-                      <strong>How it works:</strong> Just ask what you want - "Are there any new tweets?" or "Write a blog about AI"
-                    </p>
-                    <p>
-                      <strong>Message Flow:</strong> You → Interface Agent → Interface Agent chooses best agent → Response
-                    </p>
-                    <p>
-                      <strong>Your Role:</strong> Simply describe what you want done, like talking to a smart assistant
-                    </p>
-                  </div>
-                </CardContent>
-              )}
+          {/* Help button - collapsed by default */}
+          <Button
+            onClick={() => setShowInstructions(!showInstructions)}
+            className="w-full justify-between bg-transparent border border-gray-200 hover:bg-gray-100"
+          >
+            <div className="flex items-center gap-2">
+              <HelpCircle className="h-5 w-5" />
+              <span className="font-semibold">Help</span>
+            </div>
+            {showInstructions ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+          </Button>
+          
+          {showInstructions && (
+            <Card className="mt-2">
+              <CardContent className="pt-4">
+                <div className="space-y-2 text-sm">
+                  <p>Type your request in the text area above and click Send Message.</p>
+                  <p>The system will automatically route your request to the appropriate agent.</p>
+                </div>
+              </CardContent>
             </Card>
-
-            {/* Instructions - Collapsible */}
-            <Card>
-              <CardHeader className="pb-3">
-                <Button
-                  variant="ghost"
-                  onClick={() => setShowInstructions(!showInstructions)}
-                  className="w-full justify-between p-0 h-auto hover:bg-gray-100"
-                >
-                  <div className="flex items-center gap-2">
-                    <HelpCircle className="h-5 w-5" />
-                    <span className="font-semibold">Step-by-Step Instructions</span>
-                  </div>
-                  {showInstructions ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                </Button>
-              </CardHeader>
-              {showInstructions && (
-                <CardContent className="pt-0">
-                  <div className="space-y-3 text-sm">
-                    <div className="flex items-start gap-3">
-                      <div className="w-6 h-6 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xs font-medium">1</div>
-                      <div>
-                        <p className="font-medium">Type Your Request</p>
-                        <p className="text-muted-foreground">Just describe what you want - no need to select which agent</p>
-                      </div>
-                    </div>
-                    <div className="flex items-start gap-3">
-                      <div className="w-6 h-6 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xs font-medium">2</div>
-                      <div>
-                        <p className="font-medium">Interface Agent Routes Automatically</p>
-                        <p className="text-muted-foreground">The Interface Agent will choose the best agent for your request</p>
-                      </div>
-                    </div>
-                    <div className="flex items-start gap-3">
-                      <div className="w-6 h-6 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xs font-medium">3</div>
-                      <div>
-                        <p className="font-medium">Watch the Threads Tab</p>
-                        <p className="text-muted-foreground">See real-time communication between agents as they work on your request</p>
-                      </div>
-                    </div>
-                  </div>
-                </CardContent>
-              )}
-            </Card>
-          </div>
+          )}
         </TabsContent>
 
         {/* Logs Tab */}
