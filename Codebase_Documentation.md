@@ -15,9 +15,10 @@ This document provides a comprehensive overview of the Coral Social Media Infras
 9. [Coral Protocol Integration](#coral-protocol-integration)
 10. [Database Schema](#database-schema)
 11. [Setup and Configuration](#setup-and-configuration)
-12. [Development Workflow](#development-workflow)
-13. [Troubleshooting](#troubleshooting)
-14. [Future Enhancements](#future-enhancements)
+12. [Build Process and Optimization](#build-process-and-optimization)
+13. [Development Workflow](#development-workflow)
+14. [Troubleshooting](#troubleshooting)
+15. [Future Enhancements](#future-enhancements)
 
 ## 🎉 Today's Major Breakthrough Achievements (August 15, 2025)
 
@@ -135,7 +136,7 @@ pm2 restart ecosystem.config.js
 
 #### **Documentation Created**
 - **`SERVER_BRANCH_DEPLOYMENT_GUIDE.md`**: Complete deployment instructions
-- **`deploy_working_version_to_server.sh`**: Automated deployment script
+- **`deploy_working_version_to_server.sh`**: Automated script for server deployment
 - **Updated `Codebase_Documentation.md`**: This documentation with rollback details
 
 ### **Next Steps**
@@ -726,28 +727,6 @@ Web_Interface/
 - **User Profile** (`app/api/user/profile/route.ts`): User profile management API
 - **Authentication APIs**: Various endpoints for user authentication and session management
 
-### Setup Wizard
+## Setup and Configuration
 
-The setup wizard (`app/setup/page.tsx` and `components/setup-wizard.tsx`) guides users through the initial configuration process:
-
-1. **Welcome**: Introduction and overview
-2. **API Keys**: Configuration of external service credentials
-   - **OpenAI**: API key for content generation
-   - **AI Services**: Perplexity and Anthropic API keys for fact-checking and advanced reasoning
-   - **Twitter**: API credentials for social media interaction
-3. **Database**: Database connection setup
-4. **Agent Configuration**: Agent selection and settings
-5. **Persona**: Content style and tone configuration
-6. **Finish**: Review and completion
-
-### Account Management
-
-The account management system (`app/accounts/page.tsx` and related components) provides functionality for managing Twitter accounts:
-
-- **Account List** (`components/account-list.tsx`): Displays and manages monitored Twitter accounts
-- **Add Account Dialog** (`components/add-account-dialog.tsx`): Interface for adding new accounts to monitor
-- **Import Followed Accounts**: Functionality to import accounts the user follows on Twitter
-- **Account Prioritization**: Ability to set priority levels for different accounts
-- **Account Status**: Tracking of when account data was last fetched
-
-The account management system integrates with Supabase for data storage and the Twitter API for account information
+The setup wizard (`app/setup/page.tsx` and `
