@@ -60,10 +60,29 @@ module.exports = {
     },
   },
   safelist: [
+    // xs breakpoint classes
     'xs:grid-cols-2',
     'xs:w-auto',
     'xs:flex-row',
-    'xs:items-center'
+    'xs:items-center',
+    
+    // sm breakpoint classes for log-viewer
+    'sm:w-[180px]',
+    'sm:w-[100px]',
+    'sm:text-sm',
+    
+    // sm breakpoint classes for agent-status-panel
+    'sm:grid-cols-2',
+    'sm:p-4',
+    'sm:text-base',
+    'sm:text-sm',
+    
+    // sm breakpoint classes for logs page
+    'sm:flex-row',
+    'sm:items-center',
+    'sm:w-auto',
+    'sm:mt-0',
+    'sm:px-6'
   ],
   plugins: [require("tailwindcss-animate")],
 }
