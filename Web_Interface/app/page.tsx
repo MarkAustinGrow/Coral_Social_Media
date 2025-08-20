@@ -18,13 +18,15 @@ export default function DashboardPage() {
     <AgentModeProvider>
       <DashboardShell>
         <DashboardHeader heading="Dashboard" text="Monitor and manage your social media agent system.">
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-            <Button variant="outline" className="w-full sm:w-auto">Refresh Data</Button>
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+          <Button variant="outline" className="w-full sm:w-auto">Refresh Data</Button>
+          <div className="w-full sm:w-auto">
             <AgentModeSelector />
           </div>
+        </div>
         </DashboardHeader>
-        <div className="grid gap-4 lg:grid-cols-7">
-          <Card className="lg:col-span-4">
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
+          <Card className="md:col-span-1 lg:col-span-4">
             <CardHeader>
               <CardTitle>System Status</CardTitle>
               <CardDescription>Current status of all system components</CardDescription>
@@ -33,7 +35,7 @@ export default function DashboardPage() {
               <SystemStatusPanel />
             </CardContent>
           </Card>
-          <Card className="lg:col-span-3">
+          <Card className="md:col-span-1 lg:col-span-3">
             <CardHeader>
               <CardTitle>Quick Stats</CardTitle>
               <CardDescription>Key metrics from your system</CardDescription>
@@ -45,7 +47,7 @@ export default function DashboardPage() {
               <QuickActions />
             </CardFooter>
           </Card>
-          <Card className="lg:col-span-7">
+          <Card className="md:col-span-2 lg:col-span-7">
             <CardHeader>
               <CardTitle>Recent Activity</CardTitle>
               <CardDescription>Latest events from your system</CardDescription>

@@ -63,14 +63,14 @@ export function AgentModeSelector({ onStartAllAgents }: AgentModeSelectorProps) 
   }
 
   return (
-    <Card className="p-4">
-      <div className="flex items-center gap-4">
-        <div className="flex items-center gap-2">
+    <Card className="p-3 sm:p-4 w-full">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+        <div className="flex items-center gap-2 w-full sm:w-auto">
           <Label htmlFor="agent-mode" className="text-sm font-medium whitespace-nowrap">
             Agent Mode:
           </Label>
           <Select value={agentMode} onValueChange={(value: AgentMode) => setAgentMode(value)}>
-            <SelectTrigger className="w-32">
+            <SelectTrigger className="w-full sm:w-32">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -93,13 +93,13 @@ export function AgentModeSelector({ onStartAllAgents }: AgentModeSelectorProps) 
         <Button 
           onClick={handleStartAllAgents}
           disabled={isStarting}
-          className="flex items-center gap-2"
+          className="flex items-center gap-2 w-full sm:w-auto"
         >
           {isStarting ? 'Starting...' : 'Start All Agents'}
         </Button>
       </div>
       
-      <div className="mt-3 text-xs text-muted-foreground">
+      <div className="mt-2 sm:mt-3 text-xs text-muted-foreground">
         {agentMode === 'coral' ? (
           <div className="flex items-center gap-1">
             <div className="w-1.5 h-1.5 rounded-full bg-green-500" />

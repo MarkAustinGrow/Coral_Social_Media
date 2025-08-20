@@ -81,7 +81,7 @@ export function StatsCards() {
         data={data}
         onRetry={handleRefresh}
         loadingComponent={
-          <div className="grid gap-4 grid-cols-2">
+          <div className="grid gap-4 grid-cols-1 xs:grid-cols-2">
             {[...Array(4)].map((_, i) => (
               <Card key={i}>
                 <CardContent className="p-4 flex flex-col items-center justify-center h-[120px]">
@@ -112,7 +112,7 @@ export function StatsCards() {
         }
       >
         {(stats) => (
-          <div className="grid gap-4 grid-cols-2">
+          <div className="grid gap-4 grid-cols-1 xs:grid-cols-2">
             <Card>
               <CardContent className="p-4 flex flex-col items-center justify-center">
                 <div className="flex items-center justify-center h-12 w-12 rounded-full bg-primary/10 mb-2">

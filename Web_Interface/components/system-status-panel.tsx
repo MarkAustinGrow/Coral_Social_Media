@@ -317,19 +317,19 @@ export function SystemStatusPanel() {
       {(agents) => (
         <div className="space-y-4">
           {agents.map((agent) => (
-            <div key={agent.id} className="flex items-center gap-4 rounded-lg border p-4">
+            <div key={agent.id} className="flex flex-col sm:flex-row items-start sm:items-center gap-3 rounded-lg border p-3 sm:p-4">
               <div className="flex-none">{getStatusIcon(agent.status)}</div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between mb-2">
+              <div className="flex-1 min-w-0 w-full">
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
                   <h4 className="font-medium">{agent.agent_name}</h4>
                   {getStatusBadge(agent.status)}
                 </div>
                 <div className="flex items-center gap-2 mb-2">
                   <Progress value={agent.health} className="h-2" />
-                  <span className="text-xs text-muted-foreground">{agent.health}%</span>
+                  <span className="text-xs text-muted-foreground whitespace-nowrap">{agent.health}%</span>
                 </div>
                 
-                <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground mt-2">
+                <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground mt-2">
                   {agent.last_activity && (
                     <div className="flex items-center">
                       <span className="mr-1">Last activity:</span>
@@ -368,12 +368,12 @@ export function SystemStatusPanel() {
                 </div>
               </div>
               
-              <div className="flex-none flex items-center">
+              <div className="flex flex-row sm:flex-none gap-2 mt-2 sm:mt-0">
                 {agent.status === 'stopped' ? (
                   <Button 
                     size="sm" 
                     variant="outline" 
-                    className="bg-green-100 text-green-800 hover:bg-green-200 dark:bg-green-900 dark:text-green-200 dark:hover:bg-green-800"
+                    className="bg-green-100 text-green-800 hover:bg-green-200 dark:bg-green-900 dark:text-green-200 dark:hover:bg-green-800 w-full sm:w-auto"
                     onClick={() => handleStartAgent(agent.agent_name)}
                     disabled={isStarting[agent.agent_name]}
                   >
@@ -393,7 +393,7 @@ export function SystemStatusPanel() {
                   <Button 
                     size="sm" 
                     variant="outline" 
-                    className="bg-red-100 text-red-800 hover:bg-red-200 dark:bg-red-900 dark:text-red-200 dark:hover:bg-red-800"
+                    className="bg-red-100 text-red-800 hover:bg-red-200 dark:bg-red-900 dark:text-red-200 dark:hover:bg-red-800 w-full sm:w-auto"
                     onClick={() => handleStopAgent(agent.agent_name)}
                     disabled={isStopping[agent.agent_name]}
                   >

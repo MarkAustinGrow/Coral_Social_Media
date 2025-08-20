@@ -4,7 +4,7 @@ import { FileText, MessageSquare, Twitter, Zap } from "lucide-react"
 
 export function QuickActions() {
   return (
-    <div className="grid grid-cols-2 gap-2 w-full">
+    <div className="grid grid-cols-1 xs:grid-cols-2 gap-2 w-full">
       <Button variant="outline" size="sm" asChild>
         <Link href="/blogs">
           <FileText className="mr-2 h-4 w-4" />

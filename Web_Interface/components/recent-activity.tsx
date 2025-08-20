@@ -254,14 +254,14 @@ export function RecentActivity() {
         <div className="space-y-4">
           {activity.length > 0 ? (
             activity.map((item) => (
-              <div key={item.id} className="flex items-center gap-4 rounded-lg border p-3">
-                <div className="flex-none">{getActivityIcon(item.type)}</div>
+              <div key={item.id} className="flex items-start sm:items-center gap-3 rounded-lg border p-3">
+                <div className="flex-none mt-1 sm:mt-0">{getActivityIcon(item.type)}</div>
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     {getActivityBadge(item.type)}
                     <span className="text-xs text-muted-foreground">{formatTimestamp(item.timestamp)}</span>
                   </div>
-                  <p className="text-sm mt-1">{item.message}</p>
+                  <p className="text-sm mt-1 break-words">{item.message}</p>
                 </div>
               </div>
             ))
