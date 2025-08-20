@@ -276,7 +276,7 @@ export function AccountList() {
         </div>
       ) : (
         accounts.map((account) => 
-        <div key={account.id} className="flex items-center justify-between rounded-lg border p-4">
+        <div key={account.id} className="flex flex-col sm:flex-row sm:items-center sm:justify-between rounded-lg border p-4 gap-4">
           <div className="flex items-center gap-4">
             <Avatar className="h-10 w-10">
               <AvatarImage src={account.avatarUrl || "/placeholder.svg"} alt={account.display_name} />
@@ -288,32 +288,37 @@ export function AccountList() {
             </div>
           </div>
 
-          <div className="flex items-center gap-6">
-            <div className="flex flex-col items-center gap-1">
+          {/* Controls section - stacks on mobile, horizontal on desktop */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:flex md:items-center gap-4 md:gap-6">
+            {/* Priority slider - full width on mobile */}
+            <div className="flex flex-col sm:items-center gap-1">
               <div className="text-xs text-muted-foreground">Priority</div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 w-full">
                 <Slider
                   defaultValue={[account.priority]}
                   max={10}
                   step={1}
-                  className="w-24"
+                  className="w-full sm:w-24"
                   onValueChange={(value) => handlePriorityChange(account.id, value)}
                 />
                 <span className="text-sm font-medium w-4">{account.priority}</span>
               </div>
             </div>
 
-            <div className="flex flex-col items-center gap-1">
-              <div className="text-xs text-muted-foreground">Last Fetched</div>
-              <div className="text-sm">{formatDate(account.last_fetched_at)}</div>
+            {/* Last fetched and Active toggle - side by side on mobile, separate on desktop */}
+            <div className="grid grid-cols-2 sm:flex sm:flex-col sm:items-center gap-1">
+              <div>
+                <div className="text-xs text-muted-foreground">Last Fetched</div>
+                <div className="text-sm">{formatDate(account.last_fetched_at)}</div>
+              </div>
+              <div className="flex flex-col items-end sm:items-center gap-1">
+                <div className="text-xs text-muted-foreground">Active</div>
+                <Switch checked={account.active} onCheckedChange={(checked) => handleActiveChange(account.id, checked)} />
+              </div>
             </div>
 
-            <div className="flex flex-col items-center gap-1">
-              <div className="text-xs text-muted-foreground">Active</div>
-              <Switch checked={account.active} onCheckedChange={(checked) => handleActiveChange(account.id, checked)} />
-            </div>
-
-            <div className="flex items-center gap-2">
+            {/* Action buttons - consolidated into a single dropdown on all screen sizes */}
+            <div className="flex justify-end sm:justify-start items-center gap-2">
               <Button variant="outline" size="icon" onClick={handleRefresh} disabled={isLoading}>
                 <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
               </Button>

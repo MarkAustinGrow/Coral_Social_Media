@@ -29,7 +29,7 @@ export default function AccountsPage() {
   return (
     <DashboardShell>
       <DashboardHeader heading="X Accounts Management" text="Configure and prioritize Twitter accounts.">
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mt-4 sm:mt-0">
           <AddAccountDialog onAccountAdded={handleRefreshAccounts} />
           <Button variant="outline" onClick={handleAddFollowed} className="w-full sm:w-auto">
             <Users className="mr-2 h-4 w-4" />
