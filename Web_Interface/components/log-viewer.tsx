@@ -97,14 +97,14 @@ export function LogViewer({ level, limit = 50 }: LogViewerProps) {
         </div>
         <div className="rounded-md border">
           <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-[180px]">Timestamp</TableHead>
-                <TableHead className="w-[100px]">Level</TableHead>
-                <TableHead className="w-[180px]">Agent</TableHead>
-                <TableHead>Message</TableHead>
-              </TableRow>
-            </TableHeader>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-[100px] sm:w-[180px]">Timestamp</TableHead>
+              <TableHead className="w-[80px] sm:w-[100px]">Level</TableHead>
+              <TableHead className="w-[100px] sm:w-[180px]">Agent</TableHead>
+              <TableHead>Message</TableHead>
+            </TableRow>
+          </TableHeader>
             <TableBody>
               {[...Array(5)].map((_, i) => (
                 <TableRow key={i}>
@@ -178,7 +178,7 @@ export function LogViewer({ level, limit = 50 }: LogViewerProps) {
   
   return (
     <div className="space-y-4">
-      <div className="relative">
+      <div className="relative mb-2">
         <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
         <Input
           type="search"
@@ -192,9 +192,9 @@ export function LogViewer({ level, limit = 50 }: LogViewerProps) {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="w-[180px]">Timestamp</TableHead>
-              <TableHead className="w-[100px]">Level</TableHead>
-              <TableHead className="w-[180px]">Agent</TableHead>
+              <TableHead className="w-[100px] sm:w-[180px]">Timestamp</TableHead>
+              <TableHead className="w-[80px] sm:w-[100px]">Level</TableHead>
+              <TableHead className="w-[100px] sm:w-[180px]">Agent</TableHead>
               <TableHead>Message</TableHead>
             </TableRow>
           </TableHeader>
@@ -208,12 +208,16 @@ export function LogViewer({ level, limit = 50 }: LogViewerProps) {
             ) : (
               paginatedLogs.map((log: LogEntry) => (
                 <TableRow key={log.id}>
-                  <TableCell className="font-mono text-xs">
+                  <TableCell className="font-mono text-xs whitespace-normal break-words">
                     {formatDateTime(log.timestamp)}
                   </TableCell>
                   <TableCell>{getLevelBadge(log.level)}</TableCell>
-                  <TableCell>{log.agent_name}</TableCell>
-                  <TableCell>{log.message}</TableCell>
+                  <TableCell className="whitespace-normal break-words">
+                    {log.agent_name}
+                  </TableCell>
+                  <TableCell className="whitespace-normal break-words">
+                    {log.message}
+                  </TableCell>
                 </TableRow>
               ))
             )}

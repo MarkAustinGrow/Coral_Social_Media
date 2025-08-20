@@ -339,26 +339,32 @@ export function AgentStatusPanel() {
 
   // Render function for agents
   const renderAgents = (agents: AgentStatus[]) => (
-    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
       {agents.map((agent) => (
-        <Card key={agent.id} className="p-4">
+        <Card key={agent.id} className="p-3 sm:p-4">
           <div className="flex flex-col space-y-3">
-            <div className="flex items-center justify-between">
-              <h3 className="font-medium">{agent.agent_name}</h3>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h3 className="font-medium text-sm sm:text-base break-words">{agent.agent_name}</h3>
               {getStatusBadge(agent.status)}
             </div>
-            <p className="text-sm text-muted-foreground">
+            <p className="text-xs sm:text-sm text-muted-foreground">
               {agentDescriptions[agent.agent_name] || "Agent for the social media system"}
             </p>
             {agent.last_error && (
-              <div className="flex items-center text-sm text-red-600 dark:text-red-400">
-                <AlertTriangle className="mr-1 h-4 w-4" />
-                {agent.last_error}
+              <div className="flex items-start text-xs sm:text-sm text-red-600 dark:text-red-400">
+                <AlertTriangle className="mr-1 h-4 w-4 flex-shrink-0 mt-0.5" />
+                <span className="break-words">{agent.last_error}</span>
               </div>
             )}
             <div className="text-xs text-muted-foreground">
-              <div>Last Heartbeat: {formatDateTime(agent.last_heartbeat)}</div>
-              <div>Last Activity: {formatDateTime(agent.updated_at)}</div>
+              <div className="flex flex-wrap">
+                <span className="font-medium mr-1">Last Heartbeat:</span> 
+                <span className="break-words">{formatDateTime(agent.last_heartbeat)}</span>
+              </div>
+              <div className="flex flex-wrap">
+                <span className="font-medium mr-1">Last Activity:</span> 
+                <span className="break-words">{formatDateTime(agent.updated_at)}</span>
+              </div>
             </div>
             <div className="flex justify-end">{getActionButton(agent)}</div>
           </div>
@@ -370,9 +376,9 @@ export function AgentStatusPanel() {
   return (
     <>
       {userEmail && (
-        <div className="mb-4 p-3 bg-blue-50 rounded-md flex items-center space-x-2 border border-blue-200">
-          <User className="h-4 w-4 text-blue-500" />
-          <div className="text-sm">
+        <div className="mb-4 p-3 bg-blue-50 rounded-md flex flex-wrap items-center gap-2 border border-blue-200">
+          <User className="h-4 w-4 text-blue-500 flex-shrink-0" />
+          <div className="text-xs sm:text-sm break-words">
             <span className="font-medium">Viewing agents for:</span> {userEmail}
           </div>
         </div>

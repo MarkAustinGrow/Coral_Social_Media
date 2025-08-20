@@ -82,7 +82,7 @@ export default function LogsPage() {
   return (
     <DashboardShell>
       <DashboardHeader heading="Agent Status & Logs" text="Monitor agent status and view system logs.">
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mt-4 sm:mt-0">
           <Button variant="outline" onClick={handleRefresh} className="w-full sm:w-auto">
             <RefreshCw className="mr-2 h-4 w-4" />
             Refresh
@@ -98,22 +98,22 @@ export default function LogsPage() {
           </Button>
         </div>
       </DashboardHeader>
-      <div className="grid gap-4 md:grid-cols-1 lg:grid-cols-7">
-        <Card className="col-span-7">
-          <CardHeader>
+      <div className="grid gap-4">
+        <Card>
+          <CardHeader className="sm:px-6">
             <CardTitle>Agent Status</CardTitle>
             <CardDescription>Current status of all system agents</CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="sm:px-6">
             <AgentStatusPanel key={`agent-status-${refreshKey}`} />
           </CardContent>
         </Card>
-        <Card className="col-span-7">
-          <CardHeader className="space-y-0.5">
+        <Card>
+          <CardHeader className="space-y-0.5 sm:px-6">
             <CardTitle>System Logs</CardTitle>
             <CardDescription>View and filter system logs</CardDescription>
           </CardHeader>
-          <Tabs defaultValue="all" className="px-6">
+          <Tabs defaultValue="all" className="px-4 sm:px-6">
             <TabsList className="grid w-full grid-cols-4 md:w-auto md:grid-cols-none md:flex">
               <TabsTrigger value="all" className="text-xs sm:text-sm">All Logs</TabsTrigger>
               <TabsTrigger value="info" className="text-xs sm:text-sm">Info</TabsTrigger>
@@ -133,7 +133,7 @@ export default function LogsPage() {
               <LogViewer key={`logs-error-${refreshKey}`} level="error" />
             </TabsContent>
           </Tabs>
-          <CardFooter className="flex justify-between border-t px-6 py-4">
+          <CardFooter className="flex justify-between border-t px-4 sm:px-6 py-4">
             <div className="text-xs text-muted-foreground">
               Showing logs from the database in real-time
             </div>
