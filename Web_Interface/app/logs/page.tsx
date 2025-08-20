@@ -10,6 +10,7 @@ import { AgentStatusPanel } from "@/components/agent-status-panel"
 import { LogViewer } from "@/components/log-viewer"
 import { RefreshCw, Download } from "lucide-react"
 import { toast } from "sonner"
+import { cn } from "@/lib/utils"
 
 export default function LogsPage() {
   const [refreshKey, setRefreshKey] = useState(0)
@@ -81,45 +82,56 @@ export default function LogsPage() {
   
   return (
     <DashboardShell>
-      <DashboardHeader heading="Agent Status & Logs" text="Monitor agent status and view system logs.">
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mt-4 sm:mt-0">
-          <Button variant="outline" onClick={handleRefresh} className="w-full sm:w-auto">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between px-2 gap-4">
+        <div className="grid gap-1">
+          <h1 className="font-heading text-2xl md:text-3xl lg:text-4xl">Agent Status & Logs</h1>
+          <p className="text-sm md:text-base lg:text-lg text-muted-foreground">Monitor agent status and view system logs.</p>
+        </div>
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mt-4 sm:mt-0 w-full sm:w-auto">
+          <Button 
+            onClick={handleRefresh} 
+            className="w-full sm:w-auto h-9"
+          >
             <RefreshCw className="mr-2 h-4 w-4" />
             Refresh
           </Button>
           <Button 
-            variant="outline" 
+            className={cn(
+              "w-full sm:w-auto h-9",
+              "border border-input bg-background hover:bg-accent hover:text-accent-foreground"
+            )}
             onClick={handleExportLogs}
             disabled={isExporting}
-            className="w-full sm:w-auto"
           >
             <Download className="mr-2 h-4 w-4" />
             {isExporting ? 'Exporting...' : 'Export Logs'}
           </Button>
         </div>
-      </DashboardHeader>
+      </div>
       <div className="grid gap-4">
-        <Card>
-          <CardHeader className="sm:px-6">
+        <Card className="overflow-hidden">
+          <CardHeader className="px-4 sm:px-6">
             <CardTitle>Agent Status</CardTitle>
             <CardDescription>Current status of all system agents</CardDescription>
           </CardHeader>
-          <CardContent className="sm:px-6">
+          <CardContent className="px-4 sm:px-6 pb-4">
             <AgentStatusPanel key={`agent-status-${refreshKey}`} />
           </CardContent>
         </Card>
-        <Card>
-          <CardHeader className="space-y-0.5 sm:px-6">
+        <Card className="overflow-hidden">
+          <CardHeader className="space-y-0.5 px-4 sm:px-6">
             <CardTitle>System Logs</CardTitle>
             <CardDescription>View and filter system logs</CardDescription>
           </CardHeader>
           <Tabs defaultValue="all" className="px-4 sm:px-6">
-            <TabsList className="grid w-full grid-cols-4 md:w-auto md:grid-cols-none md:flex">
-              <TabsTrigger value="all" className="text-xs sm:text-sm">All Logs</TabsTrigger>
-              <TabsTrigger value="info" className="text-xs sm:text-sm">Info</TabsTrigger>
-              <TabsTrigger value="warning" className="text-xs sm:text-sm">Warning</TabsTrigger>
-              <TabsTrigger value="error" className="text-xs sm:text-sm">Error</TabsTrigger>
-            </TabsList>
+            <div className="overflow-x-auto pb-2">
+              <TabsList className="w-full sm:w-auto inline-flex">
+                <TabsTrigger value="all" className="text-xs sm:text-sm">All Logs</TabsTrigger>
+                <TabsTrigger value="info" className="text-xs sm:text-sm">Info</TabsTrigger>
+                <TabsTrigger value="warning" className="text-xs sm:text-sm">Warning</TabsTrigger>
+                <TabsTrigger value="error" className="text-xs sm:text-sm">Error</TabsTrigger>
+              </TabsList>
+            </div>
             <TabsContent value="all" className="p-0 pt-4">
               <LogViewer key={`logs-all-${refreshKey}`} />
             </TabsContent>
@@ -133,7 +145,7 @@ export default function LogsPage() {
               <LogViewer key={`logs-error-${refreshKey}`} level="error" />
             </TabsContent>
           </Tabs>
-          <CardFooter className="flex justify-between border-t px-4 sm:px-6 py-4">
+          <CardFooter className="flex justify-between border-t px-4 sm:px-6 py-3 sm:py-4">
             <div className="text-xs text-muted-foreground">
               Showing logs from the database in real-time
             </div>

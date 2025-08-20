@@ -95,35 +95,37 @@ export function LogViewer({ level, limit = 50 }: LogViewerProps) {
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
           <div className="animate-pulse bg-muted rounded h-10 w-full"></div>
         </div>
-        <div className="rounded-md border">
-          <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-[100px] sm:w-[180px]">Timestamp</TableHead>
-              <TableHead className="w-[80px] sm:w-[100px]">Level</TableHead>
-              <TableHead className="w-[100px] sm:w-[180px]">Agent</TableHead>
-              <TableHead>Message</TableHead>
-            </TableRow>
-          </TableHeader>
-            <TableBody>
-              {[...Array(5)].map((_, i) => (
-                <TableRow key={i}>
-                  <TableCell>
-                    <div className="animate-pulse bg-muted rounded h-4 w-32"></div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="animate-pulse bg-muted rounded h-6 w-16"></div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="animate-pulse bg-muted rounded h-4 w-28"></div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="animate-pulse bg-muted rounded h-4 w-full"></div>
-                  </TableCell>
+        <div className="rounded-md border overflow-hidden">
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-[90px] sm:w-[150px]">Timestamp</TableHead>
+                  <TableHead className="w-[70px] sm:w-[90px]">Level</TableHead>
+                  <TableHead className="w-[90px] sm:w-[150px]">Agent</TableHead>
+                  <TableHead>Message</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {[...Array(5)].map((_, i) => (
+                  <TableRow key={i}>
+                    <TableCell>
+                      <div className="animate-pulse bg-muted rounded h-4 w-32"></div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="animate-pulse bg-muted rounded h-6 w-16"></div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="animate-pulse bg-muted rounded h-4 w-28"></div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="animate-pulse bg-muted rounded h-4 w-full"></div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
         </div>
       </div>
     )
@@ -132,13 +134,16 @@ export function LogViewer({ level, limit = 50 }: LogViewerProps) {
   // Handle error state
   if (logsResult.error) {
     return (
-      <div className="text-center p-8 border rounded-lg">
-        <AlertCircle className="h-10 w-10 mx-auto mb-2 text-red-500" />
+      <div className="text-center p-4 sm:p-8 border rounded-lg">
+        <AlertCircle className="h-8 w-8 sm:h-10 sm:w-10 mx-auto mb-2 text-red-500" />
         <h3 className="font-medium mb-1">Error Loading Logs</h3>
         <p className="text-sm text-muted-foreground mb-3">
           {logsResult.error}
         </p>
-        <Button size="sm" variant="outline" onClick={handleRefresh}>
+        <Button 
+          className="h-8"
+          onClick={handleRefresh}
+        >
           <RefreshCw className="mr-2 h-4 w-4" />
           Try Again
         </Button>
@@ -149,8 +154,8 @@ export function LogViewer({ level, limit = 50 }: LogViewerProps) {
   // Handle empty state
   if (!logsResult.data || logsResult.data.length === 0) {
     return (
-      <div className="text-center p-8 border rounded-lg">
-        <AlertCircle className="h-10 w-10 mx-auto mb-2 text-muted-foreground" />
+      <div className="text-center p-4 sm:p-8 border rounded-lg">
+        <AlertCircle className="h-8 w-8 sm:h-10 sm:w-10 mx-auto mb-2 text-muted-foreground" />
         <h3 className="font-medium mb-1">No Logs Found</h3>
         <p className="text-sm text-muted-foreground mb-3">
           {level 
@@ -158,7 +163,10 @@ export function LogViewer({ level, limit = 50 }: LogViewerProps) {
             : "No logs are available for your agents."}
         </p>
         <div className="flex justify-center gap-2">
-          <Button size="sm" variant="outline" onClick={handleRefresh}>
+          <Button 
+            className="h-8"
+            onClick={handleRefresh}
+          >
             <RefreshCw className="mr-2 h-4 w-4" />
             Refresh
           </Button>
@@ -188,46 +196,53 @@ export function LogViewer({ level, limit = 50 }: LogViewerProps) {
           onChange={(e) => setSearchQuery(e.target.value)}
         />
       </div>
-      <div className="rounded-md border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-[100px] sm:w-[180px]">Timestamp</TableHead>
-              <TableHead className="w-[80px] sm:w-[100px]">Level</TableHead>
-              <TableHead className="w-[100px] sm:w-[180px]">Agent</TableHead>
-              <TableHead>Message</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {paginatedLogs.length === 0 ? (
+      
+      {/* Responsive table with horizontal scroll on small screens */}
+      <div className="rounded-md border overflow-hidden">
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
               <TableRow>
-                <TableCell colSpan={4} className="h-24 text-center">
-                  No logs found matching your search criteria.
-                </TableCell>
+                <TableHead className="w-[90px] sm:w-[150px]">Timestamp</TableHead>
+                <TableHead className="w-[70px] sm:w-[90px]">Level</TableHead>
+                <TableHead className="w-[90px] sm:w-[150px]">Agent</TableHead>
+                <TableHead>Message</TableHead>
               </TableRow>
-            ) : (
-              paginatedLogs.map((log: LogEntry) => (
-                <TableRow key={log.id}>
-                  <TableCell className="font-mono text-xs whitespace-normal break-words">
-                    {formatDateTime(log.timestamp)}
-                  </TableCell>
-                  <TableCell>{getLevelBadge(log.level)}</TableCell>
-                  <TableCell className="whitespace-normal break-words">
-                    {log.agent_name}
-                  </TableCell>
-                  <TableCell className="whitespace-normal break-words">
-                    {log.message}
+            </TableHeader>
+            <TableBody>
+              {paginatedLogs.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={4} className="h-24 text-center">
+                    No logs found matching your search criteria.
                   </TableCell>
                 </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
+              ) : (
+                paginatedLogs.map((log: LogEntry) => (
+                  <TableRow key={log.id}>
+                    <TableCell className="font-mono text-xs whitespace-nowrap">
+                      {formatDateTime(log.timestamp)}
+                    </TableCell>
+                    <TableCell>{getLevelBadge(log.level)}</TableCell>
+                    <TableCell className="max-w-[120px] sm:max-w-[150px] truncate" title={log.agent_name}>
+                      {log.agent_name}
+                    </TableCell>
+                    <TableCell className="max-w-[200px] sm:max-w-none whitespace-normal break-words">
+                      {log.message}
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </div>
       </div>
       
       {paginatedLogs.length < filteredLogs.length && (
         <div className="flex justify-center mt-4">
-          <Button variant="outline" size="sm" onClick={handleLoadMore}>
+          <Button 
+            className="h-8"
+            onClick={handleLoadMore}
+          >
             Load More
           </Button>
         </div>
