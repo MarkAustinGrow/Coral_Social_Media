@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Eye, EyeOff, RefreshCw } from "lucide-react"
+import { cn } from "@/lib/utils"
 
 // User-specific Twitter/X API keys - would be fetched from user's profile in real implementation
 const mockApiKeys = [
@@ -77,19 +77,19 @@ export function ApiKeysPanel() {
     switch (status) {
       case "active":
         return (
-          <Badge variant="outline" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
+          <Badge className={cn("bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200")}>
             Active
           </Badge>
         )
       case "expired":
         return (
-          <Badge variant="outline" className="bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200">
+          <Badge className={cn("bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200")}>
             Expired
           </Badge>
         )
       case "inactive":
         return (
-          <Badge variant="outline" className="bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200">
+          <Badge className={cn("bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200")}>
             Inactive
           </Badge>
         )
@@ -113,41 +113,41 @@ export function ApiKeysPanel() {
 
       {apiKeys.map((apiKey) => (
         <div key={apiKey.id} className="space-y-2">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
             <div>
               <Label htmlFor={`apiKey-${apiKey.id}`}>{apiKey.name}</Label>
               <p className="text-xs text-muted-foreground mt-1">{apiKey.description}</p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs text-muted-foreground">
                 Last used: {formatDateTime(apiKey.lastUsed)}
               </span>
               {getStatusBadge(apiKey.status)}
             </div>
           </div>
-          <div className="flex gap-2">
-            <div className="relative flex-1">
+          <div className="flex flex-col sm:flex-row gap-2">
+            <div className="relative w-full">
               <Input
                 id={`apiKey-${apiKey.id}`}
                 value={visibleKeys[apiKey.id] ? apiKey.key : apiKey.key}
                 type={visibleKeys[apiKey.id] ? "text" : "password"}
                 placeholder="Enter your X/Twitter API credential"
+                className="w-full"
               />
             </div>
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => toggleKeyVisibility(apiKey.id)}
-            >
-              {visibleKeys[apiKey.id] ? (
-                <EyeOff className="h-4 w-4" />
-              ) : (
-                <Eye className="h-4 w-4" />
-              )}
-            </Button>
-            <Button variant="outline" size="icon">
-              <RefreshCw className="h-4 w-4" />
-            </Button>
+            <div className="flex gap-2 mt-2 sm:mt-0">
+              <Button
+                className={cn("border border-input bg-background hover:bg-accent hover:text-accent-foreground h-10 w-10")}
+                onClick={() => toggleKeyVisibility(apiKey.id)}
+              >
+                {visibleKeys[apiKey.id] ? "Hide" : "Show"}
+              </Button>
+              <Button 
+                className={cn("border border-input bg-background hover:bg-accent hover:text-accent-foreground h-10 w-10")}
+              >
+                Refresh
+              </Button>
+            </div>
           </div>
         </div>
       ))}

@@ -4,7 +4,6 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { DashboardHeader } from "@/components/dashboard-header"
 import { DashboardShell } from "@/components/dashboard-shell"
 import { ApiKeysPanel } from "@/components/api-keys-panel"
-import { Save, Download, Upload } from "lucide-react"
 
 export const metadata: Metadata = {
   title: "X/Twitter Configuration | Coral Social Media Infrastructure",
@@ -15,17 +14,8 @@ export default function ConfigPage() {
   return (
     <DashboardShell>
       <DashboardHeader heading="X/Twitter Configuration" text="Configure your personal X/Twitter API credentials.">
-        <div className="flex items-center gap-2">
-          <Button variant="outline">
-            <Download className="mr-2 h-4 w-4" />
-            Export Config
-          </Button>
-          <Button variant="outline">
-            <Upload className="mr-2 h-4 w-4" />
-            Import Config
-          </Button>
-          <Button>
-            <Save className="mr-2 h-4 w-4" />
+        <div className="flex justify-end">
+          <Button className="w-full sm:w-auto">
             Save Changes
           </Button>
         </div>
@@ -40,7 +30,7 @@ export default function ConfigPage() {
             <ApiKeysPanel />
           </CardContent>
           <CardFooter className="border-t px-6 py-4">
-            <Button>Save X/Twitter Credentials</Button>
+            <Button className="w-full sm:w-auto">Save X/Twitter Credentials</Button>
           </CardFooter>
         </Card>
       </div>
