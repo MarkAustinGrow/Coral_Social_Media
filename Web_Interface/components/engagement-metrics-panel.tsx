@@ -10,6 +10,7 @@ import { DataState } from "@/components/ui/data-state"
 import { useTopicsData, Topic } from "@/hooks/use-topics-data"
 import { Search, Plus, ArrowUpDown, Trash2, RefreshCw } from "lucide-react"
 import { toast } from "@/hooks/use-toast"
+import { cn } from "@/lib/utils"
 
 
 export function EngagementMetricsPanel() {
@@ -128,7 +129,7 @@ export function EngagementMetricsPanel() {
     if (!category) return null;
     
     return (
-      <Badge variant="outline" className="bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
+      <Badge className="bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
         {category}
       </Badge>
     )
@@ -164,8 +165,8 @@ export function EngagementMetricsPanel() {
   
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-2">
-        <div className="relative flex-1">
+      <div className="flex flex-col sm:flex-row gap-3">
+        <div className="relative w-full">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input
             type="search"
@@ -175,20 +176,25 @@ export function EngagementMetricsPanel() {
             onChange={(e) => setSearchQuery(e.target.value)}
           />
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => handleSort("topic")}>
+        <div className="flex flex-wrap gap-2 mt-2 sm:mt-0">
+          <Button 
+            onClick={() => handleSort("topic")}
+            className={cn("flex-1 sm:flex-none h-9 rounded-md px-3", "border border-input bg-background hover:bg-accent hover:text-accent-foreground")}
+          >
             Topic
             <ArrowUpDown className="ml-2 h-3 w-3" />
           </Button>
-          <Button variant="outline" size="sm" onClick={() => handleSort("engagement_score")}>
+          <Button 
+            onClick={() => handleSort("engagement_score")}
+            className={cn("flex-1 sm:flex-none h-9 rounded-md px-3", "border border-input bg-background hover:bg-accent hover:text-accent-foreground")}
+          >
             Score
             <ArrowUpDown className="ml-2 h-3 w-3" />
           </Button>
           <Button 
-            variant="outline" 
-            size="sm" 
             onClick={handleRefresh}
             disabled={isRefreshing}
+            className={cn("flex-1 sm:flex-none h-9 rounded-md px-3", "border border-input bg-background hover:bg-accent hover:text-accent-foreground")}
           >
             <RefreshCw className={`mr-2 h-3 w-3 ${isRefreshing ? 'animate-spin' : ''}`} />
             Refresh
@@ -216,8 +222,6 @@ export function EngagementMetricsPanel() {
                       Updated: {formatDateTime(topic.last_updated)}
                     </span>
                     <Button 
-                      variant="ghost" 
-                      size="icon" 
                       className="h-8 w-8 text-muted-foreground hover:text-destructive"
                       onClick={() => handleDeleteTopic(topic.id)}
                     >
@@ -248,13 +252,13 @@ export function EngagementMetricsPanel() {
                     <Switch
                       id={`active-${topic.id}`}
                       checked={topic.is_active}
-                      onCheckedChange={(checked) => handleActiveChange(topic.id, checked)}
+                      onCheckedChange={(checked: boolean) => handleActiveChange(topic.id, checked)}
                     />
                     <Label htmlFor={`active-${topic.id}`}>Active</Label>
                     <div className="flex-1"></div>
                     <div className="flex flex-wrap gap-1 justify-end">
                       {topic.subtopics && topic.subtopics.length > 0 && topic.subtopics.map((subtopic, i) => (
-                        <Badge key={i} variant="secondary" className="text-xs">
+                        <Badge key={i} className="text-xs bg-secondary text-secondary-foreground">
                           {subtopic}
                         </Badge>
                       ))}
@@ -267,14 +271,18 @@ export function EngagementMetricsPanel() {
         )}
       </DataState>
       
-      <div className="flex gap-2 pt-2">
+      <div className="flex flex-col sm:flex-row gap-2 pt-2">
         <Input
           placeholder="Add new topic..."
           value={newTopic}
           onChange={(e) => setNewTopic(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && handleAddTopic()}
+          className="w-full"
         />
-        <Button onClick={handleAddTopic}>
+        <Button 
+          onClick={handleAddTopic}
+          className="mt-2 sm:mt-0"
+        >
           <Plus className="mr-2 h-4 w-4" />
           Add Topic
         </Button>
