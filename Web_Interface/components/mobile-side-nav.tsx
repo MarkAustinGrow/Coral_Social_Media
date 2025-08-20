@@ -21,12 +21,18 @@ import {
   Zap,
   Database,
 } from "lucide-react"
+import { CoralIcon } from "./coral-icon"
 
 const items = [
   {
     title: "Dashboard",
     href: "/",
     icon: LayoutDashboard,
+  },
+  {
+    title: "Coral Inspector",
+    href: "/coral-inspector",
+    icon: CoralIcon,
   },
   {
     title: "X API Usage",
