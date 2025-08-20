@@ -26,6 +26,7 @@ import { DataState } from "@/components/ui/data-state"
 import { useToast } from "@/hooks/use-toast"
 import { useMemoryData, QdrantMemory, MemoryFilters } from "@/hooks/use-memory-data"
 import type { DateRange } from "react-day-picker"
+import { cn } from "@/lib/utils"
 
 export function MemoryDashboard() {
   const { toast } = useToast()
@@ -137,19 +138,19 @@ export function MemoryDashboard() {
     switch (sentiment) {
       case "positive":
         return (
-          <Badge variant="outline" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
+          <Badge className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
             Positive
           </Badge>
         )
       case "negative":
         return (
-          <Badge variant="outline" className="bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200">
+          <Badge className="bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200">
             Negative
           </Badge>
         )
       case "neutral":
         return (
-          <Badge variant="outline" className="bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200">
+          <Badge className="bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200">
             Neutral
           </Badge>
         )
@@ -184,7 +185,7 @@ export function MemoryDashboard() {
 
             <div className="space-y-2">
               <Label>Topic</Label>
-              <Select value={filters.topic} onValueChange={(value) => setFilters({ ...filters, topic: value })}>
+              <Select value={filters.topic} onValueChange={(value: string) => setFilters({ ...filters, topic: value })}>
                 <SelectTrigger>
                   <SelectValue placeholder="All topics" />
                 </SelectTrigger>
@@ -201,7 +202,7 @@ export function MemoryDashboard() {
 
             <div className="space-y-2">
               <Label>Sentiment</Label>
-              <Select value={filters.sentiment} onValueChange={(value) => setFilters({ ...filters, sentiment: value })}>
+              <Select value={filters.sentiment} onValueChange={(value: string) => setFilters({ ...filters, sentiment: value })}>
                 <SelectTrigger>
                   <SelectValue placeholder="All sentiments" />
                 </SelectTrigger>
@@ -218,7 +219,7 @@ export function MemoryDashboard() {
 
             <div className="space-y-2">
               <Label>Persona</Label>
-              <Select value={filters.persona} onValueChange={(value) => setFilters({ ...filters, persona: value })}>
+              <Select value={filters.persona} onValueChange={(value: string) => setFilters({ ...filters, persona: value })}>
                 <SelectTrigger>
                   <SelectValue placeholder="All personas" />
                 </SelectTrigger>
@@ -244,19 +245,32 @@ export function MemoryDashboard() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <Button onClick={handleSearch} disabled={isLoading}>
-              {isLoading ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4" />}
-              Search
-            </Button>
-            <Button variant="outline" onClick={handleReset}>
-              Reset
-            </Button>
-            <Button variant="outline" onClick={handleExport} disabled={memories.length === 0}>
-              <Download className="mr-2 h-4 w-4" />
-              Export ({memories.length})
-            </Button>
-            <div className="text-xs text-muted-foreground ml-2">
+          <div className="flex flex-col sm:flex-row gap-3 sm:items-center">
+            <div className="flex flex-wrap gap-2">
+              <Button 
+                onClick={handleSearch} 
+                disabled={isLoading}
+                className="w-full sm:w-auto"
+              >
+                {isLoading ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4" />}
+                Search
+              </Button>
+              <Button 
+                onClick={handleReset}
+                className={cn("w-full sm:w-auto", "border border-input bg-background hover:bg-accent hover:text-accent-foreground")}
+              >
+                Reset
+              </Button>
+              <Button 
+                onClick={handleExport} 
+                disabled={memories.length === 0}
+                className={cn("w-full sm:w-auto", "border border-input bg-background hover:bg-accent hover:text-accent-foreground")}
+              >
+                <Download className="mr-2 h-4 w-4" />
+                Export ({memories.length})
+              </Button>
+            </div>
+            <div className="text-xs text-muted-foreground mt-1 sm:mt-0 sm:ml-2">
               {queryTime > 0 ? `Search completed in ${queryTime}ms` : ""}
             </div>
           </div>
@@ -274,7 +288,7 @@ export function MemoryDashboard() {
                   Viewing memories for {user.email}
                 </p>
               </div>
-              <Badge variant="outline" className="px-3 py-1">
+              <Badge className="px-3 py-1">
                 User-Specific Collection
               </Badge>
             </div>
@@ -308,7 +322,10 @@ export function MemoryDashboard() {
               <AlertTitle>Error loading data</AlertTitle>
               <AlertDescription className="mt-2">
                 <p>{error.message}</p>
-                <Button variant="outline" size="sm" className="mt-2" onClick={handleSearch}>
+                <Button 
+                  onClick={handleSearch}
+                  className={cn("mt-2", "h-9 rounded-md px-3")}
+                >
                   Try again
                 </Button>
               </AlertDescription>
@@ -319,7 +336,10 @@ export function MemoryDashboard() {
               <p className="text-muted-foreground mb-4">
                 Try adjusting your search criteria or adding more memories through the Tweet Research Agent.
               </p>
-              <Button onClick={handleReset} variant="outline">
+              <Button 
+                onClick={handleReset} 
+                className={cn("border border-input bg-background hover:bg-accent hover:text-accent-foreground")}
+              >
                 Reset Filters
               </Button>
             </div>
@@ -350,12 +370,12 @@ export function MemoryDashboard() {
                         <TableCell>
                           <div className="flex flex-wrap gap-1">
                             {memory.topics.slice(0, 2).map((topic) => (
-                              <Badge key={topic} variant="secondary" className="text-xs">
+                              <Badge key={topic} className="text-xs bg-secondary text-secondary-foreground">
                                 {topic.replace(/_/g, " ")}
                               </Badge>
                             ))}
                             {memory.topics.length > 2 && (
-                              <Badge variant="outline" className="text-xs">
+                              <Badge className="text-xs">
                                 +{memory.topics.length - 2}
                               </Badge>
                             )}
@@ -374,9 +394,7 @@ export function MemoryDashboard() {
                             <Dialog>
                               <DialogTrigger asChild>
                                 <Button
-                                  variant="outline"
-                                  size="icon"
-                                  className="h-8 w-8"
+                                  className={cn("h-8 w-8", "border border-input bg-background hover:bg-accent hover:text-accent-foreground")}
                                   onClick={() => setSelectedMemory(memory)}
                                 >
                                   <Eye className="h-4 w-4" />
@@ -409,7 +427,7 @@ export function MemoryDashboard() {
                                           <h4 className="font-medium mb-2">Topics</h4>
                                           <div className="flex flex-wrap gap-1">
                                             {selectedMemory.topics.map((topic) => (
-                                              <Badge key={topic} variant="secondary">
+                                              <Badge key={topic} className="bg-secondary text-secondary-foreground">
                                                 {topic.replace(/_/g, " ")}
                                               </Badge>
                                             ))}
@@ -420,7 +438,7 @@ export function MemoryDashboard() {
                                           <h4 className="font-medium mb-2">Related Entities</h4>
                                           <div className="flex flex-wrap gap-1">
                                             {selectedMemory.related_entities.map((entity) => (
-                                              <Badge key={entity} variant="outline">
+                                              <Badge key={entity}>
                                                 {entity}
                                               </Badge>
                                             ))}
@@ -485,9 +503,7 @@ export function MemoryDashboard() {
                             </Dialog>
 
                             <Button 
-                              variant="outline" 
-                              size="icon" 
-                              className="h-8 w-8 text-red-600 hover:text-red-700"
+                              className={cn("h-8 w-8 text-red-600 hover:text-red-700", "border border-input bg-background hover:bg-accent hover:text-accent-foreground")}
                               onClick={() => handleDelete(memory.point_id)}
                             >
                               <Trash2 className="h-4 w-4" />
@@ -504,10 +520,9 @@ export function MemoryDashboard() {
           {nextPageOffset && (
             <div className="flex justify-center mt-6">
               <Button 
-                variant="outline" 
                 onClick={() => loadMoreMemories()} 
                 disabled={isLoading}
-                className="w-full max-w-xs"
+                className={cn("w-full max-w-xs", "border border-input bg-background hover:bg-accent hover:text-accent-foreground")}
               >
                 {isLoading ? (
                   <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
