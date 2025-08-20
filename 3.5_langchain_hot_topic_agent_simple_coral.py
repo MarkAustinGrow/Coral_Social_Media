@@ -507,13 +507,46 @@ async def main():
         logger.info("Starting Hot Topic Agent (Coral Protocol) execution")
         log_to_database("info", "Starting Hot Topic Agent (Coral Protocol) execution")
         
-        # Infinite loop with persistent connection following working World News Agent pattern
+        # OPTIMIZED MAIN LOOP - Only call OpenAI when there's actual work to do
         while True:
             try:
-                logger.info("Starting new agent invocation")
-                await agent_executor.ainvoke({})
-                logger.info("Completed agent invocation, restarting loop")
-                await asyncio.sleep(1)
+                logger.info("Waiting for mentions...")
+                log_to_database("info", "Waiting for mentions from other agents")
+                
+                # Find the wait_for_mentions tool from coral_tools
+                wait_for_mentions_tool = next((tool for tool in coral_tools if tool.name == "wait_for_mentions"), None)
+                
+                if not wait_for_mentions_tool:
+                    logger.error("wait_for_mentions tool not found in coral_tools")
+                    log_to_database("error", "wait_for_mentions tool not found in coral_tools")
+                    await asyncio.sleep(5)
+                    continue
+                
+                # Call wait_for_mentions directly through MCP (NO OpenAI API call)
+                try:
+                    mention_result = await wait_for_mentions_tool.ainvoke({"timeoutMs": 8000})
+                    
+                    if mention_result and "mentions" in mention_result and mention_result["mentions"]:
+                        # We received mentions - NOW invoke OpenAI to process them
+                        logger.info("Received mentions, processing with OpenAI...")
+                        log_to_database("info", "Received mentions, invoking agent executor")
+                        
+                        # Only NOW do we call OpenAI API
+                        await agent_executor.ainvoke({
+                            "agent_scratchpad": [],
+                            "mentions": mention_result["mentions"]  # Pass the mentions to the agent
+                        })
+                        
+                        logger.info("Completed processing mentions")
+                        log_to_database("info", "Completed processing mentions")
+                    else:
+                        # No mentions received, just continue waiting (no OpenAI call)
+                        logger.info("No mentions received, continuing to wait...")
+                        await asyncio.sleep(1)
+                except Exception as e:
+                    logger.error(f"Error waiting for mentions: {str(e)}")
+                    log_to_database("error", f"Error waiting for mentions: {str(e)}")
+                    await asyncio.sleep(5)
             except Exception as e:
                 logger.error(f"Error in agent loop: {str(e)}")
                 log_to_database("error", f"Error in agent loop: {str(e)}")
