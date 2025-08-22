@@ -727,6 +727,205 @@ Web_Interface/
 - **User Profile** (`app/api/user/profile/route.ts`): User profile management API
 - **Authentication APIs**: Various endpoints for user authentication and session management
 
+## Build Process and Deployment
+
+The Coral Social Media Infrastructure requires proper configuration of both the application and server components to ensure smooth operation. This section covers the build process, deployment steps, and server configuration.
+
+### Build Process
+
+The Next.js web application requires building before deployment:
+
+```bash
+# Navigate to the Web Interface directory
+cd Web_Interface
+
+# Install dependencies (use legacy-peer-deps for compatibility)
+npm install --legacy-peer-deps
+
+# Build the application
+npm run build
+
+# Start the application
+npm start
+```
+
+### PM2 Process Management
+
+The system uses PM2 for process management to ensure the application and agents run continuously. The configuration is defined in `ecosystem.config.js`:
+
+```javascript
+module.exports = {
+  apps: [
+    {
+      name: "coral-social-media",
+      cwd: "./Web_Interface",
+      script: "npm",
+      args: "start",
+      env: {
+        NODE_ENV: "production",
+        PORT: 3000
+      },
+      watch: false,
+      instances: 1,
+      exec_mode: "fork",
+      max_memory_restart: "500M",
+      restart_delay: 3000,
+      autorestart: true
+    },
+    {
+      name: "interface-agent",
+      script: "./0_langchain_interface.py",
+      interpreter: "python",
+      env: {
+        PYTHONUNBUFFERED: "1"
+      },
+      watch: false,
+      instances: 1,
+      exec_mode: "fork",
+      max_memory_restart: "1G",
+      restart_delay: 5000,
+      autorestart: true
+    }
+  ]
+}
+```
+
+This configuration:
+- Manages the Next.js web application (`coral-social-media`)
+- Manages the Interface Agent (`interface-agent`)
+- Sets appropriate memory limits and restart policies
+- Configures the web application to run on port 3000
+
+### Nginx Configuration
+
+The system uses Nginx as a reverse proxy to forward requests to the application. Create a custom Nginx configuration file:
+
+```bash
+sudo nano /etc/nginx/sites-available/coral-social-media
+```
+
+Add the following configuration:
+
+```
+server {
+    listen 80;
+    server_name your_domain_or_ip;
+
+    location / {
+        proxy_pass http://localhost:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+    }
+}
+```
+
+Enable the site and restart Nginx:
+
+```bash
+# Create symbolic link to enable the site
+sudo ln -s /etc/nginx/sites-available/coral-social-media /etc/nginx/sites-enabled/
+
+# Test Nginx configuration
+sudo nginx -t
+
+# Restart Nginx
+sudo systemctl restart nginx
+```
+
+### Deployment Process
+
+To deploy the application:
+
+1. **Pull the latest changes from GitHub**:
+   ```bash
+   git pull origin your_branch_name
+   ```
+
+2. **Install dependencies and build the application**:
+   ```bash
+   cd Web_Interface
+   npm install --legacy-peer-deps
+   npm run build
+   ```
+
+3. **Update PM2 configuration**:
+   ```bash
+   # Stop all PM2 processes
+   pm2 stop all
+
+   # Delete all PM2 processes
+   pm2 delete all
+
+   # Start processes with the new configuration
+   pm2 start ecosystem.config.js
+
+   # Save the PM2 configuration
+   pm2 save
+   ```
+
+4. **Verify the deployment**:
+   ```bash
+   # Check PM2 processes
+   pm2 list
+
+   # Check Nginx status
+   sudo systemctl status nginx
+   ```
+
+### Troubleshooting
+
+#### 502 Bad Gateway Error
+
+If you encounter a 502 Bad Gateway error:
+
+1. **Check if the application is running**:
+   ```bash
+   pm2 list
+   ```
+
+2. **Check if the application is listening on the correct port**:
+   ```bash
+   netstat -tulpn | grep 3000
+   ```
+
+3. **Check PM2 logs for errors**:
+   ```bash
+   pm2 logs coral-social-media
+   ```
+
+4. **Verify Nginx configuration**:
+   ```bash
+   sudo nginx -t
+   ```
+
+5. **Check Nginx error logs**:
+   ```bash
+   cat /var/log/nginx/error.log
+   ```
+
+#### Common Issues and Solutions
+
+1. **Port Conflict**: If port 3000 is already in use, update the port in both:
+   - `Web_Interface/package.json`: Change `"start": "next start -p 3000"` to use a different port
+   - `ecosystem.config.js`: Update the PORT environment variable
+   - Nginx configuration: Update the proxy_pass URL to match the new port
+
+2. **PM2 Process Crashes**: Check the logs for errors:
+   ```bash
+   pm2 logs coral-social-media
+   ```
+
+3. **Nginx Configuration Issues**: Ensure the server_name and proxy_pass settings are correct.
+
+4. **Build Errors**: Check for build errors in the Next.js application:
+   ```bash
+   cd Web_Interface
+   npm run build
+   ```
+
 ## Setup and Configuration
 
 The setup wizard (`app/setup/page.tsx` and `
