@@ -5,6 +5,8 @@ import logging
 import signal
 import sys
 import atexit
+import time
+import random
 from datetime import datetime
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain.prompts import ChatPromptTemplate
@@ -145,6 +147,26 @@ async def create_interface_agent(client, tools):
     agent = create_tool_calling_agent(model, tools, prompt)
     return AgentExecutor(agent=agent, tools=tools, verbose=True)
 
+# Heartbeat function to check if the MCP connection is still alive
+async def send_heartbeat(client, user_id):
+    """Send a heartbeat to the MCP server to check if the connection is still alive."""
+    try:
+        # Use a simple tool call as a heartbeat
+        await client.ainvoke_tool("coral", "list_agents", {})
+        web_debug_log("INFO", "Heartbeat successful", {"user_id": user_id})
+        return True
+    except Exception as e:
+        web_debug_log("ERROR", f"Heartbeat failed: {str(e)}", {"user_id": user_id})
+        logger.error(f"Heartbeat failed: {e}")
+        return False
+
+# Calculate backoff time with jitter for reconnection attempts
+def calculate_backoff_time(attempt, base_delay=1, max_delay=60):
+    """Calculate exponential backoff time with jitter."""
+    delay = min(base_delay * (2 ** attempt), max_delay)
+    jitter = random.uniform(0, 0.1 * delay)  # 10% jitter
+    return delay + jitter
+
 async def main():
     # Check if user context is available
     if not user_id:
@@ -157,9 +179,20 @@ async def main():
     logger.info(f"Starting Interface Agent for user: {user_id}")
     log_to_database("info", f"Interface Agent starting for user: {user_id}")
     
-    max_retries = 3
+    max_retries = 5  # Increased from 3 to 5
+    heartbeat_interval = 30  # Seconds between heartbeats
+    last_heartbeat_time = 0
+    client = None
+    agent_executor = None
+    
     for attempt in range(max_retries):
         try:
+            # Calculate backoff time with jitter for reconnection attempts
+            if attempt > 0:
+                backoff_time = calculate_backoff_time(attempt - 1)
+                web_debug_log("INFO", f"Backing off for {backoff_time:.2f} seconds before retry", {"user_id": user_id, "attempt": attempt + 1})
+                await asyncio.sleep(backoff_time)
+            
             web_debug_log("INFO", f"Connection attempt {attempt + 1}", {"url": MCP_SERVER_URL, "user_id": user_id})
             logger.info(f"Connecting to SSE endpoint: {MCP_SERVER_URL}")
             
@@ -200,45 +233,100 @@ async def main():
                 logger.info("Starting Interface Agent execution")
                 log_to_database("info", "Starting Interface Agent execution")
                 
-                # Single execution like the original - let the agent handle its own conversation flow
+                # Create the agent executor
                 web_debug_log("INFO", "Creating and invoking agent executor", {"user_id": user_id})
                 agent_executor = await create_interface_agent(client, tools)
                 web_debug_log("INFO", "Agent executor created, starting execution", {"user_id": user_id})
                 
-                await agent_executor.ainvoke({})
+                # Start the heartbeat task
+                last_heartbeat_time = time.time()
                 
-                web_debug_log("INFO", "Interface Agent execution completed successfully", {"user_id": user_id})
-                logger.info("Interface Agent execution completed")
-                log_to_database("info", "Interface Agent execution completed")
-                
-                # Break out of retry loop on successful execution
-                break
+                # Main execution loop with heartbeat
+                try:
+                    # Start the agent execution
+                    execution_task = asyncio.create_task(agent_executor.ainvoke({}))
+                    
+                    # Monitor the execution and send heartbeats
+                    while not execution_task.done():
+                        # Check if it's time for a heartbeat
+                        current_time = time.time()
+                        if current_time - last_heartbeat_time >= heartbeat_interval:
+                            web_debug_log("INFO", "Sending heartbeat", {"user_id": user_id})
+                            heartbeat_success = await send_heartbeat(client, user_id)
+                            last_heartbeat_time = current_time
+                            
+                            if not heartbeat_success:
+                                web_debug_log("ERROR", "Heartbeat failed, reconnecting...", {"user_id": user_id})
+                                # Cancel the current execution task
+                                execution_task.cancel()
+                                # Raise an exception to trigger reconnection
+                                raise ClosedResourceError("Heartbeat failed, reconnecting...")
+                        
+                        # Wait a short time before checking again
+                        await asyncio.sleep(1)
+                    
+                    # Get the result of the execution task
+                    await execution_task
+                    
+                    web_debug_log("INFO", "Interface Agent execution completed successfully", {"user_id": user_id})
+                    logger.info("Interface Agent execution completed")
+                    log_to_database("info", "Interface Agent execution completed")
+                    
+                    # Break out of retry loop on successful execution
+                    break
+                    
+                except asyncio.CancelledError:
+                    web_debug_log("WARN", "Agent execution was cancelled", {"user_id": user_id})
+                    logger.warning("Agent execution was cancelled")
+                    # Don't break, let the retry logic handle reconnection
+                    raise ClosedResourceError("Agent execution was cancelled")
                         
         except ClosedResourceError as e:
             web_debug_log("ERROR", f"ClosedResourceError on attempt {attempt + 1}", {"user_id": user_id, "error": str(e)})
             logger.error(f"ClosedResourceError on attempt {attempt + 1}: {e}")
             log_to_database("error", f"ClosedResourceError on attempt {attempt + 1}: {e}")
+            
+            # Clean up any existing client
+            if client:
+                try:
+                    await client.aclose()
+                except Exception as close_error:
+                    web_debug_log("ERROR", f"Error closing client: {str(close_error)}", {"user_id": user_id})
+            
             if attempt < max_retries - 1:
                 web_debug_log("INFO", "Retrying after ClosedResourceError", {"user_id": user_id, "attempt": attempt + 1})
-                logger.info("Retrying in 5 seconds...")
-                await asyncio.sleep(5)
+                logger.info(f"Retrying after ClosedResourceError (attempt {attempt + 1} of {max_retries})")
+                # Backoff is handled at the beginning of the loop
                 continue
             else:
                 web_debug_log("ERROR", "Max retries reached for ClosedResourceError", {"user_id": user_id})
                 logger.error("Max retries reached. Exiting.")
+                # Notify the user about the connection issue
+                print("\nConnection to the server was lost. Please try again later.\n")
                 raise
+                
         except Exception as e:
             web_debug_log("ERROR", f"Unexpected error on attempt {attempt + 1}", {"user_id": user_id, "error": str(e), "type": type(e).__name__})
             logger.error(f"Unexpected error on attempt {attempt + 1}: {e}")
             log_to_database("error", f"Unexpected error on attempt {attempt + 1}: {e}")
+            
+            # Clean up any existing client
+            if client:
+                try:
+                    await client.aclose()
+                except Exception as close_error:
+                    web_debug_log("ERROR", f"Error closing client: {str(close_error)}", {"user_id": user_id})
+            
             if attempt < max_retries - 1:
                 web_debug_log("INFO", "Retrying after unexpected error", {"user_id": user_id, "attempt": attempt + 1})
-                logger.info("Retrying in 5 seconds...")
-                await asyncio.sleep(5)
+                logger.info(f"Retrying after unexpected error (attempt {attempt + 1} of {max_retries})")
+                # Backoff is handled at the beginning of the loop
                 continue
             else:
                 web_debug_log("ERROR", "Max retries reached for unexpected error", {"user_id": user_id})
                 logger.error("Max retries reached. Exiting.")
+                # Notify the user about the error
+                print(f"\nAn unexpected error occurred: {str(e)}. Please try again later.\n")
                 raise
 
 if __name__ == "__main__":

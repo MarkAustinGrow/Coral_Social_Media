@@ -156,7 +156,7 @@ async function startPythonInterfaceAgent(userId: string, session: any, initialMe
     logWithTimestamp('INFO', 'Python process spawned', { userId, pid: agentProcess.pid })
     session.agentProcess = agentProcess
     
-    // Handle stdout (agent output)
+// Handle stdout (agent output)
     agentProcess.stdout.on('data', async (data: Buffer) => {
       const output = data.toString()
       logWithTimestamp('INFO', 'Python stdout received', { userId, outputLength: output.length, preview: output.substring(0, 200) })
@@ -180,6 +180,29 @@ async function startPythonInterfaceAgent(userId: string, session: any, initialMe
             
             session.conversationState = 'waiting_for_user'
             logWithTimestamp('INFO', 'Conversation state changed to waiting_for_user', { userId })
+          }
+          // Check for heartbeat messages
+          else if (line.includes('[WEB_DEBUG] [INFO] Heartbeat successful')) {
+            logWithTimestamp('INFO', 'Heartbeat successful', { userId })
+            // No need to send this to the client, it's just for internal monitoring
+          }
+          // Check for heartbeat failure messages
+          else if (line.includes('[WEB_DEBUG] [ERROR] Heartbeat failed')) {
+            logWithTimestamp('WARN', 'Heartbeat failed, agent will attempt reconnection', { userId })
+            await writer.write(`data: ${JSON.stringify({
+              type: 'status',
+              message: 'Connection issue detected, attempting to reconnect...',
+              timestamp: new Date().toISOString()
+            })}\n\n`)
+          }
+          // Check for reconnection messages
+          else if (line.includes('Retrying after ClosedResourceError') || line.includes('Backing off for')) {
+            logWithTimestamp('INFO', 'Agent reconnection attempt', { userId })
+            await writer.write(`data: ${JSON.stringify({
+              type: 'status',
+              message: 'Reconnecting to server...',
+              timestamp: new Date().toISOString()
+            })}\n\n`)
           }
           // Check for other important output
           else if (line.includes('Connected to MCP server')) {
@@ -218,20 +241,47 @@ async function startPythonInterfaceAgent(userId: string, session: any, initialMe
         }
       } catch (error: any) {
         logWithTimestamp('ERROR', 'Error processing stdout', { userId, error: error.message })
+        
+        // Try to notify the client about the error
+        try {
+          await writer.write(`data: ${JSON.stringify({
+            type: 'error',
+            message: `Error processing agent output: ${error.message}`,
+            timestamp: new Date().toISOString()
+          })}\n\n`)
+        } catch (writeError: any) {
+          logWithTimestamp('ERROR', 'Failed to send error to client', { userId, error: writeError.message })
+        }
       }
     })
 
-    // Handle stderr (agent errors)
+// Handle stderr (agent errors)
     agentProcess.stderr.on('data', async (data: Buffer) => {
       const error = data.toString()
       logWithTimestamp('ERROR', 'Python stderr received', { userId, error: error.substring(0, 200) })
       
       try {
-        await writer.write(`data: ${JSON.stringify({
-          type: 'error',
-          message: `Agent Error: ${error}`,
-          timestamp: new Date().toISOString()
-        })}\n\n`)
+        // Check if this is a network-related error
+        const isNetworkError = error.includes('ClosedResourceError') || 
+                              error.includes('ConnectionError') || 
+                              error.includes('TimeoutError') ||
+                              error.includes('network error');
+        
+        if (isNetworkError) {
+          // For network errors, send a more user-friendly message
+          await writer.write(`data: ${JSON.stringify({
+            type: 'status',
+            message: 'Connection issue detected, attempting to reconnect...',
+            timestamp: new Date().toISOString()
+          })}\n\n`)
+        } else {
+          // For other errors, send the raw error message
+          await writer.write(`data: ${JSON.stringify({
+            type: 'error',
+            message: `Agent Error: ${error}`,
+            timestamp: new Date().toISOString()
+          })}\n\n`)
+        }
       } catch (writeError: any) {
         logWithTimestamp('ERROR', 'Error writing stderr to SSE stream', { userId, error: writeError.message })
       }
@@ -263,29 +313,83 @@ async function startPythonInterfaceAgent(userId: string, session: any, initialMe
       }
     })
 
-    // Handle process error
+// Handle process error
     agentProcess.on('error', async (error: Error) => {
       logWithTimestamp('ERROR', 'Python process error', { userId, error: error.message, stack: error.stack })
       
       try {
-        await writer.write(`data: ${JSON.stringify({
-          type: 'error',
-          message: `Failed to start Interface Agent: ${error.message}`,
-          timestamp: new Date().toISOString()
-        })}\n\n`)
+        // Check if this is a network-related error
+        const isNetworkError = error.message.includes('network') || 
+                              error.message.includes('connection') || 
+                              error.message.includes('timeout') ||
+                              error.message.includes('closed');
+        
+        if (isNetworkError) {
+          // For network errors, send a more user-friendly message
+          await writer.write(`data: ${JSON.stringify({
+            type: 'status',
+            message: 'Connection issue detected. The system will attempt to reconnect automatically.',
+            timestamp: new Date().toISOString()
+          })}\n\n`)
+          
+          // Don't clean up the session yet, give the reconnection logic a chance to work
+          logWithTimestamp('INFO', 'Network error detected, waiting for reconnection', { userId })
+          
+          // Set a timeout to clean up the session if reconnection doesn't happen
+          setTimeout(async () => {
+            // Check if the session still exists and the process is still in error state
+            const currentSession = activeSessions.get(userId)
+            if (currentSession && (!currentSession.agentProcess || currentSession.agentProcess.killed)) {
+              logWithTimestamp('INFO', 'Reconnection timeout, cleaning up session', { userId })
+              activeSessions.delete(userId)
+              
+              try {
+                await writer.write(`data: ${JSON.stringify({
+                  type: 'error',
+                  message: 'Failed to reconnect. Please try again later.',
+                  timestamp: new Date().toISOString()
+                })}\n\n`)
+                
+                await writer.close()
+                logWithTimestamp('INFO', 'SSE writer closed after reconnection timeout', { userId })
+              } catch (closeError: any) {
+                logWithTimestamp('ERROR', 'Error closing SSE writer after reconnection timeout', { userId, error: closeError.message })
+              }
+            }
+          }, 30000) // 30 second timeout for reconnection
+          
+        } else {
+          // For other errors, send the raw error message and clean up
+          await writer.write(`data: ${JSON.stringify({
+            type: 'error',
+            message: `Failed to start Interface Agent: ${error.message}`,
+            timestamp: new Date().toISOString()
+          })}\n\n`)
+          
+          // Clean up session
+          logWithTimestamp('INFO', 'Cleaning up session after process error', { userId })
+          activeSessions.delete(userId)
+          
+          try {
+            await writer.close()
+            logWithTimestamp('INFO', 'SSE writer closed after process error', { userId })
+          } catch (closeError: any) {
+            logWithTimestamp('ERROR', 'Error closing SSE writer after process error', { userId, error: closeError.message })
+          }
+        }
       } catch (writeError: any) {
         logWithTimestamp('ERROR', 'Error writing process error to SSE stream', { userId, error: writeError.message })
-      }
-      
-      // Clean up session
-      logWithTimestamp('INFO', 'Cleaning up session after process error', { userId })
-      activeSessions.delete(userId)
-      
-      try {
-        await writer.close()
-        logWithTimestamp('INFO', 'SSE writer closed after process error', { userId })
-      } catch (closeError: any) {
-        logWithTimestamp('ERROR', 'Error closing SSE writer after process error', { userId, error: closeError.message })
+        
+        // Clean up session
+        logWithTimestamp('INFO', 'Cleaning up session after write error', { userId })
+        activeSessions.delete(userId)
+        
+        try {
+          await writer.close()
+          logWithTimestamp('INFO', 'SSE writer closed after write error', { userId })
+        } catch (closeError: any) {
+          logWithTimestamp('ERROR', 'Error closing SSE writer after write error', { userId, error: closeError.message })
+        }
       }
     })
 
