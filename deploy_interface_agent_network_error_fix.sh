@@ -1,59 +1,69 @@
 #!/bin/bash
 
-# Deploy Interface Agent Network Error Fix
-# This script deploys the fixes for the Interface Agent network error issue
+# Deployment script for Interface Agent Network Error Fix
+# This script deploys the updated files to fix network errors in the Interface Agent
 
-echo "🚀 Deploying Interface Agent Network Error Fix..."
+echo "===== Interface Agent Network Error Fix Deployment ====="
+echo "Starting deployment at $(date)"
 
-# Set the working directory to the project root
-cd "$(dirname "$0")"
-PROJECT_ROOT=$(pwd)
-
-echo "📂 Project root: $PROJECT_ROOT"
-
-# Check if we're in the correct directory
-if [ ! -f "0_langchain_interface.py" ]; then
-    echo "❌ Error: Script must be run from the project root directory"
-    exit 1
+# Check if we're in the right directory
+if [ ! -d "Web_Interface" ]; then
+  echo "Error: Please run this script from the project root directory (where Web_Interface is located)"
+  exit 1
 fi
 
-# Backup the original files
-echo "📦 Creating backups of original files..."
-cp 0_langchain_interface.py 0_langchain_interface.py.bak
-cp Web_Interface/app/api/coral/interface-agent/route.ts Web_Interface/app/api/coral/interface-agent/route.ts.bak
+# Create backup directory
+BACKUP_DIR="backups/interface_agent_fix_$(date +%Y%m%d_%H%M%S)"
+mkdir -p "$BACKUP_DIR/Web_Interface/app/api/coral"
+mkdir -p "$BACKUP_DIR/Web_Interface/app/coral-inspector"
 
-echo "✅ Backups created successfully"
+echo "Created backup directory: $BACKUP_DIR"
 
-# Copy the updated files
-echo "📋 Copying updated files..."
-# No need to copy, as we've already updated the files in place
+# Backup current files
+echo "Backing up current files..."
+cp Web_Interface/app/api/coral/interface-agent/route.ts "$BACKUP_DIR/Web_Interface/app/api/coral/"
+cp Web_Interface/app/api/coral/stream/route.ts "$BACKUP_DIR/Web_Interface/app/api/coral/"
+cp Web_Interface/app/coral-inspector/page.tsx "$BACKUP_DIR/Web_Interface/app/coral-inspector/"
 
-# Restart the Interface Agent service
-echo "🔄 Restarting Interface Agent service..."
+echo "Files backed up successfully"
 
-# Stop any running Interface Agent processes
-echo "🛑 Stopping any running Interface Agent processes..."
-pkill -f "0_langchain_interface.py" || true
+# Deploy to production server
+echo "Deploying updated files to production server..."
 
-# Restart the web interface
-echo "🔄 Rebuilding and restarting the web interface..."
-cd Web_Interface
-npm run build
-cd ..
+# Replace with your actual server details
+SERVER_USER="admin"
+SERVER_HOST="coral.8interns.com"
+SERVER_PATH="/var/www/coral-social-media"
 
-# If using PM2, restart the web interface
-if command -v pm2 &> /dev/null; then
-    echo "🔄 Restarting PM2 processes..."
-    pm2 restart all
-else
-    echo "⚠️ PM2 not found, skipping PM2 restart"
-fi
+# Copy the updated files to the server
+echo "Copying files to server..."
+scp Web_Interface/app/api/coral/interface-agent/route.ts "$SERVER_USER@$SERVER_HOST:$SERVER_PATH/Web_Interface/app/api/coral/interface-agent/"
+scp Web_Interface/app/api/coral/stream/route.ts "$SERVER_USER@$SERVER_HOST:$SERVER_PATH/Web_Interface/app/api/coral/"
+scp Web_Interface/app/coral-inspector/page.tsx "$SERVER_USER@$SERVER_HOST:$SERVER_PATH/Web_Interface/app/coral-inspector/"
 
-echo "📝 Creating completion marker file..."
-echo "Interface Agent Network Error Fix has been deployed successfully on $(date)" > INTERFACE_AGENT_NETWORK_ERROR_FIX_COMPLETE.md
+# Rebuild the Next.js application
+echo "Rebuilding Next.js application on server..."
+ssh "$SERVER_USER@$SERVER_HOST" "cd $SERVER_PATH/Web_Interface && npm run build"
 
-echo "✅ Deployment complete!"
-echo "🔍 You can now test the Interface Agent to verify the fix"
-echo "📊 Monitor the logs for any remaining issues"
+# Restart the Next.js application
+echo "Restarting Next.js application..."
+ssh "$SERVER_USER@$SERVER_HOST" "cd $SERVER_PATH && pm2 restart ecosystem.config.js"
 
-exit 0
+# Restart the Interface Agent if it's running separately
+echo "Restarting Interface Agent..."
+ssh "$SERVER_USER@$SERVER_HOST" "cd $SERVER_PATH && python stop_all_agents.py && sleep 5 && pm2 restart ecosystem.config.js"
+
+echo "Deployment completed at $(date)"
+echo "===== Verification Steps ====="
+echo "1. Log in to the application"
+echo "2. Navigate to the Coral Inspector page"
+echo "3. Send a message and verify it's processed correctly"
+echo "4. Check for any network errors in the browser console"
+echo "5. Verify the connection remains stable for at least 5 minutes"
+
+echo "===== Rollback Instructions ====="
+echo "If issues are encountered, restore from backup:"
+echo "1. Copy files from $BACKUP_DIR back to their original locations"
+echo "2. Rebuild and restart the application"
+
+echo "Deployment script completed successfully"

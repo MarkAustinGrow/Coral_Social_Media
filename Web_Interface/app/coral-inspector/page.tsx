@@ -310,43 +310,100 @@ function CoralInspectorPageContent() {
     }
   }
 
-  // Setup SSE connection for real-time messages
+  // Setup SSE connection for real-time messages with improved error handling
   useEffect(() => {
     if (!user || activeTab !== 'threads') return
 
     // Load historical messages first
     loadHistoricalMessages()
 
-    const eventSource = new EventSource(`/api/coral/stream?agentId=user_interface_agent_${user.id}&userId=${user.id}`)
+    let eventSource: EventSource | null = null
+    let reconnectAttempt = 0
+    const maxReconnectAttempts = 10
+    const baseReconnectDelay = 1000 // Start with 1 second
+    
+    const connectEventSource = () => {
+      // Close existing connection if any
+      if (eventSource) {
+        eventSource.close()
+      }
+      
+      console.log(`Connecting to SSE stream (attempt ${reconnectAttempt + 1})`)
+      
+      // Create new EventSource connection
+      eventSource = new EventSource(`/api/coral/stream?agentId=user_interface_agent_${user.id}&userId=${user.id}`)
+      
+      // Handle connection open
+      eventSource.onopen = () => {
+        console.log("SSE connection established")
+        reconnectAttempt = 0 // Reset reconnect counter on successful connection
+      }
 
-    eventSource.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data)
-        console.log("New message:", data)
+      // Handle messages
+      eventSource.onmessage = (event) => {
+        try {
+          // Check if the event data is valid JSON
+          if (!event.data || event.data.trim() === '') {
+            console.warn("Received empty SSE message, ignoring")
+            return
+          }
+          
+          const data = JSON.parse(event.data)
+          console.log("New message:", data)
 
-        // Add new message to the thread
-        const newMessage: ThreadMessage = {
-          id: data.id || `msg_${Date.now()}`,
-          threadId: data.threadId || 'default',
-          fromAgentId: data.fromAgentId || 'unknown',
-          toAgentId: data.toAgentId || 'unknown',
-          content: data.content || data.message || '',
-          timestamp: data.timestamp || new Date().toISOString(),
-          type: data.type || 'message'
+          // Add new message to the thread
+          const newMessage: ThreadMessage = {
+            id: data.id || `msg_${Date.now()}`,
+            threadId: data.threadId || 'default',
+            fromAgentId: data.fromAgentId || 'unknown',
+            toAgentId: data.toAgentId || 'unknown',
+            content: data.content || data.message || '',
+            timestamp: data.timestamp || new Date().toISOString(),
+            type: data.type || 'message'
+          }
+
+          setMessages(prev => [...prev, newMessage])
+        } catch (error) {
+          console.error("Error parsing SSE message:", error)
         }
+      }
 
-        setMessages(prev => [...prev, newMessage])
-      } catch (error) {
-        console.error("Error parsing SSE message:", error)
+      // Handle errors with exponential backoff reconnection
+      eventSource.onerror = (err) => {
+        console.error("SSE error", err)
+        
+        // Close the current connection
+        if (eventSource) {
+          eventSource.close()
+          eventSource = null
+        }
+        
+        // Attempt to reconnect with exponential backoff
+        if (reconnectAttempt < maxReconnectAttempts) {
+          const delay = Math.min(30000, baseReconnectDelay * Math.pow(1.5, reconnectAttempt))
+          console.log(`Reconnecting in ${delay}ms (attempt ${reconnectAttempt + 1})`)
+          
+          setTimeout(() => {
+            reconnectAttempt++
+            connectEventSource()
+          }, delay)
+        } else {
+          console.error(`Max reconnect attempts (${maxReconnectAttempts}) reached`)
+        }
       }
     }
 
-    eventSource.onerror = (err) => {
-      console.error("SSE error", err)
-      eventSource.close()
-    }
+    // Initial connection
+    connectEventSource()
 
-    return () => eventSource.close()
+    // Cleanup function
+    return () => {
+      if (eventSource) {
+        console.log("Closing SSE connection")
+        eventSource.close()
+        eventSource = null
+      }
+    }
   }, [user, activeTab])
 
   // Scroll to bottom when new messages arrive in threads view
@@ -403,6 +460,9 @@ function CoralInspectorPageContent() {
     if (!messageContent || !user?.id) return
 
     try {
+      // Show sending indicator
+      setToolResponse(prev => `${prev}\n[${new Date().toLocaleTimeString()}] Sending: ${messageContent}`)
+      
       // Check if we have an active Interface Agent session
       const statusResponse = await fetch(`/api/coral/interface-agent?userId=${user.id}`)
       const status = await statusResponse.json()
@@ -412,7 +472,7 @@ function CoralInspectorPageContent() {
         startInterfaceAgentSession()
       } else {
         // Send message to existing session
-        await fetch('/api/coral/interface-agent', {
+        const response = await fetch('/api/coral/interface-agent', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -422,12 +482,19 @@ function CoralInspectorPageContent() {
             userId: user.id
           })
         })
+        
+        // Check if response is OK
+        if (!response.ok) {
+          const errorText = await response.text()
+          throw new Error(`HTTP ${response.status}: ${response.statusText} - ${errorText}`)
+        }
       }
       
       // Clear form
       setMessageContent("")
-    } catch (error) {
-      setToolResponse(`Error: ${error}`)
+    } catch (error: any) {
+      console.error("Error sending message:", error)
+      setToolResponse(prev => `${prev}\n[${new Date().toLocaleTimeString()}] Error: ${error.message || String(error)}`)
     }
   }
 
@@ -477,8 +544,8 @@ function CoralInspectorPageContent() {
       console.log('[FRONTEND] Content-Type:', contentType)
 
       if (contentType?.includes('text/event-stream')) {
-        // Handle as SSE stream with no timeout
-        console.log('[FRONTEND] Detected SSE stream, handling with no timeout')
+        // Handle as SSE stream with improved error handling and timeout
+        console.log('[FRONTEND] Detected SSE stream, handling with improved error handling')
         
         if (!initResponse.body) {
           console.error('[FRONTEND] No response stream received')
@@ -490,31 +557,50 @@ function CoralInspectorPageContent() {
         const decoder = new TextDecoder()
         let buffer = ''
         let chunkCount = 0
+        let lastActivityTime = Date.now()
+        const INACTIVITY_TIMEOUT = 60000 // 60 seconds timeout
 
         try {
-          // Read the SSE stream with no timeout - just like EventSource
+          // Set up an inactivity checker
+          const inactivityChecker = setInterval(() => {
+            const inactiveTime = Date.now() - lastActivityTime
+            if (inactiveTime > INACTIVITY_TIMEOUT) {
+              console.warn('[FRONTEND] Stream inactive for', Math.round(inactiveTime/1000), 'seconds, closing')
+              clearInterval(inactivityChecker)
+              
+              // Add a message to the response
+              setToolResponse(prev => `${prev}\n⚠️ Connection inactive for ${Math.round(inactiveTime/1000)} seconds. Reconnecting...\n`)
+              
+              // Force close and restart
+              reader.cancel("Inactivity timeout")
+            }
+          }, 10000) // Check every 10 seconds
+          
+          // Read the SSE stream with inactivity timeout
           while (true) {
             const { done, value } = await reader.read()
             
             if (done) {
               console.log('[FRONTEND] SSE stream completed after', chunkCount, 'chunks')
               setToolResponse(prev => `${prev}✅ Interface Agent session completed.\n`)
+              clearInterval(inactivityChecker)
               break
             }
 
+            // Update activity timestamp
+            lastActivityTime = Date.now()
+            
             chunkCount++
             console.log('[FRONTEND] Chunk', chunkCount, 'received, size:', value?.length)
 
             // Decode the chunk and add to buffer
             const chunk = decoder.decode(value, { stream: true })
             buffer += chunk
-            console.log('[FRONTEND] Chunk decoded, buffer size:', buffer.length)
             
             // Process complete lines
             const lines = buffer.split('\n')
             buffer = lines.pop() || '' // Keep incomplete line in buffer
-            console.log('[FRONTEND] Processing', lines.length, 'lines from chunk', chunkCount)
-
+            
             for (const line of lines) {
               if (line.trim() === '') continue // Skip empty lines
               
@@ -532,6 +618,16 @@ function CoralInspectorPageContent() {
                 }
               } else if (line.trim() !== '') {
                 console.log('[FRONTEND] Non-SSE line received:', line)
+                // Try to handle non-standard SSE format
+                try {
+                  const data = JSON.parse(line)
+                  console.log('[FRONTEND] Parsed non-standard SSE data:', data)
+                  handleInterfaceAgentMessage(data)
+                } catch (e) {
+                  // Not JSON, just log it
+                  console.log('[FRONTEND] Non-JSON line:', line)
+                  setToolResponse(prev => `${prev}${line}\n`)
+                }
               }
             }
           }
@@ -540,8 +636,25 @@ function CoralInspectorPageContent() {
           console.error('[FRONTEND] Error type:', streamError.constructor?.name)
           console.error('[FRONTEND] Error message:', streamError.message || 'Unknown error')
           
-          // Don't throw here - handle the error gracefully
-          setToolResponse(prev => `${prev}⚠️ Stream error: ${streamError.message || 'Unknown error'}. Try restarting the session.\n`)
+          // Check if this is a network error
+          const isNetworkError = 
+            streamError.message?.includes('network') || 
+            streamError.message?.includes('connection') ||
+            streamError.name === 'AbortError' ||
+            streamError.message === 'Inactivity timeout';
+          
+          if (isNetworkError) {
+            setToolResponse(prev => `${prev}⚠️ Network connection issue. Attempting to reconnect...\n`)
+            
+            // Wait a moment and try to reconnect
+            setTimeout(() => {
+              setToolResponse(prev => `${prev}🔄 Reconnecting to Interface Agent...\n`)
+              startInterfaceAgentSession()
+            }, 3000)
+          } else {
+            // For other errors, just show the message
+            setToolResponse(prev => `${prev}⚠️ Stream error: ${streamError.message || 'Unknown error'}. Try restarting the session.\n`)
+          }
         } finally {
           console.log('[FRONTEND] Releasing reader lock')
           reader.releaseLock()
@@ -567,7 +680,26 @@ function CoralInspectorPageContent() {
       console.error('[FRONTEND] Error type:', error.constructor?.name)
       console.error('[FRONTEND] Error message:', error.message || 'Unknown error')
       console.error('[FRONTEND] Error stack:', error.stack)
-      setToolResponse(prev => `${prev}❌ Error: ${error.message || String(error)}\n`)
+      
+      // Check if this is a network error
+      const isNetworkError = 
+        error.message?.includes('network') || 
+        error.message?.includes('connection') ||
+        error.name === 'TypeError' ||
+        error.name === 'AbortError';
+      
+      if (isNetworkError) {
+        setToolResponse(prev => `${prev}⚠️ Network connection issue: ${error.message}. Attempting to reconnect...\n`)
+        
+        // Wait a moment and try to reconnect
+        setTimeout(() => {
+          setToolResponse(prev => `${prev}🔄 Reconnecting to Interface Agent...\n`)
+          startInterfaceAgentSession()
+        }, 3000)
+      } else {
+        // For other errors, just show the message
+        setToolResponse(prev => `${prev}❌ Error: ${error.message || String(error)}\n`)
+      }
     }
   }
 

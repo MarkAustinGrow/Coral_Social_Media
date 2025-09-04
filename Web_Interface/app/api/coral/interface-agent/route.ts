@@ -156,7 +156,7 @@ async function startPythonInterfaceAgent(userId: string, session: any, initialMe
     logWithTimestamp('INFO', 'Python process spawned', { userId, pid: agentProcess.pid })
     session.agentProcess = agentProcess
     
-// Handle stdout (agent output)
+// Handle stdout (agent output) with improved error handling and reconnection logic
     agentProcess.stdout.on('data', async (data: Buffer) => {
       const output = data.toString()
       logWithTimestamp('INFO', 'Python stdout received', { userId, outputLength: output.length, preview: output.substring(0, 200) })
@@ -191,20 +191,36 @@ async function startPythonInterfaceAgent(userId: string, session: any, initialMe
             logWithTimestamp('WARN', 'Heartbeat failed, agent will attempt reconnection', { userId })
             await writer.write(`data: ${JSON.stringify({
               type: 'status',
-              message: 'Connection issue detected, attempting to reconnect...',
+              message: 'Connection issue detected, attempting to reconnect automatically...',
               timestamp: new Date().toISOString()
             })}\n\n`)
           }
-          // Check for reconnection messages
-          else if (line.includes('Retrying after ClosedResourceError') || line.includes('Backing off for')) {
-            logWithTimestamp('INFO', 'Agent reconnection attempt', { userId })
+          // Check for reconnection messages with more detailed information
+          else if (line.includes('Retrying after ClosedResourceError')) {
+            const attemptMatch = line.match(/attempt (\d+) of (\d+)/)
+            const attempt = attemptMatch ? attemptMatch[1] : '?'
+            const maxAttempts = attemptMatch ? attemptMatch[2] : '?'
+            
+            logWithTimestamp('INFO', `Agent reconnection attempt ${attempt}/${maxAttempts}`, { userId })
             await writer.write(`data: ${JSON.stringify({
               type: 'status',
-              message: 'Reconnecting to server...',
+              message: `Reconnecting to server (attempt ${attempt}/${maxAttempts})...`,
               timestamp: new Date().toISOString()
             })}\n\n`)
           }
-          // Check for other important output
+          // Check for backoff messages
+          else if (line.includes('Backing off for')) {
+            const secondsMatch = line.match(/Backing off for ([\d\.]+) seconds/)
+            const seconds = secondsMatch ? secondsMatch[1] : '?'
+            
+            logWithTimestamp('INFO', `Agent backing off for ${seconds} seconds`, { userId })
+            await writer.write(`data: ${JSON.stringify({
+              type: 'status',
+              message: `Waiting ${seconds} seconds before reconnection attempt...`,
+              timestamp: new Date().toISOString()
+            })}\n\n`)
+          }
+          // Check for connection success messages
           else if (line.includes('Connected to MCP server')) {
             logWithTimestamp('INFO', 'MCP server connection detected', { userId })
             await writer.write(`data: ${JSON.stringify({
@@ -220,6 +236,27 @@ async function startPythonInterfaceAgent(userId: string, session: any, initialMe
               message: 'Coral tools discovered and ready',
               timestamp: new Date().toISOString()
             })}\n\n`)
+          }
+          // Check for error messages with better categorization
+          else if (line.includes('[WEB_DEBUG] [ERROR]')) {
+            // This is a debug error from the agent
+            logWithTimestamp('ERROR', 'Python agent debug error detected', { userId, error: line })
+            
+            // Check if it's a network error
+            if (line.includes('network') || line.includes('connection') || line.includes('timeout')) {
+              await writer.write(`data: ${JSON.stringify({
+                type: 'status',
+                message: 'Network issue detected. The system will attempt to reconnect automatically.',
+                timestamp: new Date().toISOString()
+              })}\n\n`)
+            } else {
+              // Other errors
+              await writer.write(`data: ${JSON.stringify({
+                type: 'error',
+                message: line.replace(/\[WEB_DEBUG\] \[ERROR\] /, ''),
+                timestamp: new Date().toISOString()
+              })}\n\n`)
+            }
           }
           else if (line.includes('ERROR') || line.includes('Error')) {
             logWithTimestamp('ERROR', 'Python agent error detected', { userId, error: line })
@@ -255,30 +292,69 @@ async function startPythonInterfaceAgent(userId: string, session: any, initialMe
       }
     })
 
-// Handle stderr (agent errors)
+// Handle stderr (agent errors) with improved error categorization and recovery
     agentProcess.stderr.on('data', async (data: Buffer) => {
       const error = data.toString()
       logWithTimestamp('ERROR', 'Python stderr received', { userId, error: error.substring(0, 200) })
       
       try {
-        // Check if this is a network-related error
+        // Check if this is a network-related error with more specific categorization
         const isNetworkError = error.includes('ClosedResourceError') || 
                               error.includes('ConnectionError') || 
                               error.includes('TimeoutError') ||
-                              error.includes('network error');
+                              error.includes('network error') ||
+                              error.includes('Connection refused') ||
+                              error.includes('Cannot connect') ||
+                              error.includes('SSLError') ||
+                              error.includes('socket.timeout');
+        
+        const isAuthError = error.includes('Authentication') || 
+                           error.includes('Unauthorized') || 
+                           error.includes('Permission denied') ||
+                           error.includes('403 Forbidden');
+        
+        const isServerError = error.includes('500 Internal Server Error') || 
+                             error.includes('502 Bad Gateway') || 
+                             error.includes('503 Service Unavailable') ||
+                             error.includes('504 Gateway Timeout');
         
         if (isNetworkError) {
-          // For network errors, send a more user-friendly message
+          // For network errors, send a more user-friendly message with recovery information
           await writer.write(`data: ${JSON.stringify({
             type: 'status',
-            message: 'Connection issue detected, attempting to reconnect...',
+            message: 'Network connection issue detected. The system will attempt to reconnect automatically.',
+            timestamp: new Date().toISOString()
+          })}\n\n`)
+        } else if (isAuthError) {
+          // For authentication errors
+          await writer.write(`data: ${JSON.stringify({
+            type: 'error',
+            message: 'Authentication error. Please check your credentials or login again.',
+            timestamp: new Date().toISOString()
+          })}\n\n`)
+        } else if (isServerError) {
+          // For server errors
+          await writer.write(`data: ${JSON.stringify({
+            type: 'error',
+            message: 'Coral server is experiencing issues. Please try again later.',
             timestamp: new Date().toISOString()
           })}\n\n`)
         } else {
-          // For other errors, send the raw error message
+          // For other errors, send a more structured error message
+          // Extract the most relevant part of the error message
+          let cleanError = error.trim()
+          
+          // If it's a traceback, try to extract the last line which usually has the error message
+          if (error.includes('Traceback')) {
+            const lines = error.split('\n').filter(line => line.trim())
+            if (lines.length > 0) {
+              cleanError = lines[lines.length - 1].trim()
+            }
+          }
+          
           await writer.write(`data: ${JSON.stringify({
             type: 'error',
-            message: `Agent Error: ${error}`,
+            message: `Agent Error: ${cleanError}`,
             timestamp: new Date().toISOString()
           })}\n\n`)
         }
@@ -313,22 +389,32 @@ async function startPythonInterfaceAgent(userId: string, session: any, initialMe
       }
     })
 
-// Handle process error
+// Handle process error with improved error handling and recovery
     agentProcess.on('error', async (error: Error) => {
       logWithTimestamp('ERROR', 'Python process error', { userId, error: error.message, stack: error.stack })
       
       try {
-        // Check if this is a network-related error
+        // More comprehensive error categorization
         const isNetworkError = error.message.includes('network') || 
                               error.message.includes('connection') || 
                               error.message.includes('timeout') ||
-                              error.message.includes('closed');
+                              error.message.includes('closed') ||
+                              error.message.includes('ECONNREFUSED') ||
+                              error.message.includes('ENOTFOUND') ||
+                              error.message.includes('ETIMEDOUT');
+        
+        const isPermissionError = error.message.includes('permission') || 
+                                 error.message.includes('EACCES');
+        
+        const isResourceError = error.message.includes('resource') || 
+                               error.message.includes('memory') || 
+                               error.message.includes('ENOMEM');
         
         if (isNetworkError) {
-          // For network errors, send a more user-friendly message
+          // For network errors, send a more user-friendly message with recovery information
           await writer.write(`data: ${JSON.stringify({
             type: 'status',
-            message: 'Connection issue detected. The system will attempt to reconnect automatically.',
+            message: 'Network connection issue detected. The system will attempt to reconnect automatically.',
             timestamp: new Date().toISOString()
           })}\n\n`)
           
@@ -346,7 +432,7 @@ async function startPythonInterfaceAgent(userId: string, session: any, initialMe
               try {
                 await writer.write(`data: ${JSON.stringify({
                   type: 'error',
-                  message: 'Failed to reconnect. Please try again later.',
+                  message: 'Failed to reconnect after multiple attempts. Please try again later.',
                   timestamp: new Date().toISOString()
                 })}\n\n`)
                 
@@ -356,10 +442,46 @@ async function startPythonInterfaceAgent(userId: string, session: any, initialMe
                 logWithTimestamp('ERROR', 'Error closing SSE writer after reconnection timeout', { userId, error: closeError.message })
               }
             }
-          }, 30000) // 30 second timeout for reconnection
+          }, 60000) // 60 second timeout for reconnection (increased from 30s)
           
+        } else if (isPermissionError) {
+          // For permission errors
+          await writer.write(`data: ${JSON.stringify({
+            type: 'error',
+            message: `Permission error: ${error.message}. Please contact support.`,
+            timestamp: new Date().toISOString()
+          })}\n\n`)
+          
+          // Clean up session
+          logWithTimestamp('INFO', 'Cleaning up session after permission error', { userId })
+          activeSessions.delete(userId)
+          
+          try {
+            await writer.close()
+            logWithTimestamp('INFO', 'SSE writer closed after permission error', { userId })
+          } catch (closeError: any) {
+            logWithTimestamp('ERROR', 'Error closing SSE writer after permission error', { userId, error: closeError.message })
+          }
+        } else if (isResourceError) {
+          // For resource errors
+          await writer.write(`data: ${JSON.stringify({
+            type: 'error',
+            message: `Resource error: ${error.message}. The server may be overloaded.`,
+            timestamp: new Date().toISOString()
+          })}\n\n`)
+          
+          // Clean up session
+          logWithTimestamp('INFO', 'Cleaning up session after resource error', { userId })
+          activeSessions.delete(userId)
+          
+          try {
+            await writer.close()
+            logWithTimestamp('INFO', 'SSE writer closed after resource error', { userId })
+          } catch (closeError: any) {
+            logWithTimestamp('ERROR', 'Error closing SSE writer after resource error', { userId, error: closeError.message })
+          }
         } else {
-          // For other errors, send the raw error message and clean up
+          // For other errors, send a more structured error message and clean up
           await writer.write(`data: ${JSON.stringify({
             type: 'error',
             message: `Failed to start Interface Agent: ${error.message}`,

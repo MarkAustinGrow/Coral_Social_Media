@@ -30,7 +30,8 @@ export async function GET(request: NextRequest) {
         })}\n\n`))
 
         // Set up connection to Coral server
-        const coralUrl = `http://localhost:5555/devmode/exampleApplication/privkey/session1/sse?agentId=${agentId}&waitForAgents=1&agentDescription=Coral Inspector Agent`
+        // Use the production URL instead of localhost
+        const coralUrl = `https://coral.8interns.com/devmode/exampleApplication/privkey/session1/sse?agentId=${agentId}&waitForAgents=1&agentDescription=Coral Inspector Agent`
         
         let eventSource: EventSource | null = null
         
@@ -87,17 +88,45 @@ export async function GET(request: NextRequest) {
               console.error('Coral SSE error:', error)
               controller.enqueue(encoder.encode(`data: ${JSON.stringify({
                 type: 'error',
-                message: 'Coral server connection error',
+                message: 'Coral server connection error. Attempting to reconnect...',
                 timestamp: new Date().toISOString()
               })}\n\n`))
               
-              // Attempt to reconnect after 5 seconds
-              setTimeout(() => {
-                if (eventSource) {
-                  eventSource.close()
+              // Implement exponential backoff for reconnection
+              let reconnectAttempt = 0
+              const maxReconnectAttempts = 10
+              const baseReconnectDelay = 1000 // Start with 1 second
+              
+              const attemptReconnect = () => {
+                if (reconnectAttempt < maxReconnectAttempts) {
+                  const delay = Math.min(30000, baseReconnectDelay * Math.pow(1.5, reconnectAttempt))
+                  console.log(`Reconnecting in ${delay}ms (attempt ${reconnectAttempt + 1})`)
+                  
+                  controller.enqueue(encoder.encode(`data: ${JSON.stringify({
+                    type: 'status',
+                    message: `Reconnecting in ${Math.round(delay/1000)} seconds (attempt ${reconnectAttempt + 1})`,
+                    timestamp: new Date().toISOString()
+                  })}\n\n`))
+                  
+                  setTimeout(() => {
+                    if (eventSource) {
+                      eventSource.close()
+                    }
+                    reconnectAttempt++
+                    connectToCoral()
+                  }, delay)
+                } else {
+                  console.error(`Max reconnect attempts (${maxReconnectAttempts}) reached`)
+                  controller.enqueue(encoder.encode(`data: ${JSON.stringify({
+                    type: 'error',
+                    message: `Failed to reconnect after ${maxReconnectAttempts} attempts. Please refresh the page.`,
+                    timestamp: new Date().toISOString()
+                  })}\n\n`))
                 }
-                connectToCoral()
-              }, 5000)
+              }
+              
+              // Start reconnection process
+              attemptReconnect()
             }
 
           } catch (error) {
