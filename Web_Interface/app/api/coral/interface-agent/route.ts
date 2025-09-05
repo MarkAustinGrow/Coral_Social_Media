@@ -90,7 +90,28 @@ export async function POST(request: NextRequest) {
         session.conversationState = 'processing'
         logWithTimestamp('INFO', 'Message sent to Python process successfully', { userId })
         
-        return NextResponse.json({ success: true, sent: true })
+        // Send a confirmation through the existing SSE stream instead of creating a new HTTP response
+        try {
+          await session.writer.write(`data: ${JSON.stringify({
+            type: 'user_response',
+            message: message,
+            timestamp: new Date().toISOString()
+          })}\n\n`)
+          logWithTimestamp('INFO', 'User response confirmation sent through SSE stream', { userId })
+        } catch (writeError: any) {
+          logWithTimestamp('ERROR', 'Error writing to SSE stream', { userId, error: writeError.message })
+          // Even if we can't write to the stream, the message was sent to the process
+        }
+        
+        return NextResponse.json({ success: true, sent: true }, {
+          headers: {
+            // Add cache control headers to prevent caching
+            'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+            'Pragma': 'no-cache',
+            'Expires': '0',
+            'Surrogate-Control': 'no-store'
+          }
+        })
       } catch (error: any) {
         logWithTimestamp('ERROR', 'Error sending to Python process', { userId, error: error.message })
         return NextResponse.json({ error: 'Failed to send message to agent' }, { status: 500 })
