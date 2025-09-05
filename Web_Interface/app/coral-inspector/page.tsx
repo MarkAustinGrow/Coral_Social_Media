@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -154,7 +155,6 @@ function CoralInspectorPageContent() {
   const [threadId, setThreadId] = useState<string>("")
   const [toolResponse, setToolResponse] = useState<string>("")
   const [sessionId, setSessionId] = useState<string>("")
-  const responseEndRef = useRef<HTMLDivElement>(null)
 
   // Help sections state
   const [showModeHelp, setShowModeHelp] = useState(false)
@@ -310,113 +310,49 @@ function CoralInspectorPageContent() {
     }
   }
 
-  // Setup SSE connection for real-time messages with improved error handling
+  // Setup SSE connection for real-time messages
   useEffect(() => {
     if (!user || activeTab !== 'threads') return
 
     // Load historical messages first
     loadHistoricalMessages()
 
-    let eventSource: EventSource | null = null
-    let reconnectAttempt = 0
-    const maxReconnectAttempts = 10
-    const baseReconnectDelay = 1000 // Start with 1 second
-    
-    const connectEventSource = () => {
-      // Close existing connection if any
-      if (eventSource) {
-        eventSource.close()
-      }
-      
-      console.log(`Connecting to SSE stream (attempt ${reconnectAttempt + 1})`)
-      
-      // Create new EventSource connection
-      eventSource = new EventSource(`/api/coral/stream?agentId=user_interface_agent_${user.id}&userId=${user.id}`)
-      
-      // Handle connection open
-      eventSource.onopen = () => {
-        console.log("SSE connection established")
-        reconnectAttempt = 0 // Reset reconnect counter on successful connection
-      }
+    const eventSource = new EventSource(`/api/coral/stream?agentId=user_interface_agent_${user.id}&userId=${user.id}`)
 
-      // Handle messages
-      eventSource.onmessage = (event) => {
-        try {
-          // Check if the event data is valid JSON
-          if (!event.data || event.data.trim() === '') {
-            console.warn("Received empty SSE message, ignoring")
-            return
-          }
-          
-          const data = JSON.parse(event.data)
-          console.log("New message:", data)
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data)
+        console.log("New message:", data)
 
-          // Add new message to the thread
-          const newMessage: ThreadMessage = {
-            id: data.id || `msg_${Date.now()}`,
-            threadId: data.threadId || 'default',
-            fromAgentId: data.fromAgentId || 'unknown',
-            toAgentId: data.toAgentId || 'unknown',
-            content: data.content || data.message || '',
-            timestamp: data.timestamp || new Date().toISOString(),
-            type: data.type || 'message'
-          }
-
-          setMessages(prev => [...prev, newMessage])
-        } catch (error) {
-          console.error("Error parsing SSE message:", error)
+        // Add new message to the thread
+        const newMessage: ThreadMessage = {
+          id: data.id || `msg_${Date.now()}`,
+          threadId: data.threadId || 'default',
+          fromAgentId: data.fromAgentId || 'unknown',
+          toAgentId: data.toAgentId || 'unknown',
+          content: data.content || data.message || '',
+          timestamp: data.timestamp || new Date().toISOString(),
+          type: data.type || 'message'
         }
-      }
 
-      // Handle errors with exponential backoff reconnection
-      eventSource.onerror = (err) => {
-        console.error("SSE error", err)
-        
-        // Close the current connection
-        if (eventSource) {
-          eventSource.close()
-          eventSource = null
-        }
-        
-        // Attempt to reconnect with exponential backoff
-        if (reconnectAttempt < maxReconnectAttempts) {
-          const delay = Math.min(30000, baseReconnectDelay * Math.pow(1.5, reconnectAttempt))
-          console.log(`Reconnecting in ${delay}ms (attempt ${reconnectAttempt + 1})`)
-          
-          setTimeout(() => {
-            reconnectAttempt++
-            connectEventSource()
-          }, delay)
-        } else {
-          console.error(`Max reconnect attempts (${maxReconnectAttempts}) reached`)
-        }
+        setMessages(prev => [...prev, newMessage])
+      } catch (error) {
+        console.error("Error parsing SSE message:", error)
       }
     }
 
-    // Initial connection
-    connectEventSource()
-
-    // Cleanup function
-    return () => {
-      if (eventSource) {
-        console.log("Closing SSE connection")
-        eventSource.close()
-        eventSource = null
-      }
+    eventSource.onerror = (err) => {
+      console.error("SSE error", err)
+      eventSource.close()
     }
+
+    return () => eventSource.close()
   }, [user, activeTab])
 
-  // Scroll to bottom when new messages arrive in threads view
+  // Scroll to bottom when new messages arrive
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
-
-  // Auto-scroll to bottom when new content is added to the response window
-  useEffect(() => {
-    if (toolResponse) {
-      responseEndRef.current?.scrollIntoView({ behavior: 'auto' })
-    }
-  }, [toolResponse])
 
   useEffect(() => {
     fetchAgentStatuses()
@@ -460,9 +396,6 @@ function CoralInspectorPageContent() {
     if (!messageContent || !user?.id) return
 
     try {
-      // Show sending indicator
-      setToolResponse(prev => `${prev}\n[${new Date().toLocaleTimeString()}] Sending: ${messageContent}`)
-      
       // Check if we have an active Interface Agent session
       const statusResponse = await fetch(`/api/coral/interface-agent?userId=${user.id}`)
       const status = await statusResponse.json()
@@ -472,7 +405,7 @@ function CoralInspectorPageContent() {
         startInterfaceAgentSession()
       } else {
         // Send message to existing session
-        const response = await fetch('/api/coral/interface-agent', {
+        await fetch('/api/coral/interface-agent', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -482,19 +415,12 @@ function CoralInspectorPageContent() {
             userId: user.id
           })
         })
-        
-        // Check if response is OK
-        if (!response.ok) {
-          const errorText = await response.text()
-          throw new Error(`HTTP ${response.status}: ${response.statusText} - ${errorText}`)
-        }
       }
       
       // Clear form
       setMessageContent("")
     } catch (error: any) {
-      console.error("Error sending message:", error)
-      setToolResponse(prev => `${prev}\n[${new Date().toLocaleTimeString()}] Error: ${error.message || String(error)}`)
+      setToolResponse(`Error: ${error}`)
     }
   }
 
@@ -515,7 +441,7 @@ function CoralInspectorPageContent() {
       
       // Start SSE connection to Interface Agent
       console.log('[FRONTEND] Making POST request to /api/coral/interface-agent')
-      const initResponse = await fetch('/api/coral/interface-agent', {
+      const response = await fetch('/api/coral/interface-agent', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -527,179 +453,91 @@ function CoralInspectorPageContent() {
       })
 
       console.log('[FRONTEND] Response received:', {
-        status: initResponse.status,
-        statusText: initResponse.statusText,
-        ok: initResponse.ok,
-        headers: Object.fromEntries(initResponse.headers.entries())
+        status: response.status,
+        statusText: response.statusText,
+        ok: response.ok,
+        headers: Object.fromEntries(response.headers.entries())
       })
 
-      if (!initResponse.ok) {
-        const errorText = await initResponse.text()
+      if (!response.ok) {
+        const errorText = await response.text()
         console.error('[FRONTEND] HTTP error response:', errorText)
-        throw new Error(`HTTP ${initResponse.status}: ${initResponse.statusText} - ${errorText}`)
+        throw new Error(`HTTP ${response.status}: ${response.statusText} - ${errorText}`)
       }
 
-      // Check content type to handle SSE streams properly
-      const contentType = initResponse.headers.get('content-type')
-      console.log('[FRONTEND] Content-Type:', contentType)
+      if (!response.body) {
+        console.error('[FRONTEND] No response stream received')
+        throw new Error('No response stream received')
+      }
 
-      if (contentType?.includes('text/event-stream')) {
-        // Handle as SSE stream with improved error handling and timeout
-        console.log('[FRONTEND] Detected SSE stream, handling with improved error handling')
-        
-        if (!initResponse.body) {
-          console.error('[FRONTEND] No response stream received')
-          throw new Error('No response stream received')
-        }
+      console.log('[FRONTEND] Starting to read SSE stream')
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      let chunkCount = 0
 
-        console.log('[FRONTEND] Starting to read SSE stream')
-        const reader = initResponse.body.getReader()
-        const decoder = new TextDecoder()
-        let buffer = ''
-        let chunkCount = 0
-        let lastActivityTime = Date.now()
-        const INACTIVITY_TIMEOUT = 60000 // 60 seconds timeout
-
-        try {
-          // Set up an inactivity checker
-          const inactivityChecker = setInterval(() => {
-            const inactiveTime = Date.now() - lastActivityTime
-            if (inactiveTime > INACTIVITY_TIMEOUT) {
-              console.warn('[FRONTEND] Stream inactive for', Math.round(inactiveTime/1000), 'seconds, closing')
-              clearInterval(inactivityChecker)
-              
-              // Add a message to the response
-              setToolResponse(prev => `${prev}\n⚠️ Connection inactive for ${Math.round(inactiveTime/1000)} seconds. Reconnecting...\n`)
-              
-              // Force close and restart
-              reader.cancel("Inactivity timeout")
-            }
-          }, 10000) // Check every 10 seconds
+      try {
+        // Read the SSE stream
+        while (true) {
+          console.log('[FRONTEND] Reading chunk', chunkCount + 1)
+          const { done, value } = await reader.read()
           
-          // Read the SSE stream with inactivity timeout
-          while (true) {
-            const { done, value } = await reader.read()
-            
-            if (done) {
-              console.log('[FRONTEND] SSE stream completed after', chunkCount, 'chunks')
-              setToolResponse(prev => `${prev}✅ Interface Agent session completed.\n`)
-              clearInterval(inactivityChecker)
-              break
-            }
+          if (done) {
+            console.log('[FRONTEND] SSE stream completed after', chunkCount, 'chunks')
+            break
+          }
 
-            // Update activity timestamp
-            lastActivityTime = Date.now()
-            
-            chunkCount++
-            console.log('[FRONTEND] Chunk', chunkCount, 'received, size:', value?.length)
+          chunkCount++
+          console.log('[FRONTEND] Chunk', chunkCount, 'received, size:', value?.length)
 
-            // Decode the chunk and add to buffer
-            const chunk = decoder.decode(value, { stream: true })
-            buffer += chunk
+          // Decode the chunk and add to buffer
+          const chunk = decoder.decode(value, { stream: true })
+          buffer += chunk
+          console.log('[FRONTEND] Chunk decoded, buffer size:', buffer.length)
+          
+          // Process complete lines
+          const lines = buffer.split('\n')
+          buffer = lines.pop() || '' // Keep incomplete line in buffer
+          console.log('[FRONTEND] Processing', lines.length, 'lines from chunk', chunkCount)
+
+          for (const line of lines) {
+            if (line.trim() === '') continue // Skip empty lines
             
-            // Process complete lines
-            const lines = buffer.split('\n')
-            buffer = lines.pop() || '' // Keep incomplete line in buffer
-            
-            for (const line of lines) {
-              if (line.trim() === '') continue // Skip empty lines
-              
-              if (line.startsWith('data: ')) {
-                try {
-                  const jsonStr = line.slice(6).trim()
-                  if (jsonStr && jsonStr !== '') {
-                    const data = JSON.parse(jsonStr)
-                    console.log('[FRONTEND] Received SSE data:', data)
-                    handleInterfaceAgentMessage(data)
-                  }
-                } catch (e) {
-                  console.error('[FRONTEND] Error parsing SSE data:', e, 'Line:', line)
-                  setToolResponse(prev => `${prev}[ERROR] Failed to parse: ${line}\n`)
-                }
-              } else if (line.trim() !== '') {
-                console.log('[FRONTEND] Non-SSE line received:', line)
-                // Try to handle non-standard SSE format
-                try {
-                  const data = JSON.parse(line)
-                  console.log('[FRONTEND] Parsed non-standard SSE data:', data)
+            if (line.startsWith('data: ')) {
+              try {
+                const jsonStr = line.slice(6).trim()
+                if (jsonStr && jsonStr !== '') {
+                  const data = JSON.parse(jsonStr)
+                  console.log('[FRONTEND] Received SSE data:', data)
                   handleInterfaceAgentMessage(data)
-                } catch (e) {
-                  // Not JSON, just log it
-                  console.log('[FRONTEND] Non-JSON line:', line)
-                  setToolResponse(prev => `${prev}${line}\n`)
                 }
+              } catch (e) {
+                console.error('[FRONTEND] Error parsing SSE data:', e, 'Line:', line)
+                setToolResponse(prev => `${prev}[ERROR] Failed to parse: ${line}\n`)
               }
+            } else if (line.trim() !== '') {
+              console.log('[FRONTEND] Non-SSE line received:', line)
             }
           }
-        } catch (streamError: any) {
-          console.error('[FRONTEND] Stream reading error:', streamError)
-          console.error('[FRONTEND] Error type:', streamError.constructor?.name)
-          console.error('[FRONTEND] Error message:', streamError.message || 'Unknown error')
-          
-          // Check if this is a network error
-          const isNetworkError = 
-            streamError.message?.includes('network') || 
-            streamError.message?.includes('connection') ||
-            streamError.name === 'AbortError' ||
-            streamError.message === 'Inactivity timeout';
-          
-          if (isNetworkError) {
-            setToolResponse(prev => `${prev}⚠️ Network connection issue. Attempting to reconnect...\n`)
-            
-            // Wait a moment and try to reconnect
-            setTimeout(() => {
-              setToolResponse(prev => `${prev}🔄 Reconnecting to Interface Agent...\n`)
-              startInterfaceAgentSession()
-            }, 3000)
-          } else {
-            // For other errors, just show the message
-            setToolResponse(prev => `${prev}⚠️ Stream error: ${streamError.message || 'Unknown error'}. Try restarting the session.\n`)
-          }
-        } finally {
-          console.log('[FRONTEND] Releasing reader lock')
-          reader.releaseLock()
         }
-      } else {
-        // Not an SSE stream - likely a JSON response for an existing session
-        console.log('[FRONTEND] Not an SSE stream, handling as JSON response')
-        const result = await initResponse.json()
-        console.log('[FRONTEND] JSON response:', result)
-        
-        if (result.error) {
-          setToolResponse(prev => `${prev}❌ Error: ${result.error}\n`)
-        } else if (result.message) {
-          setToolResponse(prev => `${prev}${result.message}\n`)
-        } else {
-          setToolResponse(prev => `${prev}✅ Message sent to existing session.\n`)
-        }
+      } catch (streamError: any) {
+        console.error('[FRONTEND] Stream reading error:', streamError)
+        console.error('[FRONTEND] Error type:', streamError.constructor?.name)
+        console.error('[FRONTEND] Error message:', streamError.message)
+        throw streamError
+      } finally {
+        console.log('[FRONTEND] Releasing reader lock')
+        reader.releaseLock()
       }
       
       console.log('[FRONTEND] Interface Agent session completed successfully')
+      setToolResponse(prev => `${prev}✅ Interface Agent session completed.\n`)
     } catch (error: any) {
       console.error('[FRONTEND] Interface Agent error:', error)
       console.error('[FRONTEND] Error type:', error.constructor?.name)
-      console.error('[FRONTEND] Error message:', error.message || 'Unknown error')
+      console.error('[FRONTEND] Error message:', error.message)
       console.error('[FRONTEND] Error stack:', error.stack)
-      
-      // Check if this is a network error
-      const isNetworkError = 
-        error.message?.includes('network') || 
-        error.message?.includes('connection') ||
-        error.name === 'TypeError' ||
-        error.name === 'AbortError';
-      
-      if (isNetworkError) {
-        setToolResponse(prev => `${prev}⚠️ Network connection issue: ${error.message}. Attempting to reconnect...\n`)
-        
-        // Wait a moment and try to reconnect
-        setTimeout(() => {
-          setToolResponse(prev => `${prev}🔄 Reconnecting to Interface Agent...\n`)
-          startInterfaceAgentSession()
-        }, 3000)
-      } else {
-        // For other errors, just show the message
-        setToolResponse(prev => `${prev}❌ Error: ${error.message || String(error)}\n`)
-      }
+      setToolResponse(prev => `${prev}❌ Error: ${error.message || error}\n`)
     }
   }
 
@@ -853,18 +691,25 @@ function CoralInspectorPageContent() {
             <Send className="h-6 w-6" />
             Chat Interface
           </CardTitle>
+          <CardDescription className="text-base">
+            Send messages directly to your Interface Agent - it will automatically route them to the right agents
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {/* Simple message input - no agent selection */}
           <div>
+            <Label htmlFor="message-content" className="text-base font-medium">What would you like me to help you with?</Label>
             <Textarea
               id="message-content"
-              placeholder="Type your request here..."
+              placeholder="Type your request here... e.g., 'Are there any new tweets to scrape?' or 'Write a blog about the latest tech trends'"
               value={messageContent}
               onChange={(e) => setMessageContent(e.target.value)}
               rows={4}
               className="mt-2 text-base"
             />
+            <p className="text-sm text-muted-foreground mt-2">
+              Examples: "Check for new tweets", "Write a blog about AI", "What's trending on social media?"
+            </p>
           </div>
 
           <Button 
@@ -878,10 +723,10 @@ function CoralInspectorPageContent() {
 
           {toolResponse && (
             <div>
-              <ScrollArea className="h-[300px] w-full mt-2">
+              <Label className="text-base font-medium">Response</Label>
+              <ScrollArea className="h-40 w-full mt-2">
                 <pre className="text-sm bg-muted p-4 rounded">
                   {toolResponse}
-                  <div ref={responseEndRef} />
                 </pre>
               </ScrollArea>
             </div>
@@ -889,46 +734,112 @@ function CoralInspectorPageContent() {
         </CardContent>
       </Card>
 
-      {/* Simplified Mode Indicator */}
-      <Card className="border-gray-200 bg-gray-50">
-        <CardHeader className="py-2">
-          <CardTitle className="flex items-center gap-2 text-sm">
+      {/* Mode Switch Architecture Info */}
+      <Card className={agentMode === 'coral' ? 'border-green-200 bg-green-50' : 'border-blue-200 bg-blue-50'}>
+        <CardHeader>
+          <CardTitle className={`flex items-center gap-2 ${agentMode === 'coral' ? 'text-green-800' : 'text-blue-800'}`}>
             <div className={`w-3 h-3 rounded-full ${agentMode === 'coral' ? 'bg-green-500' : 'bg-blue-500'}`} />
-            {agentMode === 'coral' ? 'Coral Mode' : 'Auto Mode'}
+            {agentMode === 'coral' ? 'Coral Mode - Multi-Agent Communication' : 'Auto Mode - Independent Agents'}
           </CardTitle>
+          <CardDescription className={agentMode === 'coral' ? 'text-green-700' : 'text-blue-700'}>
+            {agentMode === 'coral' 
+              ? 'Agents communicate with each other through the Coral Protocol for coordinated tasks'
+              : 'Agents work independently without inter-agent communication'
+            }
+          </CardDescription>
         </CardHeader>
+        <CardContent>
+          <div className={`text-sm ${agentMode === 'coral' ? 'text-green-800' : 'text-blue-800'}`}>
+            {agentMode === 'coral' ? (
+              <div className="space-y-2">
+                <p><strong>How it works:</strong> Interface Agent coordinates with other agents via Coral Protocol</p>
+                <p><strong>Best for:</strong> Complex tasks requiring multiple agents (research + writing + posting)</p>
+                <p><strong>Communication:</strong> Real-time agent-to-agent messaging and coordination</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <p><strong>How it works:</strong> Each agent operates independently based on its configuration</p>
+                <p><strong>Best for:</strong> Simple, single-purpose tasks (just scraping, just writing, etc.)</p>
+                <p><strong>Communication:</strong> No inter-agent communication, direct user interaction only</p>
+              </div>
+            )}
+          </div>
+        </CardContent>
       </Card>
 
-      {/* Help button - collapsed by default */}
-      <Button
-        onClick={() => setShowInstructions(!showInstructions)}
-        className="w-full justify-between bg-transparent border border-gray-200 hover:bg-gray-100"
-      >
-        <div className="flex items-center gap-2">
-          <HelpCircle className="h-5 w-5" />
-          <span className="font-semibold">Help</span>
-        </div>
-        {showInstructions ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-      </Button>
-      
-      {showInstructions && (
-        <Card className="mt-2">
-          <CardContent className="pt-4">
-            <div className="space-y-2 text-sm">
-              <p>Type your request in the text area above and click Send Message.</p>
-              <p>The system will automatically route your request to the appropriate agent.</p>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-    </div>
-  )
-}
+      {/* Main Tabs */}
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <TabsList className="grid w-full grid-cols-3">
+          <TabsTrigger value="tools" className="flex items-center gap-2">
+            <Settings className="h-4 w-4" />
+            Chat
+          </TabsTrigger>
+          <TabsTrigger value="threads" className="flex items-center gap-2">
+            <MessageCircle className="h-4 w-4" />
+            Threads
+          </TabsTrigger>
+          <TabsTrigger value="logs" className="flex items-center gap-2">
+            <FileText className="h-4 w-4" />
+            Logs
+          </TabsTrigger>
+        </TabsList>
 
-export default function CoralInspectorPage() {
-  return (
-    <AgentModeProvider>
-      <CoralInspectorPageContent />
-    </AgentModeProvider>
-  )
-}
+
+        {/* Threads Tab */}
+        <TabsContent value="threads" className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-2xl font-semibold">Agent Threads</h2>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" onClick={exportMessages}>
+                <Download className="h-4 w-4 mr-2" />
+                Export
+              </Button>
+            </div>
+          </div>
+
+          {/* Filters */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Filter className="h-5 w-5" />
+                Filters
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div>
+                  <Label htmlFor="thread-filter">Thread ID</Label>
+                  <Input
+                    id="thread-filter"
+                    placeholder="Filter by thread ID..."
+                    value={threadFilter}
+                    onChange={(e) => setThreadFilter(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="agent-filter">Agent</Label>
+                  <Input
+                    id="agent-filter"
+                    placeholder="Filter by agent ID..."
+                    value={agentFilter}
+                    onChange={(e) => setAgentFilter(e.target.value)}
+                  />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Messages */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Messages ({filteredMessages.length})</CardTitle>
+              <CardDescription>
+                Real-time agent communications
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ScrollArea className="h-96 w-full">
+                <div className="space-y-4">
+                  {filteredMessages.length === 0 ? (
+                    <div className="text-center text-muted-foreground py-8">
+                      No messages yet. Messages will appear here in real-time
