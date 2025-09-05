@@ -419,7 +419,7 @@ function CoralInspectorPageContent() {
       
       // Clear form
       setMessageContent("")
-    } catch (error: any) {
+    } catch (error) {
       setToolResponse(`Error: ${error}`)
     }
   }
@@ -520,9 +520,9 @@ function CoralInspectorPageContent() {
             }
           }
         }
-      } catch (streamError: any) {
+      } catch (streamError) {
         console.error('[FRONTEND] Stream reading error:', streamError)
-        console.error('[FRONTEND] Error type:', streamError.constructor?.name)
+        console.error('[FRONTEND] Error type:', streamError.constructor.name)
         console.error('[FRONTEND] Error message:', streamError.message)
         throw streamError
       } finally {
@@ -532,9 +532,9 @@ function CoralInspectorPageContent() {
       
       console.log('[FRONTEND] Interface Agent session completed successfully')
       setToolResponse(prev => `${prev}✅ Interface Agent session completed.\n`)
-    } catch (error: any) {
+    } catch (error) {
       console.error('[FRONTEND] Interface Agent error:', error)
-      console.error('[FRONTEND] Error type:', error.constructor?.name)
+      console.error('[FRONTEND] Error type:', error.constructor.name)
       console.error('[FRONTEND] Error message:', error.message)
       console.error('[FRONTEND] Error stack:', error.stack)
       setToolResponse(prev => `${prev}❌ Error: ${error.message || error}\n`)
@@ -716,6 +716,7 @@ function CoralInspectorPageContent() {
             onClick={handleSendMessage} 
             disabled={!messageContent}
             className="w-full h-12 text-base"
+            size="lg"
           >
             <Send className="h-5 w-5 mr-2" />
             Send Message
@@ -784,12 +785,13 @@ function CoralInspectorPageContent() {
           </TabsTrigger>
         </TabsList>
 
+
         {/* Threads Tab */}
         <TabsContent value="threads" className="space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="text-2xl font-semibold">Agent Threads</h2>
             <div className="flex items-center gap-2">
-              <Button onClick={exportMessages}>
+              <Button variant="outline" size="sm" onClick={exportMessages}>
                 <Download className="h-4 w-4 mr-2" />
                 Export
               </Button>
@@ -840,4 +842,165 @@ function CoralInspectorPageContent() {
               <ScrollArea className="h-96 w-full">
                 <div className="space-y-4">
                   {filteredMessages.length === 0 ? (
-                    <div className="text-
+                    <div className="text-center text-muted-foreground py-8">
+                      No messages yet. Messages will appear here in real-time.
+                    </div>
+                  ) : (
+                    filteredMessages.map((message) => (
+                      <div key={message.id} className="border rounded-lg p-4">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            <Badge variant="outline">{message.type}</Badge>
+                            <span className="text-sm text-muted-foreground">
+                              {message.fromAgentId} → {message.toAgentId}
+                            </span>
+                          </div>
+                          <span className="text-xs text-muted-foreground">
+                            {new Date(message.timestamp).toLocaleTimeString()}
+                          </span>
+                        </div>
+                        <div className="text-sm">
+                          <strong>Thread:</strong> {message.threadId}
+                        </div>
+                        <div className="mt-2 p-2 bg-muted rounded text-sm">
+                          {message.content}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                  <div ref={messagesEndRef} />
+                </div>
+              </ScrollArea>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Tools Tab - Help Sections Only */}
+        <TabsContent value="tools" className="space-y-6">
+          {/* Note about main chat interface */}
+          <Card className="border-blue-200 bg-blue-50">
+            <CardContent className="pt-6">
+              <div className="text-center text-blue-800">
+                <MessageCircle className="h-8 w-8 mx-auto mb-2" />
+                <p className="font-medium">The main chat interface is located at the top of this page</p>
+                <p className="text-sm text-blue-600 mt-1">Scroll up to start chatting with your Interface Agent</p>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Collapsible Help Sections */}
+          <div className="space-y-3">
+            {/* Architecture Info - Collapsible */}
+            <Card className="border-green-200 bg-green-50">
+              <CardHeader className="pb-3">
+                <Button
+                  variant="ghost"
+                  onClick={() => setShowArchitectureInfo(!showArchitectureInfo)}
+                  className="w-full justify-between p-0 h-auto text-green-800 hover:bg-green-100"
+                >
+                  <div className="flex items-center gap-2">
+                    <MessageCircle className="h-5 w-5" />
+                    <span className="font-semibold">How Coral Protocol Works</span>
+                  </div>
+                  {showArchitectureInfo ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                </Button>
+              </CardHeader>
+              {showArchitectureInfo && (
+                <CardContent className="pt-0">
+                  <div className="text-sm text-green-800 space-y-2">
+                    <p>
+                      <strong>How it works:</strong> Just ask what you want - "Are there any new tweets?" or "Write a blog about AI"
+                    </p>
+                    <p>
+                      <strong>Message Flow:</strong> You → Interface Agent → Interface Agent chooses best agent → Response
+                    </p>
+                    <p>
+                      <strong>Your Role:</strong> Simply describe what you want done, like talking to a smart assistant
+                    </p>
+                  </div>
+                </CardContent>
+              )}
+            </Card>
+
+            {/* Instructions - Collapsible */}
+            <Card>
+              <CardHeader className="pb-3">
+                <Button
+                  variant="ghost"
+                  onClick={() => setShowInstructions(!showInstructions)}
+                  className="w-full justify-between p-0 h-auto hover:bg-gray-100"
+                >
+                  <div className="flex items-center gap-2">
+                    <HelpCircle className="h-5 w-5" />
+                    <span className="font-semibold">Step-by-Step Instructions</span>
+                  </div>
+                  {showInstructions ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                </Button>
+              </CardHeader>
+              {showInstructions && (
+                <CardContent className="pt-0">
+                  <div className="space-y-3 text-sm">
+                    <div className="flex items-start gap-3">
+                      <div className="w-6 h-6 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xs font-medium">1</div>
+                      <div>
+                        <p className="font-medium">Type Your Request</p>
+                        <p className="text-muted-foreground">Just describe what you want - no need to select which agent</p>
+                      </div>
+                    </div>
+                    <div className="flex items-start gap-3">
+                      <div className="w-6 h-6 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xs font-medium">2</div>
+                      <div>
+                        <p className="font-medium">Interface Agent Routes Automatically</p>
+                        <p className="text-muted-foreground">The Interface Agent will choose the best agent for your request</p>
+                      </div>
+                    </div>
+                    <div className="flex items-start gap-3">
+                      <div className="w-6 h-6 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xs font-medium">3</div>
+                      <div>
+                        <p className="font-medium">Watch the Threads Tab</p>
+                        <p className="text-muted-foreground">See real-time communication between agents as they work on your request</p>
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              )}
+            </Card>
+          </div>
+        </TabsContent>
+
+        {/* Logs Tab */}
+        <TabsContent value="logs" className="space-y-4">
+          <div>
+            <h2 className="text-2xl font-semibold mb-4">System Logs</h2>
+            <p className="text-muted-foreground mb-6">
+              Real-time Coral server logs and system events
+            </p>
+          </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Coming Soon</CardTitle>
+              <CardDescription>
+                Real-time log streaming will be implemented in a future update
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="text-center text-muted-foreground py-8">
+                <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                <p>Log streaming functionality will be added here</p>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+    </div>
+  )
+}
+
+export default function CoralInspectorPage() {
+  return (
+    <AgentModeProvider>
+      <CoralInspectorPageContent />
+    </AgentModeProvider>
+  )
+}
