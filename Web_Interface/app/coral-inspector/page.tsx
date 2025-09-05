@@ -784,13 +784,12 @@ function CoralInspectorPageContent() {
           </TabsTrigger>
         </TabsList>
 
-
         {/* Threads Tab */}
         <TabsContent value="threads" className="space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="text-2xl font-semibold">Agent Threads</h2>
             <div className="flex items-center gap-2">
-              <Button variant="outline" onClick={exportMessages}>
+              <Button onClick={exportMessages}>
                 <Download className="h-4 w-4 mr-2" />
                 Export
               </Button>
@@ -841,5 +840,4 @@ function CoralInspectorPageContent() {
               <ScrollArea className="h-96 w-full">
                 <div className="space-y-4">
                   {filteredMessages.length === 0 ? (
-                    <div className="text-center text-muted-foreground py-8">
-                      No messages yet. Messages will appear here in real-time
+                    <div className="text-
